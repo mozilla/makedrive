@@ -1,0 +1,35 @@
+{
+  "name": "makedrive",
+  "version": "0.0.0",
+  "description": "Webmaker Filesystem",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/mozilla/makedrive.git"
+  },
+  "keywords": [
+    "filesystem",
+    "storage",
+    "web"
+  ],
+  "author": "David Humphrey <david.humphrey@senecacollege.ca>",
+  "license": "MPL2",
+  "bugs": {
+    "url": "https://github.com/mozilla/makedrive/issues"
+  },
+  "dependencies": {
+    "express": "3.4.5",
+    "habitat": "1.1.0",
+    "helmet": "0.2.0",
+    "knox": "0.8.9",
+    "newrelic": "1.4.0",
+    "noxmox": "0.2.4"
+  },
+  "devDependencies": {
+    "grunt": "~0.4.1",
+    "grunt-contrib-jshint": "0.10.0"
+  }
+}
