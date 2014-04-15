@@ -7,7 +7,7 @@ module.exports = function( knoxClient ) {
   version = require( "../package" ).version;
 
   function jsonError( res, code, msg, err ) {
-    res.json( code, error: {
+    res.json( code, {
       msg: msg,
       err: err
     });
@@ -60,7 +60,6 @@ module.exports = function( knoxClient ) {
           res.json( 200 );
         })
         .end( data );
-      });
     },
 
     del: function( req, res ) {
@@ -77,7 +76,6 @@ module.exports = function( knoxClient ) {
           res.json( 200 );
         })
         .end();
-      });
     },
 
     healthcheck: function( req, res ) {

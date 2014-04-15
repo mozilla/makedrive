@@ -9,7 +9,7 @@ define(function(require) {
   }
   XHRContext.prototype.clear = function(callback) {
     // TODO: do we want to support clear?
-    callback(new Error('clear is not supported on XHRContext');
+    callback(new Error('clear is not supported on XHRContext'));
   };
   XHRContext.prototype.get = function(key, callback) {
     var request = new XMLHttpRequest();
