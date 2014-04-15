@@ -25,8 +25,10 @@
     "habitat": "1.1.0",
     "helmet": "0.2.0",
     "knox": "0.8.9",
+    "messina": "0.1.2",
     "newrelic": "1.4.0",
-    "noxmox": "0.2.4"
+    "noxmox": "0.2.4",
+    "webmaker-auth": "0.0.14"
   },
   "devDependencies": {
     "grunt": "~0.4.1",
