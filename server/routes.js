@@ -4,7 +4,7 @@
 
 module.exports = function( knoxClient ) {
 
-  version = require( "../package" ).version;
+  var version = require( "../package" ).version;
 
   function jsonError( res, code, msg, err ) {
     res.json( code, {
@@ -42,7 +42,7 @@ module.exports = function( knoxClient ) {
       // TODO: deal with binary data, file parts, ???
       // TODO: figure out proper errors to bubble up, see:
       // http://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html
-      var data = req.body.value;
+      var data = req.body.value,
           headers = {
             'x-amz-acl': 'public-read', // TODO: not sure if we need this...
             'Content-Length': Buffer.byteLength( data,'utf8' ),

@@ -17,7 +17,9 @@ var app = express(),
       forceSSL: env.get( "FORCE_SSL" ),
       domain: env.get( "COOKIE_DOMAIN" )
     }),
-    knoxClient = knox.createClient( env.get( "S3" ) ),
+    knoxClient = require( "knox" ).createClient( env.get( "S3" ) ),
+    routes = require( "./routes" )( knoxClient ),
+    middleware = require( "./middleware" ),
     messina,
     logger,
     port;
@@ -43,9 +45,6 @@ app.use( webmakerAuth.cookieSession() );
 
 app.use( app.router );
 
-var routes = require( "./routes" )( knoxClient ),
-    middleware = require( "./middleware" );
-
 app.use( middleware.errorHandler );
 app.use( middleware.fourOhFourHandler );
 
@@ -57,9 +56,12 @@ function corsOptions ( req, res ) {
 
 app.get( "/", routes.index );
 
-app.get( "api/:key", middleware.authenticationHandler, routes.get );
-app.put( "api/:key", middleware.authenticationHandler, routes.put );
-app.del( "api/:key", middleware.authenticationHandler, routes.del );
+console.log('middleware', middleware);
+console.log('routes', routes);
+
+app.get( "/api/:key", middleware.authenticationHandler, routes.get );
+app.put( "/api/:key", middleware.authenticationHandler, routes.put );
+app.del( "/api/:key", middleware.authenticationHandler, routes.del );
 
 // Serve makedrive client-side js files
 app.get( "/js/makedrive.js", function( req, res ) {
@@ -75,9 +77,3 @@ port = env.get( "PORT", 9090 );
 app.listen( port, function() {
   console.log( "MakeDrive server listening ( Probably http://localhost:%d )", port );
 });
-
-// If we're in running in emulated S3 mode, run a mini
-// server for serving up the "s3" published content.
-if (emulateS3) {
-  require( "mox-server" ).runServer( env.get( "MOX_PORT", 12319 ) );
-}
