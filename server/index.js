@@ -10,15 +10,13 @@ var app = express(),
     env = require( "./environment" ),
     Path = require( "path" ),
     distDir = Path.resolve( __dirname, "dist" ),
-    emulateS3 = env.get( "S3_EMULATION" ) || !env.get( "S3_KEY" ),
     webmakerAuth = new WebmakerAuth({
       loginURL: env.get( "LOGIN_SERVER_URL_WITH_AUTH" ),
       secretKey: env.get( "SESSION_SECRET" ),
       forceSSL: env.get( "FORCE_SSL" ),
       domain: env.get( "COOKIE_DOMAIN" )
     }),
-    knoxClient = require( "knox" ).createClient( env.get( "S3" ) ),
-    routes = require( "./routes" )( knoxClient ),
+    routes = require( "./routes" ),
     middleware = require( "./middleware" ),
     messina,
     logger,
@@ -56,12 +54,9 @@ function corsOptions ( req, res ) {
 
 app.get( "/", routes.index );
 
-console.log('middleware', middleware);
-console.log('routes', routes);
-
-app.get( "/api/:key", middleware.authenticationHandler, routes.get );
-app.put( "/api/:key", middleware.authenticationHandler, routes.put );
-app.del( "/api/:key", middleware.authenticationHandler, routes.del );
+app.get( "/api/get/*", middleware.authenticationHandler, routes.get );
+app.put( "/api/put/*", middleware.authenticationHandler, routes.put );
+app.del( "/api/del/*", middleware.authenticationHandler, routes.del );
 
 // Serve makedrive client-side js files
 app.get( "/js/makedrive.js", function( req, res ) {

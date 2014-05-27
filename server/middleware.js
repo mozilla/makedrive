@@ -9,7 +9,7 @@ module.exports = {
     }
 
     // Prefix key with Webmaker User ID
-    req.params.key = id + "/" + req.params.key;
+    req.params.userid = id;
     next();
   },
 
@@ -24,8 +24,8 @@ module.exports = {
     }
 
     var error = {
-      message: JSON.stringify( err ),
-      status: http.STATUS_CODES[ err.status ] ? err.status : 500
+      message: err.message,
+      status: err.status ? err.status : 500
     };
 
     res.status( error.status ).json( error );
