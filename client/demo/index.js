@@ -84,6 +84,44 @@ var f = function () {
     });
 };
 
+var source;
+var servopen = false;
+var servto = false;
+var connectionId;
+var syncButton = $("#Etype1");
+
+var sourceinit = function(){
+  source = new EventSource('/update-stream');
+
+  source.addEventListener('message', function(e) {
+    var data = JSON.parse(e.data);
+
+    // If this is the first message, capture the connectionId
+    connectionId = data.connectionId;
+
+    // Remove this event listener now that we have connectionId
+    source.removeEventListener('message', this);
+
+    source.addEventListener('message', function(e) {
+      console.log(e);
+      $('#event1').append('<ul class = "linksul"><li>' + e.data + '</li>');
+    }, false);
+
+  });
+
+};
+
+//syncButton.click(function(e) {
+//  $.ajax('/syncSuccess', {
+//    type: "GET",
+//    data: {
+//      connectionId: connectionId
+//    }
+//  });
+//});
+
+sourceinit();
+
 fs.mkdir('/data', function (error) {
   if (error) {
     text('#createDir1', 'Error generating /data: ' + error, true);
@@ -105,7 +143,7 @@ fs.mkdir('/data', function (error) {
                 text('#createFile2', 'Error generating /data/proj_1/styles.css: ' + error, true);
               } else {
                 text('#createFile2', 'Created /data/proj_1/styles.css');
-                $.get('http://localhost:9090/api/sync?user=cdot', function (data) {
+                $.get('http://localhost:9090/api/sync/' + connectionId, function (data) {
                   if (!data.syncId) {
                     text('#getSyncId', 'Could not receive sync id from server', true);
                   } else {

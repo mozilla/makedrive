@@ -33,6 +33,7 @@
     "messina": "0.1.2",
     "mime": "^1.2.11",
     "newrelic": "1.4.0",
+    "node-uuid": "^1.4.1",
     "noxmox": "0.2.4",
     "webmaker-auth": "0.0.14"
   },
@@ -42,5 +43,6 @@
     "grunt-contrib-jshint": "0.10.0",
     "grunt-contrib-requirejs": "~0.4.0",
     "grunt-contrib-uglify": "~0.1.2"
-  }
+  },
+  "main": "./server/index.js"
 }

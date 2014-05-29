@@ -4,7 +4,9 @@ if ( process.env.NEW_RELIC_ENABLED ) {
 
 var express = require( "express" ),
     helmet = require( "helmet" ),
-    WebmakerAuth = require( "webmaker-auth" );
+    WebmakerAuth = require( "webmaker-auth" ),
+    EventEmitter = require('events').EventEmitter,
+    uuid = require('node-uuid');
 
 var app = express(),
     env = require( "./environment" ),
@@ -24,6 +26,8 @@ var app = express(),
     Filer = require('filer'),
     rsync = require('./rsync'),
     sourceList,
+    emitter = new EventEmitter(),
+    connectedClients = {},
     syncTable = {},
     options = {
       size: 5,
@@ -85,6 +89,19 @@ function isSyncSession(req) {
   }
 }
 
+// Generates callback functions for emitting messages to clients
+var eventSourceHelper = {
+  sendOutOfDateMsg: function( connectionId, res ){
+    // Send an out of date message to all clients except
+    // the one that just sync'd new changes
+    return function(username, id) {
+      if (connectionId != id) {
+        res.write("data: " + 'You are out of date! Sync from source to update current session.' + '\n\n');
+      }
+    };
+  }
+};
+
 if ( env.get( "ENABLE_GELF_LOGS" ) ) {
   messina = require( "messina" );
   logger = messina( "MakeDrive-" + env.get( "NODE_ENV" ) || "development" );
@@ -117,21 +134,23 @@ function corsOptions ( req, res ) {
 app.get( "/", routes.index );
 app.get( "/p/*", middleware.authenticationHandler, routes.get );
 
-// GET /api/sync?user=abc
-app.get('/api/sync', function (req, res) {
-  if (!req.query.hasOwnProperty('user')) {
+// GET /api/sync/:connectionId
+app.get('/api/sync/:connectionId', function (req, res) {
+  var username = req.session && req.session.user.username;
+
+  if (!username) {
     res.send(400, {
       error: 'No user identified'
     });
-  } else if (syncTable.hasOwnProperty(req.query.user)) {
+  } else if (syncTable.hasOwnProperty(username)) {
     res.send(423, {
       error: 'A sync with this user is already in progress'
     });
   } else {
-    var id = generateSyncId();
+    var id = req.param('connectionId');
     var fs = new Filer.FileSystem({provider: new Filer.FileSystem.providers.Memory()});
     function finish() {
-      syncTable[req.query.user] = {
+      syncTable[username] = {
         syncId: id,
         fs: fs
       };
@@ -184,6 +203,8 @@ app.get('/api/sync/:syncId/checksums', function (req, res) {
 
 // PUT /api/sync/X3D125AD49CS910AW3E2/diffs
 app.put('/api/sync/:syncId/diffs', function (req, res) {
+  var syncId = req.param('syncId');
+
   if (!isSyncSession(req)) {
     res.send(403, 'Sync not initiated');
     return;
@@ -206,7 +227,7 @@ app.put('/api/sync/:syncId/diffs', function (req, res) {
     }
   }
 
-  var fs = getFileSystem(req.param('syncId'));
+  var fs = getFileSystem(syncId);
   if(!fs) {
     res.send(500, 'Expected filesystem for sync session');
     return;
@@ -214,11 +235,12 @@ app.put('/api/sync/:syncId/diffs', function (req, res) {
 
   rsync.patch(fs, req.session.path, diffs, options, function (err, data) {
     if (err) {
-      endSync(req.param('syncId'));
+      endSync(syncId);
       res.send(500, err);
     } else {
-      endSync(req.param('syncId'));
       res.send(200);
+      endSync(syncId);
+      emitter.emit( 'updateToLatestSync', req.session.user.username, syncId );
     }
   });
 });
@@ -231,7 +253,54 @@ app.get( "/js/makedrive.min.js", function( req, res ) {
   res.sendfile( Path.join( distDir, "makedrive.min.js" ) );
 });
 
+app.get( "/healthcheck", routes.healthcheck );
+
+app.get( "/update-stream", function( req, res ) { console.dir(req);
+  var username = req.session.username,
+      connectionId = uuid.v4(),
+      onOutOfDate = eventSourceHelper.sendOutOfDateMsg( connectionId, res );
+
+  // let request last as long as possible
+  req.socket.setTimeout(Infinity);
+
+  // We're assuming one user, but this is where we'd add a new user to
+  // the object that keeps track of them
+  if (!connectedClients[username]) {
+    connectedClients[username] = {};
+  }
+  connectedClients[username][connectionId] = {
+    onOutOfDate: onOutOfDate
+  };
+
+  // Have this client listen for "out of date" messages
+  emitter.on( 'updateToLatestSync', onOutOfDate );
+
+  //send headers for event-stream connection
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive'
+  });
+  res.write('\n');
+
+  var data = {
+    connectionId: connectionId
+  };
+  res.write("data: " + JSON.stringify(data) + "\n\n");
+
+  // Stream has closed
+  req.on("close", function() {
+    delete connectedClients[username][connectionId];
+    emitter.removeListener( 'updateToLatestSync', onOutOfDate );
+  });
+});
+
 port = env.get( "PORT", 9090 );
 app.listen( port, function() {
   console.log( "MakeDrive server listening ( Probably http://localhost:%d )", port );
 });
+
+
+
+
+
