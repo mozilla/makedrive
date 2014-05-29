@@ -93,9 +93,9 @@ var syncButton = $("#Etype1");
 var sourceinit = function(){
   source = new EventSource('/update-stream');
   source.addEventListener('message', function(e) {
-    var data = JSON.parse(e.data);
-
     console.log("data");
+
+    var data = JSON.parse(e.data);
 
     // If this is the first message, capture the connectionId
     connectionId = data.connectionId;
@@ -111,64 +111,38 @@ var sourceinit = function(){
   });
 
   source.addEventListener("open", function(e) {
-    console.log("open already baba");
-  });
+    console.log("opened");
+    $('#clickMe').click(function() {
 
-  source.addEventListener("close", function(e) {
-    console.log("close already baba");
-  });
-
-  source.addEventListener("error", function(e) {
-    console.log("error already baba", e);
-  });
-
-
-};
-
-//syncButton.click(function(e) {
-//  $.ajax('/syncSuccess', {
-//    type: "GET",
-//    data: {
-//      connectionId: connectionId
-//    }
-//  });
-//});
-
-
-$( document ).ready(function() {
-  sourceinit();
-
-  $('#clickMe').click(function() {
-
-    fs.mkdir('/data', function (error) {
-      if (error) {
-        text('#createDir1', 'Error generating /data: ' + error, true);
-      } else {
-        path = '/data';
-        text('#createDir1', 'Created /data');
-        fs.mkdir('/data/proj_1', function (error) {
-          if (error) {
-            text('#createDir2', 'Error generating /data/proj_1: ' + error, true);
-          } else {
-            text('#createDir2', 'Created /data/proj_1');
-            fs.writeFile('/data/proj_1/index.html', 'Hello World', function (error) {
-              if (error) {
-                text('#createFile1', 'Error generating /data/proj_1/index.html: ' + error, true);
-              } else {
-                text('#createFile1', 'Created /data/proj_1/index.html');
-                fs.writeFile('/data/proj_1/styles.css', 'Hello World', function (error) {
-                  if (error) {
-                    text('#createFile2', 'Error generating /data/proj_1/styles.css: ' + error, true);
-                  } else {
-                    text('#createFile2', 'Created /data/proj_1/styles.css');
-                    $.get('http://localhost:9090/api/sync/' + connectionId, function (data) {
-                      if (!data.syncId) {
-                        text('#getSyncId', 'Could not receive sync id from server', true);
-                      } else {
-                        text('#getSyncId', 'Retrieved sync id');
-                        syncID = data.syncId;
-                      }
-                    })
+      fs.mkdir('/data', function (error) {
+        if (error) {
+          text('#createDir1', 'Error generating /data: ' + error, true);
+        } else {
+          path = '/data';
+          text('#createDir1', 'Created /data');
+          fs.mkdir('/data/proj_1', function (error) {
+            if (error) {
+              text('#createDir2', 'Error generating /data/proj_1: ' + error, true);
+            } else {
+              text('#createDir2', 'Created /data/proj_1');
+              fs.writeFile('/data/proj_1/index.html', 'Hello World', function (error) {
+                if (error) {
+                  text('#createFile1', 'Error generating /data/proj_1/index.html: ' + error, true);
+                } else {
+                  text('#createFile1', 'Created /data/proj_1/index.html');
+                  fs.writeFile('/data/proj_1/styles.css', 'Hello World', function (error) {
+                    if (error) {
+                      text('#createFile2', 'Error generating /data/proj_1/styles.css: ' + error, true);
+                    } else {
+                      text('#createFile2', 'Created /data/proj_1/styles.css');
+                      $.get('http://localhost:9090/api/sync/' + connectionId, function (data) {
+                        if (!data.syncId) {
+                          text('#getSyncId', 'Could not receive sync id from server', true);
+                        } else {
+                          text('#getSyncId', 'Retrieved sync id');
+                          syncID = data.syncId;
+                        }
+                      })
                       .done(function () {
                         rsync.sourceList(fs, path, {
                           recursive: true,
@@ -206,14 +180,19 @@ $( document ).ready(function() {
                           }
                         });
                       });
-                  }
-                });
-              }
-            });
-          }
-        });
-      }
-    });
+                    }
+                  });
+                }
+              });
+            }
+          });
+        }
+      });
 
+    });
   });
+};
+
+$( document ).ready(function() {
+  sourceinit();
 });

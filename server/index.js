@@ -96,7 +96,6 @@ var eventSourceHelper = {
     // Send an out of date message to all clients except
     // the one that just sync'd new changes
     return function(username, id) {
-      console.log("here in sendOutOfDateMsg")
       console.log(connectionId, id);
       if (connectionId != id) {
         res.write("data: " + 'You are out of date! Sync from source to update current session.' + '\n\n');
@@ -262,7 +261,7 @@ app.get( "/js/makedrive.min.js", function( req, res ) {
 app.get( "/healthcheck", routes.healthcheck );
 
 app.get( "/update-stream", function( req, res ) {
-  console.log("264")
+  console.log("in update-stream")
   var username = req.session.username,
       connectionId = uuid.v4(),
       onOutOfDate = eventSourceHelper.sendOutOfDateMsg( connectionId, res );
@@ -275,9 +274,7 @@ app.get( "/update-stream", function( req, res ) {
   if (!connectedClients[username]) {
     connectedClients[username] = {};
   }
-  connectedClients[username][connectionId] = {
-    onOutOfDate: onOutOfDate
-  };
+  connectedClients[username][connectionId] = {};
 
   // Have this client listen for "out of date" messages
   emitter.on( 'updateToLatestSync', onOutOfDate );
@@ -293,12 +290,11 @@ app.get( "/update-stream", function( req, res ) {
   var data = {
     connectionId: connectionId
   };
-  console.log("line number: 295", data);
-  console.log("295")
+  console.log("data is: ", data);
   res.write("data: " + JSON.stringify(data) + "\n\n");
-console.log("297")
+
   // Stream has closed
-  req.on("close", function() {
+  req.on("close", function() { console.log("connection closed");
     delete connectedClients[username][connectionId];
     emitter.removeListener( 'updateToLatestSync', onOutOfDate );
   });
