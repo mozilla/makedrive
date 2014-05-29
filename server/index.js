@@ -7,7 +7,8 @@ var express = require( "express" ),
     WebmakerAuth = require( "webmaker-auth" ),
     EventEmitter = require('events').EventEmitter,
     uuid = require('node-uuid');
-
+    var S3Provider = require("filer-s3");
+    var FSProvider = require("filer-fs");
 var app = express(),
     env = require( "./environment" ),
     Path = require( "path" ),
@@ -95,6 +96,8 @@ var eventSourceHelper = {
     // Send an out of date message to all clients except
     // the one that just sync'd new changes
     return function(username, id) {
+      console.log("here in sendOutOfDateMsg")
+      console.log(connectionId, id);
       if (connectionId != id) {
         res.write("data: " + 'You are out of date! Sync from source to update current session.' + '\n\n');
       }
@@ -133,6 +136,7 @@ function corsOptions ( req, res ) {
 
 app.get( "/", routes.index );
 app.get( "/p/*", middleware.authenticationHandler, routes.get );
+app.get( "/gone", middleware.authenticationHandler, routes.clear );
 
 // GET /api/sync/:connectionId
 app.get('/api/sync/:connectionId', function (req, res) {
@@ -148,7 +152,7 @@ app.get('/api/sync/:connectionId', function (req, res) {
     });
   } else {
     var id = req.param('connectionId');
-    var fs = new Filer.FileSystem({provider: new Filer.FileSystem.providers.Memory()});
+    var fs = new Filer.FileSystem( { provider: new FSProvider( { keyPrefix: "dave" } ) } );
     function finish() {
       syncTable[username] = {
         syncId: id,
@@ -203,8 +207,9 @@ app.get('/api/sync/:syncId/checksums', function (req, res) {
 
 // PUT /api/sync/X3D125AD49CS910AW3E2/diffs
 app.put('/api/sync/:syncId/diffs', function (req, res) {
+  console.log(req.params)
   var syncId = req.param('syncId');
-
+console.log(syncId)
   if (!isSyncSession(req)) {
     res.send(403, 'Sync not initiated');
     return;
@@ -238,6 +243,7 @@ app.put('/api/sync/:syncId/diffs', function (req, res) {
       endSync(syncId);
       res.send(500, err);
     } else {
+      console.log("aadkaskdksdksakd")
       res.send(200);
       endSync(syncId);
       emitter.emit( 'updateToLatestSync', req.session.user.username, syncId );
@@ -255,7 +261,8 @@ app.get( "/js/makedrive.min.js", function( req, res ) {
 
 app.get( "/healthcheck", routes.healthcheck );
 
-app.get( "/update-stream", function( req, res ) { console.dir(req);
+app.get( "/update-stream", function( req, res ) {
+  console.log("264")
   var username = req.session.username,
       connectionId = uuid.v4(),
       onOutOfDate = eventSourceHelper.sendOutOfDateMsg( connectionId, res );
@@ -286,8 +293,10 @@ app.get( "/update-stream", function( req, res ) { console.dir(req);
   var data = {
     connectionId: connectionId
   };
+  console.log("line number: 295", data);
+  console.log("295")
   res.write("data: " + JSON.stringify(data) + "\n\n");
-
+console.log("297")
   // Stream has closed
   req.on("close", function() {
     delete connectedClients[username][connectionId];

@@ -25,7 +25,7 @@ function text(id, text, error) {
 }
 
 var f = function () {
-  $.get(api + syncID + '/checksums', function (data) {
+  $.get(api + connectionId + '/checksums', function (data) {
     if (data) {
       text('#checksumsGet', 'Received checksums from server');
     } else {
@@ -92,9 +92,10 @@ var syncButton = $("#Etype1");
 
 var sourceinit = function(){
   source = new EventSource('/update-stream');
-
   source.addEventListener('message', function(e) {
     var data = JSON.parse(e.data);
+
+    console.log("data");
 
     // If this is the first message, capture the connectionId
     connectionId = data.connectionId;
@@ -104,10 +105,23 @@ var sourceinit = function(){
 
     source.addEventListener('message', function(e) {
       console.log(e);
-      $('#event1').append('<ul class = "linksul"><li>' + e.data + '</li>');
+      $('#linksul').append('<li>' + e.data + '</li>');
     }, false);
 
   });
+
+  source.addEventListener("open", function(e) {
+    console.log("open already baba");
+  });
+
+  source.addEventListener("close", function(e) {
+    console.log("close already baba");
+  });
+
+  source.addEventListener("error", function(e) {
+    console.log("error already baba", e);
+  });
+
 
 };
 
@@ -120,79 +134,86 @@ var sourceinit = function(){
 //  });
 //});
 
-sourceinit();
 
-fs.mkdir('/data', function (error) {
-  if (error) {
-    text('#createDir1', 'Error generating /data: ' + error, true);
-  } else {
-    path = '/data';
-    text('#createDir1', 'Created /data');
-    fs.mkdir('/data/proj_1', function (error) {
+$( document ).ready(function() {
+  sourceinit();
+
+  $('#clickMe').click(function() {
+
+    fs.mkdir('/data', function (error) {
       if (error) {
-        text('#createDir2', 'Error generating /data/proj_1: ' + error, true);
+        text('#createDir1', 'Error generating /data: ' + error, true);
       } else {
-        text('#createDir2', 'Created /data/proj_1');
-        fs.writeFile('/data/proj_1/index.html', 'Hello World', function (error) {
+        path = '/data';
+        text('#createDir1', 'Created /data');
+        fs.mkdir('/data/proj_1', function (error) {
           if (error) {
-            text('#createFile1', 'Error generating /data/proj_1/index.html: ' + error, true);
+            text('#createDir2', 'Error generating /data/proj_1: ' + error, true);
           } else {
-            text('#createFile1', 'Created /data/proj_1/index.html');
-            fs.writeFile('/data/proj_1/styles.css', 'Hello World', function (error) {
+            text('#createDir2', 'Created /data/proj_1');
+            fs.writeFile('/data/proj_1/index.html', 'Hello World', function (error) {
               if (error) {
-                text('#createFile2', 'Error generating /data/proj_1/styles.css: ' + error, true);
+                text('#createFile1', 'Error generating /data/proj_1/index.html: ' + error, true);
               } else {
-                text('#createFile2', 'Created /data/proj_1/styles.css');
-                $.get('http://localhost:9090/api/sync/' + connectionId, function (data) {
-                  if (!data.syncId) {
-                    text('#getSyncId', 'Could not receive sync id from server', true);
+                text('#createFile1', 'Created /data/proj_1/index.html');
+                fs.writeFile('/data/proj_1/styles.css', 'Hello World', function (error) {
+                  if (error) {
+                    text('#createFile2', 'Error generating /data/proj_1/styles.css: ' + error, true);
                   } else {
-                    text('#getSyncId', 'Retrieved sync id');
-                    syncID = data.syncId;
-                  }
-                })
-                  .done(function () {
-                    rsync.sourceList(fs, path, {
-                      recursive: true,
-                      size: 5
-                    }, function (error, results) {
-                      if (error) {
-                        text('#sourceList', 'Error getting source list: ' + error, true);
+                    text('#createFile2', 'Created /data/proj_1/styles.css');
+                    $.get('http://localhost:9090/api/sync/' + connectionId, function (data) {
+                      if (!data.syncId) {
+                        text('#getSyncId', 'Could not receive sync id from server', true);
                       } else {
-                        text('#sourceList', 'Generated source list');
-                        $.ajax({
-                          type: 'POST',
-                          data: JSON.stringify({
-                            path: path,
-                            srcList: results
-                          }),
-                          contentType: 'application/json',
-                          url: api + syncID + '/sources',
-                          statusCode: {
-                            200: function (response) {},
-                            201: function (response) {},
-                            401: function (response) {},
-                            404: function (response) {}
-                          },
-                          success: function (data) {
-                            if (data) {
-                              text('#sourceListPost', 'Posted source list to server');
-                            } else {
-                              text('#sourceListPost', 'Posting source list to server failed', true);
-                            }
-                          },
-                          error: function (e) {
-                            console.log("Error " + e.messages);
-                          }
-                        }).done(f);
+                        text('#getSyncId', 'Retrieved sync id');
+                        syncID = data.syncId;
                       }
-                    });
-                  });
+                    })
+                      .done(function () {
+                        rsync.sourceList(fs, path, {
+                          recursive: true,
+                          size: 5
+                        }, function (error, results) {
+                          if (error) {
+                            text('#sourceList', 'Error getting source list: ' + error, true);
+                          } else {
+                            text('#sourceList', 'Generated source list');
+                            $.ajax({
+                              type: 'POST',
+                              data: JSON.stringify({
+                                path: path,
+                                srcList: results
+                              }),
+                              contentType: 'application/json',
+                              url: api + connectionId + '/sources',
+                              statusCode: {
+                                200: function (response) {},
+                                201: function (response) {},
+                                401: function (response) {},
+                                404: function (response) {}
+                              },
+                              success: function (data) {
+                                if (data) {
+                                  text('#sourceListPost', 'Posted source list to server');
+                                } else {
+                                  text('#sourceListPost', 'Posting source list to server failed', true);
+                                }
+                              },
+                              error: function (e) {
+                                console.log("Error " + e.messages);
+                              }
+                            }).done(f);
+                          }
+                        });
+                      });
+                  }
+                });
               }
             });
           }
         });
       }
     });
-  }
+
+  });
 });

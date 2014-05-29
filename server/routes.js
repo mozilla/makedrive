@@ -24,7 +24,7 @@ module.exports = {
     var path = req.params[0];
     var info = getFileInfo(path);
 
-    var fs = new Filer.FileSystem({provider: new S3Provider({keyPrefix: user.username, name: user.username, bucket: "<bucket>", key: "<key>", secret: "<secret>"})});
+    var fs = new Filer.FileSystem({provider: new S3Provider({keyPrefix: user.username, name: user.username, bucket: "<name>", key: "<key>", secret: "<secret>"})});
     fs.readFile("/" + path, info.encoding, function(err, data) {
       if(err) {
         if(err.code === "ENOENT") {
@@ -44,6 +44,16 @@ module.exports = {
       http: "okay",
       version: version
     });
-  }
+  },
+  clear: function(req, res) {
+    var user = req.session.user;
+    var fs = new Filer.FileSystem({flags: "FORMAT", provider: new S3Provider({keyPrefix: "dave", name: "dave", bucket: "<name>", key: "<key>", secret: "<secret>"})}, function(err){
+      if(err) {
+        res.send(500, {error: e});
+        return;
+      }
+      res.send(200);
 
+    });
+  },
 };
