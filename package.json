@@ -21,7 +21,11 @@
     "url": "https://github.com/mozilla/makedrive/issues"
   },
   "dependencies": {
+    "async": "^0.9.0",
+    "crypto-js": "^3.1.2-3",
+    "cryptojs": "^2.5.3",
     "express": "3.4.5",
+    "filer": "0.0.9",
     "habitat": "1.1.0",
     "helmet": "0.2.0",
     "knox": "0.8.9",

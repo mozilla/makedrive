@@ -15,10 +15,6 @@ module.exports = function( knoxClient ) {
 
   return {
 
-    index: function( req, res ) {
-      res.send( "MakeDrive: https://wiki.mozilla.org/Webmaker/MakeDrive" );
-    },
-
     get: function( req, res ) {
       // TODO: figure out proper errors to bubble up, see:
       // http://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html
