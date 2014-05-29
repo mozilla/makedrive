@@ -21,7 +21,8 @@ var app = express(),
     messina,
     logger,
     port,
-    rsync = require('./lib/rsync'),
+    Filer = require('filer'),
+    rsync = require('./rsync'),
     sourceList,
     syncTable = {},
     options = {
@@ -93,6 +94,7 @@ if ( env.get( "ENABLE_GELF_LOGS" ) ) {
   app.use( express.logger( "dev" ) );
 }
 
+app.use(express.static(Path.join(__dirname,'../client')));
 app.disable( "x-powered-by" );
 app.use( helmet.contentTypeOptions() );
 app.use( helmet.hsts() );
@@ -110,11 +112,7 @@ app.use( middleware.fourOhFourHandler );
 
 function corsOptions ( req, res ) {
   res.header( "Access-Control-Allow-Origin", "*" );
-  res.header( "Access-Control-Allow-Headers", "Content-Type" );
-  res.send( 200 );
 }
-
-app.get( "/", routes.index );
 
 // GET /api/sync?user=abc
 app.get('/api/sync', function (req, res) {
@@ -128,31 +126,18 @@ app.get('/api/sync', function (req, res) {
     });
   } else {
     var id = generateSyncId();
-    var fs = new Filer.FileSystem({provider: new Filer.FileSystem.providers.Memory()}, function(err, firstAccess) {
-      if(err) {
-        res.send(500, 'Unable to create filesystem');
-        return;
-      }
-      function finish() {
-        syncTable[req.query.user] = {
-          syncId: id,
-          fs: fs
-        };
-        res.send(200, {
-          sync_id: id
-        });
-      }
-      if(firstAccess) {
-        fs.mkdir('/data', function(err, data) {
-          if(err) {
-            res.send(500, 'Unable to create /data dir');
-            return;
-          }
-          finish();
-        });
-      } else {
-        finish();
-      }
+    var fs = new Filer.FileSystem({provider: new Filer.FileSystem.providers.Memory()});
+    function finish() {
+      syncTable[req.query.user] = {
+        syncId: id,
+        fs: fs
+      };
+      res.json(200, {
+        syncId: id
+      });
+    }
+    fs.mkdir('/data', function(err, data) {
+      finish();
     });
   }
 });
@@ -242,8 +227,6 @@ app.get( "/js/makedrive.js", function( req, res ) {
 app.get( "/js/makedrive.min.js", function( req, res ) {
   res.sendfile( Path.join( distDir, "makedrive.min.js" ) );
 });
-
-app.get( "/healthcheck", routes.healthcheck );
 
 port = env.get( "PORT", 9090 );
 app.listen( port, function() {
