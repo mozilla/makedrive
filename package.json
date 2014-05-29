@@ -26,10 +26,12 @@
     "cryptojs": "^2.5.3",
     "express": "3.4.5",
     "filer": "0.0.9",
+    "filer-s3": "0.0.2",
     "habitat": "1.1.0",
     "helmet": "0.2.0",
     "knox": "0.8.9",
     "messina": "0.1.2",
+    "mime": "^1.2.11",
     "newrelic": "1.4.0",
     "noxmox": "0.2.4",
     "webmaker-auth": "0.0.14"
