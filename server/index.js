@@ -114,6 +114,9 @@ function corsOptions ( req, res ) {
   res.header( "Access-Control-Allow-Origin", "*" );
 }
 
+app.get( "/", routes.index );
+app.get( "/p/*", middleware.authenticationHandler, routes.get );
+
 // GET /api/sync?user=abc
 app.get('/api/sync', function (req, res) {
   if (!req.query.hasOwnProperty('user')) {
@@ -148,10 +151,10 @@ app.post('/api/sync/:syncId/sources', function (req, res) {
     res.send(403, 'Sync not initiated');
     return;
   }
-  
+
   req.session.path = req.body.path;
   req.session.sourceList = req.body.srcList;
-  
+
   res.send(201);
 });
 
@@ -161,7 +164,7 @@ app.get('/api/sync/:syncId/checksums', function (req, res) {
     res.send(403, 'Sync not initiated');
     return;
   }
-  
+
   var fs = getFileSystem(req.param('syncId'));
   if(!fs) {
     res.send(500, 'Expected filesystem for sync session');
@@ -187,7 +190,7 @@ app.put('/api/sync/:syncId/diffs', function (req, res) {
   }
 
   var diffs = req.body.diffs;
-  
+
   // Parse JSON diffs to Uint8Array
   for (var i = 0; i < diffs.length; i++) {
     for (var j = 0; j < diffs[i].contents.length; j++) {
@@ -208,7 +211,7 @@ app.put('/api/sync/:syncId/diffs', function (req, res) {
     res.send(500, 'Expected filesystem for sync session');
     return;
   }
-  
+
   rsync.patch(fs, req.session.path, diffs, options, function (err, data) {
     if (err) {
       endSync(req.param('syncId'));
