@@ -182,7 +182,7 @@ function checksum (path, options, callback) {
   this.readFile(path, function (err, data) {
     if (!err) {
       // cache file
-      cache[path] = data;  
+      cache[path] = data;
     }
     else if (err && err.code === 'ENOENT') {
       cache[path] = [];
@@ -239,7 +239,7 @@ rsync.sourceList = function getSrcList(srcFs, path, options, callback) {
               return;
             }
 
-            var entry = { 
+            var entry = {
               path: Path.basename(name),
               modified: stats.mtime,
               size: stats.size,
@@ -256,12 +256,12 @@ rsync.sourceList = function getSrcList(srcFs, path, options, callback) {
                 callback();
               });
             } else if(stats.isFile() || !options.links) {
-              result.push(entry);                
+              result.push(entry);
               callback();
             } else if (entry.type === 'SYMLINK'){
-              result.push(entry);                
+              result.push(entry);
               callback();
-            }              
+            }
           });
         }
 
@@ -271,7 +271,7 @@ rsync.sourceList = function getSrcList(srcFs, path, options, callback) {
       });
     }
     else {
-      var entry = { 
+      var entry = {
         path: Path.basename(path),
         size: stats.size,
         type: stats.type,
@@ -313,11 +313,11 @@ rsync.checksums = function(fs, destPath, srcList, options, callback) {
                 }
                 item.checksum = checksums;
                 item.modified = entry.modified;
-                result.push(item); 
-                callback();               
+                result.push(item);
+                callback();
               });
             }
-          }); 
+          });
         }
         else {
           checksum.call(fs, Path.join(destPath, entry.path), options, function(err, checksums) {
@@ -327,8 +327,8 @@ rsync.checksums = function(fs, destPath, srcList, options, callback) {
             }
             item.checksum = checksums;
             item.modified = entry.modified;
-            result.push(item); 
-            callback();               
+            result.push(item);
+            callback();
           });
         }
       }
@@ -349,7 +349,7 @@ rsync.checksums = function(fs, destPath, srcList, options, callback) {
           result.push(item);
           callback();
         }
-      }           
+      }
     }
     async.each(srcList, getDirChecksums, function(error) {
       if(error) {
@@ -379,7 +379,7 @@ rsync.diff = function(fs, path, checksums, options, callback) {
     if(stat.isDirectory()) {
       async.each(checksums, getDiff, function(err) {
         callback(err, diffs);
-      }); 
+      });
     }
     else if (stat.isFile() || !options.links) {
       fs.readFile(path, function (err, data) {
@@ -469,7 +469,7 @@ rsync.diff = function(fs, path, checksums, options, callback) {
 */
 rsync.patch = function(fs, path, diff, options, callback) {
   configure.call(options);
-  function syncEach(entry, callback) { 
+  function syncEach(entry, callback) {
 
     //get slice of raw file from block's index
     function rawslice(index) {
@@ -477,7 +477,7 @@ rsync.patch = function(fs, path, diff, options, callback) {
       var end = start + options.size > raw.length ? raw.length : start + options.size;
       return raw.subarray(start, end);
     }
-    
+
     if(entry.hasOwnProperty('contents')) {
       rsync.patch(fs, Path.join(path, entry.path), entry.contents, options, function(err) {
         if(err) {
@@ -488,13 +488,13 @@ rsync.patch = function(fs, path, diff, options, callback) {
       });
     } else if (entry.hasOwnProperty('link')) {
       var syncPath = Path.join(path,entry.path);
-      fs.symlink(entry.link, syncPath, function(err){ 
+      fs.symlink(entry.link, syncPath, function(err){
         if(err) {
           callback(err);
           return;
         }
         return callback();
-      }); 
+      });
     } else {
       var raw = cache[Path.join(path,entry.path)];
       var i = 0;
@@ -540,7 +540,7 @@ rsync.patch = function(fs, path, diff, options, callback) {
   fs.mkdir(path, function(err){
     if(err && err.code != "EEXIST"){
       callback(err);
-      return;   
+      return;
     }
     async.each(diff, syncEach, function(err) {
       callback(err);
