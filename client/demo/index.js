@@ -93,25 +93,29 @@ var syncButton = $("#Etype1");
 var sourceinit = function(){
   source = new EventSource('/update-stream');
   source.addEventListener('message', function(e) {
-    console.log("data");
+  var data;
 
-    var data = JSON.parse(e.data);
+    // Adding this into try-catch because it may throw an error when we send e.data as a string.
+    try {
+      data = JSON.parse(e.data);
+      // If this is the first message, capture the connectionId
+      connectionId = data.connectionId;
+    } catch (e) {
+      data = e.data;
+    }
 
-    // If this is the first message, capture the connectionId
-    connectionId = data.connectionId;
+
 
     // Remove this event listener now that we have connectionId
     source.removeEventListener('message', this);
 
     source.addEventListener('message', function(e) {
-      console.log(e);
       $('#linksul').append('<li>' + e.data + '</li>');
     }, false);
 
   });
 
   source.addEventListener("open", function(e) {
-    console.log("opened");
     $('#clickMe').click(function() {
 
       fs.mkdir('/data', function (error) {

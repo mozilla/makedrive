@@ -96,7 +96,6 @@ var eventSourceHelper = {
     // Send an out of date message to all clients except
     // the one that just sync'd new changes
     return function(username, id) {
-      console.log(connectionId, id);
       if (connectionId != id) {
         res.write("data: " + 'You are out of date! Sync from source to update current session.' + '\n\n');
       }
@@ -118,7 +117,7 @@ app.disable( "x-powered-by" );
 app.use( helmet.contentTypeOptions() );
 app.use( helmet.hsts() );
 app.enable( "trust proxy" );
-app.use( express.compress() );
+// app.use( express.compress() ); this is giving us trouble with SSE the whole time! TODO: Figure out why and do we need this?
 app.use( express.json() );
 app.use( express.urlencoded() );
 app.use( webmakerAuth.cookieParser() );
@@ -206,9 +205,7 @@ app.get('/api/sync/:syncId/checksums', function (req, res) {
 
 // PUT /api/sync/X3D125AD49CS910AW3E2/diffs
 app.put('/api/sync/:syncId/diffs', function (req, res) {
-  console.log(req.params)
   var syncId = req.param('syncId');
-console.log(syncId)
   if (!isSyncSession(req)) {
     res.send(403, 'Sync not initiated');
     return;
@@ -242,7 +239,6 @@ console.log(syncId)
       endSync(syncId);
       res.send(500, err);
     } else {
-      console.log("aadkaskdksdksakd")
       res.send(200);
       endSync(syncId);
       emitter.emit( 'updateToLatestSync', req.session.user.username, syncId );
@@ -261,7 +257,6 @@ app.get( "/js/makedrive.min.js", function( req, res ) {
 app.get( "/healthcheck", routes.healthcheck );
 
 app.get( "/update-stream", function( req, res ) {
-  console.log("in update-stream")
   var username = req.session.username,
       connectionId = uuid.v4(),
       onOutOfDate = eventSourceHelper.sendOutOfDateMsg( connectionId, res );
@@ -290,11 +285,10 @@ app.get( "/update-stream", function( req, res ) {
   var data = {
     connectionId: connectionId
   };
-  console.log("data is: ", data);
   res.write("data: " + JSON.stringify(data) + "\n\n");
 
   // Stream has closed
-  req.on("close", function() { console.log("connection closed");
+  req.on("close", function() {
     delete connectedClients[username][connectionId];
     emitter.removeListener( 'updateToLatestSync', onOutOfDate );
   });
