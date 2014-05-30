@@ -117,7 +117,7 @@ app.disable( "x-powered-by" );
 app.use( helmet.contentTypeOptions() );
 app.use( helmet.hsts() );
 app.enable( "trust proxy" );
-// app.use( express.compress() ); this is giving us trouble with SSE the whole time! TODO: Figure out why and do we need this?
+app.use( express.compress() );
 app.use( express.json() );
 app.use( express.urlencoded() );
 app.use( webmakerAuth.cookieParser() );
@@ -277,6 +277,7 @@ app.get( "/update-stream", function( req, res ) {
   //send headers for event-stream connection
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
+    'Content-Encoding': 'zlib',
     'Cache-Control': 'no-cache',
     'Connection': 'keep-alive'
   });
@@ -298,8 +299,3 @@ port = env.get( "PORT", 9090 );
 app.listen( port, function() {
   console.log( "MakeDrive server listening ( Probably http://localhost:%d )", port );
 });
-
-
-
-
-
