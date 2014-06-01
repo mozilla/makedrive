@@ -1,0 +1,28 @@
+body {
+  background-color: black;
+}
+
+#editor {
+  position: absolute;
+  top: 20;
+  left: 20;
+  height: 500px;
+  font-size: 15pt;
+  width: 100%;
+  padding-right: 50px;
+}
+
+#editor, #fileTree {
+  float: left;
+  position: relative;
+  width: 45%;
+}
+
+.resize {
+  width: 79%;
+}
+
+body {
+  background: #e3eaee;
+  color: #555;
+}
