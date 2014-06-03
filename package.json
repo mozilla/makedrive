@@ -5,7 +5,7 @@
   "scripts": {
     "postinstall": "bower install",
     "start": "node ./server/index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "mocha --reporter spec ./tests/"
   },
   "repository": {
     "type": "git",
@@ -40,8 +40,11 @@
     "webmaker-auth": "0.0.14"
   },
   "devDependencies": {
+    "chai": "^1.9.1",
     "grunt": "~0.4.1",
-    "grunt-contrib-jshint": "0.10.0"
+    "grunt-contrib-jshint": "0.10.0",
+    "mocha": "*",
+    "supertest": "0.13.x"
   },
   "main": "./server/index.js"
 }

@@ -62,3 +62,5 @@ port = env.get( "PORT", 9090 );
 app.listen( port, function() {
   console.log( "MakeDrive server listening ( Probably http://localhost:%d )", port );
 });
+
+module.exports = app;
