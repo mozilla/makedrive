@@ -9,6 +9,7 @@ module.exports = {
       status: err.status ? err.status : 500
     };
 
+    throw("Error on " + req.path + ": " + err.message);
     res.status( error.status ).json( error );
   },
   fourOhFourHandler: function( req, res, next ) {

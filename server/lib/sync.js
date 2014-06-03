@@ -74,43 +74,42 @@ function Sync( username, onOutOfDate ) {
     connectedClients[username] = {};
   }
   connectedClients[username][id] = {
-    onOutOfDate: onOutOfDate
+    onOutOfDate: onOutOfDate,
+    sync: this
   };
   emitter.addListener( "updateToLatestSync", onOutOfDate );
 
-  this.state = this.CONNECTED;
+  this.state = Sync.CONNECTED;
 }
 
 // Plug into this user's server-side filesystem,
 // formally starting the sync process
 Sync.prototype.start = function( callback ) {
   var that = this;
+
   var fs = that.fs = filesystem.create({
     keyPrefix: that.username
   });
 
-  syncTable[ username ] = {
-    syncId: that.syncId
-  };
-
   // TODO: Decide what our root path will be (currently /projects)
   fs.mkdir("/projects", function( err ) {
-    if ( err ) {
+    if ( err && err.code !== 'EEXIST' ) {
       return callback( "Error creating the user's root directory: " + err );
     }
 
     syncTable[ that.username ] = {
-      syncId: that.id
+      syncId: that.syncId
     };
 
     that.state = Sync.STARTED;
-    callback( null, that.id );
+    callback( null, that.syncId );
   });
 };
 
 Sync.prototype.end = function() {
   this.state = Sync.ENDED;
   delete syncTable[ this.username ];
+  emitter.emit( "updateToLatestSync", this.syncId, this.syncId );
 };
 
 Sync.prototype.generateChecksums = function( callback ) {
@@ -183,15 +182,38 @@ Sync.prototype.patch = function( diffs, callback ) {
     that.state = Sync.DIFFS;
 
     callback();
-    emitter.emit( "updateToLatestSync", that.syncId, req.param("syncId") );
   });
 };
 
-Sync.prototype.onClose = function() {
-  emitter.removeListener( "updateToLatestSync", connectedClients[ this.username ][ this.syncId ].onOutOfDate );
-  delete connectedClients[ this.username ][ this.syncId ];
+Sync.prototype.onClose = function( ) {
+  var sync = this;
+  return function() {
+    emitter.removeListener( "updateToLatestSync", connectedClients[ sync.username ][ sync.syncId ].onOutOfDate );
+    delete connectedClients[ sync.username ][ sync.syncId ];
+  }
 };
 
+Sync.prototype.setPath = function( path ){
+  // TODO: Add path validation logic
+  // If invalid, throw("Invalid path");
+  this.path = path;
+
+  // Do we have all the data we need?
+  if ( this.srcList ) {
+    this.state = Sync.FILE_IDENTIFICATION;
+  }
+};
+
+Sync.prototype.setSrcList = function( srcList ){
+  // TODO: Add srcList validation logic
+  // If invalid, throw("Invalid srcList");
+  this.srcList = srcList;
+
+  // Do we have all the data we need?
+  if ( this.path ) {
+    this.state = Sync.FILE_IDENTIFICATION;
+  }
+};
 /**
  * Public static methods
  */
@@ -204,38 +226,25 @@ Sync.connections = {
     return id in connectedClients[ username ];
   }
 };
-Sync.create = function( username, id ){
+Sync.create = function( username, onOutOfDate ){
   if ( syncTable[ username ] ) {
     throw( "Error! " + username + " already has a sync in progress!" );
   }
 
-  return new Sync( username, id );
-};
-Sync.setPath = function( path ){
-  // TODO: Add path validation logic
-  // If invalid, throw("Invalid path");
-  this.path = path;
-
-  // Do we have all the data we need?
-  if ( this.srcList ) {
-    this.state = Sync.FILE_IDENTIFICATION;
-  }
-};
-Sync.setSrcList = function( srcList ){
-  // TODO: Add srcList validation logic
-  // If invalid, throw("Invalid srcList");
-  this.srcList = srcList;
-
-  // Do we have all the data we need?
-  if ( this.path ) {
-    this.state = Sync.FILE_IDENTIFICATION;
-  }
+  return new Sync( username, onOutOfDate );
 };
 Sync.kill = function( username ) {
   if ( username in syncTable ) {
     delete syncTable[ username ];
   }
 };
+Sync.retrieve = function( username, syncId ) {
+  if ( !connectedClients[ username ] || !connectedClients[ username ][ syncId ] ) {
+    return null;
+  }
+
+  return connectedClients[ username ][ syncId ].sync;
+}
 
 /**
  * Exports

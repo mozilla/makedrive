@@ -17,7 +17,7 @@ module.exports = {
       options[ defaultOption ] = options[ defaultOption ] || defaults[ defaultOption ];
     });
 
-    return new Filer.Filesystem({
+    return new Filer.FileSystem({
       provider: new Provider( options )
     });
   }

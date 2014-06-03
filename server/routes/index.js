@@ -1,7 +1,9 @@
 // Expose internals
 var middleware = require( './middleware' ),
     routes = require( './routes' ),
-    Sync = require( '../lib/sync');
+    Sync = require( '../lib/sync'),
+    util = require( '../lib/util' ),
+    formidable = require('formidable');
 
 // TODO: Factor route groupings into their own files,
 //       build a system to require them here
@@ -48,7 +50,7 @@ console.log('here')
     res.write("data: " + JSON.stringify(data) + "\n\n");
 
     // When the socket closes, remove the client from the datastore
-    req.on("close", sync.onClose);
+    req.on("close", sync.onClose());
   });
 
   /**
@@ -65,7 +67,7 @@ console.log('here')
    */
   app.get('/api/sync/:connectionId', middleware.authenticationHandler, function (req, res) {
     var username = req.params.username,
-        sync = req.session.sync;
+        sync = Sync.retrieve( username, req.param( 'connectionId' ) );
 
     if ( Sync.active.checkUser( username ) ) {
       return res.json(423, {
@@ -94,8 +96,9 @@ console.log('here')
    *
    * :syncId - the `syncId` for this user
    */
-  app.post('/api/sync/:syncId/sources', middleware.authenticationHandler, middleware.validateSync( Sync.CONNECTED ), function (req, res) {
-    var sync = req.session.sync;
+  app.post('/api/sync/:syncId/sources', middleware.authenticationHandler, middleware.validateSync( Sync.STARTED ), function (req, res) {
+    var username = req.params.username,
+        sync = req.params.sync;
 
     if (!req.body) {
       return res.json(400, { message: "No data received! Path and srcList are required!" });
@@ -111,12 +114,9 @@ console.log('here')
       return res.json(400, { message: "srcList is required!" });
     }
 
-    try {
-      sync.setPath( path );
-      sync.setSrcList( srcList );
-    } catch( e ) {
-      return res.json(415, { message: e });
-    }
+    sync.setPath( path );
+    sync.setSrcList( srcList );
+
 
     res.json( 201 );
   });
@@ -129,7 +129,7 @@ console.log('here')
    *           client
    */
   app.get('/api/sync/:syncId/checksums', middleware.authenticationHandler, middleware.validateSync( Sync.FILE_IDENTIFICATION ), function (req, res) {
-    var sync = req.session.sync;
+    var sync = req.params.sync;
 
     sync.generateChecksums(function( err, checksums ) {
       if ( err ) {
@@ -150,25 +150,54 @@ console.log('here')
    *           client
    */
   app.put('/api/sync/:syncId/diffs', middleware.authenticationHandler, middleware.validateSync( Sync.CHECKSUMS ), function (req, res) {
-    var sync = req.session.sync;
+    var sync = req.params.sync;
 
-    if (!req.body) {
-      return res.json(400, { message: "No data passed! Diffs required!" });
-    }
+    var chunks = [],
+        diffs;
 
-    var diffs = req.body.diffs;
-    if (!diffs) {
-      return res.json(400, { message: "Diffs must be passed!" });
-    }
+    var form = new formidable.IncomingForm();
+    // formidable handle parsing from request
+    form.parse(req);
+    form.onPart = function(part) {
+      if (!part.filename) {
+        part.addListener('data', function(data) {
+          diffs = JSON.parse(data);
+        });
+        // let formidable handle all non-file parts
+        form.handlePart(part);
+      } else {
+        part.addListener('data', function(data) {
+          // Parse JSON diffs to Uint8Array
+          for (var i = 0; i < diffs.length; i++) {
+            if(diffs[i].contents) {
+              for (var j = 0; j < diffs[i].contents.length; j++) {
+                for (var k = 0; k < diffs[i].contents[j].diff.length; k++) {
+                  if (diffs[i].contents[j].diff[k].data) {
+                    diffs[i].contents[j].diff[k].data = util.toArrayBuffer(data);
+                  }
+                }
+              }
+            } else {
+              for (var k = 0; k < diffs[i].diff.length; k++) {
+                if (diffs[i].diff[k].data) {
+                  diffs[i].diff[k].data = util.toArrayBuffer(data);
+                }
+              }
+            }
+          }
 
-    sync.patch( diffs, function( err ) {
-      if ( err ) {
-        sync.end();
-        delete req.session.sync;
-        return res.json(500, { message: "Ending sync! Fatal error while patching: " + err });
+        });
       }
+    }
 
-      return res.json(200);
+    form.on('end', function() {
+      sync.patch( diffs, function( err ) {
+        sync.end();
+        if ( err ) {
+          return res.json(500, { message: "Ending sync! Fatal error while patching: " + err });
+        }
+        return res.json(200);
+      });
     });
   });
 

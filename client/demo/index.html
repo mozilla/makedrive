@@ -15,10 +15,8 @@
   <meta name="keywords" content="Markdown Parser" />
   <link rel="stylesheet" type="text/css" href="/vendors/makerstrap/dist/makerstrap.complete.min.css">
   <link rel="stylesheet" type="text/css" href="styles.css">
-  <link href="https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,700italic,400,300,700" rel="stylesheet">
-  <link href="https://netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
   <script type="text/javascript" src="/vendors/jquery/dist/jquery.min.js"></script>
-  <script src='http://cdn.jsdelivr.net/ace/1.1.3/min/ace.js' type='text/javascript'></script>
+
 </head>
   <body>
 
@@ -64,7 +62,7 @@
       <button class="btn btn-info float-left" id="btnSave">Save</button>
     </div>
 
-      <div id='editor' class="pull-left">alert('Hello world!');</div>
+      <textarea id='editor' class="pull-left" cols="50" rows="15">alert('Hello world!');</textarea>
     </div>
     <footer class="wm-footer footer">
       </footer>
@@ -72,7 +70,8 @@
     <script src="http://crypto-js.googlecode.com/svn/tags/3.1.2/build/rollups/md5.js"></script>
     <script src="/vendors/async/lib/async.js"></script>
     <script src="/vendors/filer/dist/filer.min.js"></script>
-    <script src="./lib/rsync.js"></script>
-    <script src='makedrive-demo.js' type='text/javascript'></script>
+    <script src="/vendors/superagent/superagent.js"></script>
+    <script src="/lib/rsync.js"></script>
+    <script src='/demo/makedrive-demo.js' type='text/javascript'></script>
   </body>
 </html>

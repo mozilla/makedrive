@@ -41,7 +41,7 @@ module.exports = {
 
       // Confirm the session still contains the sync object,
       // and if not, kill the sync.
-      var sync = req.session.sync;
+      var sync = Sync.retrieve( username, syncId );
       if ( !sync ) {
         Sync.kill( username );
         return res.json( 500, { message: "Critical error! Sync lost." } );
@@ -49,8 +49,10 @@ module.exports = {
 
       // Check if the current sync is in a valid state for this route
       if ( expectedState && sync.state !== expectedState ) {
-        return res.json( 401, { message: req.route + " called out of order!" } );
+        return res.json( 401, { message: " called out of order! expected " + expectedState + " but got " + sync.state } );
       }
+
+      req.params.sync = sync;
 
       next();
     };
