@@ -82,22 +82,22 @@ describe('Test util.js', function () {
     });
   });
 
-  it('util.authenticatedConnection should signin and get a connectionID, username, and agent', function(done) {
-    util.authenticatedConnection(function(err, result) {
-      expect(err).not.to.exist;
-      expect(result).to.exist;
-      expect(result.agent).to.exist;
-      expect(result.connectionID).to.be.a.string;
-      expect(result.username).to.be.a.string;
-      expect(result.done).to.be.a.function;
-
-      result.done();
-
-      result.agent
-        .get('/')
-        .expect(200)
-        .end(done);
-    });
-  });
+//  it('util.authenticatedConnection should signin and get a connectionID, username, and agent', function(done) {
+//    util.authenticatedConnection(function(err, result) {
+//      expect(err).not.to.exist;
+//      expect(result).to.exist;
+//      expect(result.agent).to.exist;
+//      expect(result.connectionID).to.be.a.string;
+//      expect(result.username).to.be.a.string;
+//      expect(result.done).to.be.a.function;
+//
+//      result.done();
+//
+//      result.agent
+//        .get('/')
+//        .expect(200)
+//        .end(done);
+//    });
+//  });
 
 });

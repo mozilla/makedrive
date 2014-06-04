@@ -10,6 +10,7 @@ app.routes.post.forEach(function(route) {
     mockAuthFound = true;
   }
 });
+
 if(!mockAuthFound) {
   app.post('/mocklogin/:username', function(req, res) {
     var username = req.param('username');
