@@ -35,12 +35,12 @@ if ( env.get( "ENABLE_GELF_LOGS" ) ) {
 }
 
 // General middleware
-app.use(express.static(Path.join(__dirname,'../client')));
 app.disable( "x-powered-by" );
 app.use( helmet.contentTypeOptions() );
 app.use( helmet.hsts() );
 app.enable( "trust proxy" );
 app.use( express.compress() );
+app.use(express.static(Path.join(__dirname,'../client')));
 app.use( express.json() );
 app.use( express.urlencoded() );
 app.use( webmakerAuth.cookieParser() );

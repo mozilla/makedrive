@@ -44,6 +44,7 @@ module.exports = {
       var sync = Sync.retrieve( username, syncId );
       if ( !sync ) {
         Sync.kill( username );
+        console.error('validateSync 500 - sync lost');
         return res.json( 500, { message: "Critical error! Sync lost." } );
       }
 

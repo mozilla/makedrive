@@ -27,7 +27,7 @@ module.exports = function createRoutes( app ) {
         res.write("data: " + 'You are out of date! Sync from source to update current session.' + '\n\n');
       }
     };
-console.log('here')
+
     // Create this client's connection
     var sync = req.session.sync = Sync.create( username, onOutOfDate );
 
@@ -78,12 +78,14 @@ console.log('here')
     if ( !Sync.connections.doesIdMatchUser( req.param( 'connectionId' ), username ) ) {
       return res.json(400, { message: "User/client missmatch: connectionId doesn't match user!" });
     }
-
+console.log('Trying to start sync session ' + sync.id);
     sync.start(function( err, id ) {
       if ( err ) {
+        console.error('sync.start error: ' + err);
         return res.json( 500, err );
       }
 
+      console.log('started sync session for ' + username + ' syncID ' + id);
       res.json(200, {
         syncId: id
       });
@@ -134,10 +136,10 @@ console.log('here')
     sync.generateChecksums(function( err, checksums ) {
       if ( err ) {
         sync.end();
+        console.error('/api/sync/:syncId/checksums error: ' + err);
         delete req.session.sync;
         return res.json(500, { message: "Ending sync! Fatal error generating checksums: " + err });
       }
-
       res.json(200, { checksums: checksums });
     });
   });
@@ -194,6 +196,7 @@ console.log('here')
       sync.patch( diffs, function( err ) {
         sync.end();
         if ( err ) {
+          console.error('/api/sync/:syncId/diffs error: ' + err);
           return res.json(500, { message: "Ending sync! Fatal error while patching: " + err });
         }
         return res.json(200);
