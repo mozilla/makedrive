@@ -1,7 +1,8 @@
 var request = require('request');
-var supertest = require('supertest');
 var expect = require('chai').expect;
 var app = require('../../server/index.js');
+
+var serverURL = 'http://0.0.0.0:9090';
 
 // Mock Webmaker auth
 var mockAuthFound = false;
@@ -33,12 +34,16 @@ function uniqueUsername() {
   return 'user' + seed++;
 }
 
-function getConnectionID(callback){
+function getConnectionID(jar, callback){
   var headers = {
    'Accept-Encoding': 'gzip',
    'Content-Type': 'text/event-stream'
   };
-  var stream = request({url:'http://localhost:9090/update-stream', 'headers': headers});
+  var stream = request({
+    url: serverURL + '/api/sync/updates',
+    jar: jar,
+    headers: headers
+  });
   var callbackCalled = false;
 
   var data = '';
@@ -73,27 +78,28 @@ function getConnectionID(callback){
   });
 }
 
-function createAgent() {
-  return supertest.agent(app);
+function jar() {
+  return request.jar();
 }
 
 function authenticate(options, callback){
-  // If no options passed, generate a unique username and agent one
+  // If no options passed, generate a unique username and jar
   if(typeof options === 'function') {
     callback = options;
     options = {}
   }
 
+  options.jar = options.jar || jar();
   options.username = options.username || uniqueUsername();
-  options.agent = options.agent || createAgent();
 
-  options.agent
-    .post('/mocklogin/' + options.username)
-    .end(function(err, res) {
+  request.post({
+    url: serverURL + '/mocklogin/' + options.username,
+    jar: options.jar
+  }, function(err, res, body) {
       expect(err).not.to.exist;
       expect(res.statusCode).to.equal(200);
       callback(null, options);
-    });
+  });
 }
 
 function authenticateAndConnect(options, callback) {
@@ -102,19 +108,20 @@ function authenticateAndConnect(options, callback) {
     options = {};
   }
 
+  options.jar = options.jar || jar();
+
   authenticate(options, function(err, result) {
     if(err) {
       return callback(err);
     }
-    var agent = result.agent;
     var username = result.username;
 
-    getConnectionID(function(err, result){
+    getConnectionID(options.jar, function(err, result){
       if(err) {
         return callback(err);
       }
 
-      result.agent = agent;
+      result.jar = options.jar;
       result.username = username;
       result.done = function() {
         result.close();
@@ -128,9 +135,10 @@ function authenticateAndConnect(options, callback) {
 
 module.exports = {
   app: app,
+  serverURL: serverURL,
   connection: getConnectionID,
   username: uniqueUsername,
-  agent: createAgent,
+  createJar: jar,
   authenticate: authenticate,
   authenticatedConnection: authenticateAndConnect
 };

@@ -6,7 +6,7 @@
 var env = require( "../lib/environment" ),
     filesystem = require( "../lib/filesystem" ),
     uuid = require( "node-uuid" ),
-    emiter = new ( require( "events" ).EventEmitter )();
+    emitter = new ( require( "events" ).EventEmitter )();
 
 var rsync = require( "../lib/rsync" );
 

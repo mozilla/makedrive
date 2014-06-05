@@ -7,14 +7,12 @@ describe('/api/sync Routes', function () {
     util.authenticatedConnection({done: done}, function(err, result) {
       expect(err).not.to.exist;
 
-      var agent = result.agent;
-      var connectionID = result.connectionID;
-
-      agent
-      .get('/api/sync/' + connectionID)
-      .expect(200)
-      .end(function (err, res) {
+      request.get({
+        url: util.serverURL + '/api/sync/' + result.connectionID,
+        jar: result.jar
+      }, function(err, res, body) {
         expect(err).not.to.exist;
+        expect(res.statusCode).to.equal(200);
         result.done();
       });
     });
@@ -26,16 +24,15 @@ describe('/api/sync/:syncId/sources route', function () {
     util.authenticatedConnection({done: done}, function(err, result) {
       expect(err).not.to.exist;
 
-      var agent = result.agent;
-
-      agent
-      .post('/api/sync/' + result.connectionID + '/sources')
-      .send({ name: 'tj', pet: 'tobi' })
-      .expect(403)
-      .end(function (err, res) {
+      request.get({
+        url: util.serverURL + '/api/sync/' + result.connectionID + '/sources',
+        jar: result.jar
+      }, function(err, res, body) {
         expect(err).not.to.exist;
+        expect(res.statusCode).to.equal(403);
         result.done();
       });
+      
     });
   });
 });

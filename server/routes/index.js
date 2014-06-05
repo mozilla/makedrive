@@ -25,7 +25,7 @@ module.exports = function createRoutes( app ) {
         res.write("data: " + 'You are out of date! Sync from source to update current session.' + '\n\n');
       }
     };
-
+console.log('here')
     // Create this client's connection
     var sync = req.session.sync = Sync.create( username, onOutOfDate );
 

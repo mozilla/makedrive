@@ -1,13 +1,13 @@
-var request = require('supertest');
 var expect = require('chai').expect;
 var util = require('../lib/util.js');
+var request = require('request');
 
 describe('Test util.js', function () {
 
   it('util.app should return the Express app instance', function () {
     expect(util.app).to.exist;
   });
-
+/*
   it('util.connection should return connectionID and close method on callback', function (done) {
     util.connection(function(err, result) {
       expect(err).not.to.exist;
@@ -49,7 +49,7 @@ describe('Test util.js', function () {
         done();
       });
   });
-
+*/
   it('util.username should generate a unique username with each call', function() {
     var username1 = util.username();
     var username2 = util.username();
@@ -66,10 +66,14 @@ describe('Test util.js', function () {
       expect(result.username).to.equal(username);
 
       // Trying to login a second time as this user will 401 if session info is set
-      result.agent
-        .post('/mocklogin/' + username)
-        .expect(401)
-        .end(done);
+      request.get({
+        url: util.serverURL + '/mocklogin/' + username,
+        jar: result.jar
+      }, function(err, res, body) {
+        expect(err).not.to.exist;
+        expect(res.statusCode).to.equal(401);
+        done();
+      });
     });
   });
 
@@ -82,22 +86,26 @@ describe('Test util.js', function () {
     });
   });
 
-//  it('util.authenticatedConnection should signin and get a connectionID, username, and agent', function(done) {
-//    util.authenticatedConnection(function(err, result) {
-//      expect(err).not.to.exist;
-//      expect(result).to.exist;
-//      expect(result.agent).to.exist;
-//      expect(result.connectionID).to.be.a.string;
-//      expect(result.username).to.be.a.string;
-//      expect(result.done).to.be.a.function;
-//
-//      result.done();
-//
-//      result.agent
-//        .get('/')
-//        .expect(200)
-//        .end(done);
-//    });
-//  });
+  it('util.authenticatedConnection should signin and get a connectionID, username, and agent', function(done) {
+    util.authenticatedConnection(function(err, result) {
+      expect(err).not.to.exist;
+      expect(result).to.exist;
+      expect(result.agent).to.exist;
+      expect(result.connectionID).to.be.a.string;
+      expect(result.username).to.be.a.string;
+      expect(result.done).to.be.a.function;
+
+      result.done();
+
+      request.get({
+        url: util.serverURL + '/',
+        jar: result.jar
+      }, function(err, res, body) {
+        expect(err).not.to.exist;
+        expect(res.statusCode).to.equal(200);
+        done();
+      });
+    });
+  });
 
 });
