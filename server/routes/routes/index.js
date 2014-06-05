@@ -11,15 +11,13 @@ function getFileInfo(path) {
   };
 }
 
-module.exports = (function() {
+module.exports = {
   // TODO: Factor this object into separate files as needed
-  var routeMethods = {};
-  var site = routeMethods.site = {};
 
-  site.index = function( req, res ) {
+  index: function( req, res ) {
     res.send( "MakeDrive: https://wiki.mozilla.org/Webmaker/MakeDrive" );
-  };
-  site.retrieveFiles = function( req, res ) {
+  },
+  retrieveFiles: function( req, res ) {
     var username = req.params.username;
     var path = req.params[0];
     var info = getFileInfo(path);
@@ -41,13 +39,11 @@ module.exports = (function() {
       res.header({'Content-Type': info.mime});
       res.send(200, data);
     });
-  };
-  site.healthcheck = function( req, res ) {
+  },
+  healthcheck: function( req, res ) {
     res.json({
       http: "okay",
       version: version
     });
-  };
-
-  return routeMethods;
-})();
+  }
+};
