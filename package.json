@@ -42,12 +42,19 @@
     "webmaker-auth": "0.0.14"
   },
   "devDependencies": {
+    "browserify": "^4.1.8",
     "chai": "^1.9.1",
     "grunt": "~0.4.1",
+    "grunt-browserify": "^2.1.0",
+    "grunt-contrib-clean": "^0.5.0",
     "grunt-contrib-jshint": "0.10.0",
+    "grunt-contrib-uglify": "^0.4.0",
     "mocha": "*",
-    "supertest": "0.13.x",
-    "request": "2.36.x"
+    "request": "2.36.x",
+    "supertest": "0.13.x"
   },
-  "main": "./server/index.js"
+  "main": "./server/index.js",
+  "browser": {
+    "filer": "./node_modules/filer/dist/filer.js"
+  }
 }
