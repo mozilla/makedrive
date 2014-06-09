@@ -13,7 +13,7 @@ var middleware = require( './middleware' ),
 //       build a system to require them here
 module.exports = function createRoutes( app, wss ) {
   app.get( "/", routes.index );
-  app.get( "/p/*", middleware.authenticationHandler, routes.retrieveFiles );
+  app.get( "/p/*", middleware.authenticationHandler, routes.servePath );
 
   /**
    * [SSE Socket]
