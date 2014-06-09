@@ -10,7 +10,7 @@ module.exports = {
   },
   servePath: function( req, res ) {
     var username = req.params.username;
-    var path = req.params[0];
+    var path = '/' + req.params[0];
 
     var server = new FilerWebServer(username);
     server.handle(path, res);

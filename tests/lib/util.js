@@ -41,15 +41,15 @@ if(!uploadFound) {
     var parts = req.path.split('/');
     var username = parts[2];
     var path = '/' + parts.slice(3).join('/');
-
-    console.log(username, path);
+    // TODO: this is horrible, fix to just use Buffers when we update filer
+    var fileData = new Uint8Array(new Buffer(req.body.toString('binary'), 'binary'));
 
     var fs = filesystem.create({
       keyPrefix: username,
       name: username
     });
 
-    fs.writeFile(path, req.body, function(err, data) {
+    fs.writeFile(path, fileData, function(err, data) {
       if(err) {
         res.send(500, {error: err});
         return;
@@ -281,6 +281,9 @@ function openSocket( options ) {
 function upload(username, path, contents, callback) {
   request.post({
     url: serverURL + '/upload/' + username + path,
+    headers: {
+      'Content-Type': 'application/octet-stream'
+    },
     body: contents
   }, function(err, res, body) {
     expect(err).not.to.exist;

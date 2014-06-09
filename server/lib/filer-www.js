@@ -34,7 +34,7 @@ function handleFile(fs, path, res) {
   var contentType = mime.lookup(path);
   var encoding = mime.charsets.lookup(contentType) === "UTF-8" ? "utf8" : null;
 
-  fs.readFile(path, encoding, function(err, data) {
+  fs.readFile(path, {encoding: encoding}, function(err, data) {
     if(err) {
       handle404(path, res);
       return;
