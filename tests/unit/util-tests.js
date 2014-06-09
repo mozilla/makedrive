@@ -141,4 +141,16 @@ describe('Test util.js', function(){
     });
   });
 
+  it('util.upload should allow a file to be uploaded', function(done) {
+    var fs = require('fs');
+    var Path = require('path');
+    var content = fs.readFileSync(Path.resolve(__dirname, '../test-files/index.html'), {encoding: null});
+    var username = util.username();
+
+    util.upload(username, '/index.html', content, function(err) {
+      expect(err).not.to.exist;
+      done();
+    });
+  });
+
 });

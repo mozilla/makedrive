@@ -2,18 +2,22 @@ var request = require('request');
 var expect = require('chai').expect;
 var app = require('../../server/index.js');
 var ws = require('ws');
+var filesystem = require('../../server/lib/filesystem.js');
 
 var serverURL = 'http://0.0.0.0:9090',
     socketURL = serverURL.replace( 'http', 'ws' );
 
-// Mock Webmaker auth
 var mockAuthFound = false;
+var uploadFound = false;
 app.routes.post.forEach(function(route) {
   if(route.path === '/mocklogin:username') {
     mockAuthFound = true;
+  } else if (route.path === '/upload/*') {
+    uploadFound = true;
   }
 });
 
+// Mock Webmaker auth
 if(!mockAuthFound) {
   app.post('/mocklogin/:username', function(req, res) {
     var username = req.param('username');
@@ -28,6 +32,31 @@ if(!mockAuthFound) {
       req.session.user = {username: username};
       res.send(200);
     }
+  });
+}
+// Mock File Upload into Filer FileSystem.  URLs will look like this:
+// /upload/:username/:path (where :path will contain /s)
+if(!uploadFound) {
+  app.post('/upload/*', function(req, res) {
+    var parts = req.path.split('/');
+    var username = parts[2];
+    var path = '/' + parts.slice(3).join('/');
+
+    console.log(username, path);
+
+    var fs = filesystem.create({
+      keyPrefix: username,
+      name: username
+    });
+
+    fs.writeFile(path, req.body, function(err, data) {
+      if(err) {
+        res.send(500, {error: err});
+        return;
+      }
+
+      res.send(200);
+    });
   });
 }
 
@@ -249,6 +278,17 @@ function openSocket( options ) {
   return socket;
 }
 
+function upload(username, path, contents, callback) {
+  request.post({
+    url: serverURL + '/upload/' + username + path,
+    body: contents
+  }, function(err, res, body) {
+    expect(err).not.to.exist;
+    expect(res.statusCode).to.equal(200);
+    callback();
+  });
+}
+
 module.exports = {
   app: app,
   serverURL: serverURL,
@@ -262,5 +302,6 @@ module.exports = {
   sourceRouteConnect: sourceRouteConnect,
   csRouteConnect: csRouteConnect,
   diffRouteConnect: diffRouteConnect,
-  openSocket: openSocket
+  openSocket: openSocket,
+  upload: upload
 };
