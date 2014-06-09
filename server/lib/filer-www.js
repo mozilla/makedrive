@@ -54,11 +54,11 @@ function handleDir(fs, path, res) {
   var header = '<!DOCTYPE html>' +
         '<html><head><title>Index of ' + path + '</title></head>' +
         '<body><h1>Index of ' + path + '</h1>' +
-        '<table><tr><th><img src="icons/blank.png" alt="[ICO]"></th>' +
+        '<table><tr><th><img src="/icons/blank.png" alt="[ICO]"></th>' +
         '<th><a href="#">Name</a></th><th><a href="#">Last modified</a></th>' +
         '<th><a href="#">Size</a></th><th><a href="#">Description</a></th></tr>' +
         '<tr><th colspan="5"><hr></th></tr>' +
-        '<tr><td valign="top"><img src="icons/back.png" alt="[DIR]"></td>' +
+        '<tr><td valign="top"><img src="/icons/back.png" alt="[DIR]"></td>' +
         '<td><a href="?' + parent + '">Parent Directory</a> </td><td>&nbsp;</td>' +
         '<td align="right"> - </td><td>&nbsp;</td></tr>';
 
@@ -85,7 +85,7 @@ function handleDir(fs, path, res) {
   }
 
   function row(icon, alt, href, name, modified, size) {
-    icon = icon || 'icons/unknown.png';
+    icon = icon || '/icons/unknown.png';
     alt = alt || '[ ]';
     modified = formatDate(new Date(modified));
     size = formatSize(size);
@@ -131,17 +131,17 @@ function handleDir(fs, path, res) {
       var alt;
 
       if(entry.type === 'DIRECTORY') {
-        icon = 'icons/folder.png';
+        icon = '/icons/folder.png';
         alt = '[DIR]';
       } else { // file
         if(isImage(ext)) {
-          icon = 'icons/image2.png';
+          icon = '/icons/image2.png';
           alt = '[IMG]';
         } else if(isMedia(ext)) {
-          icon = 'icons/movie.png';
+          icon = '/icons/movie.png';
           alt = '[MOV]';
         } else {
-          icon = 'icons/text.png';
+          icon = '/icons/text.png';
           alt = '[TXT]';
         }
       }
