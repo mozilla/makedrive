@@ -1,4 +1,7 @@
+var rsync = require( "../../server/lib/rsync" );
+
 module.exports = {
   Filer: require( "filer" ),
-  rsync: require( "../../server/lib/rsync" )
+  rsync: rsync,
+  comms: require( "./comms" )( rsync )
 }

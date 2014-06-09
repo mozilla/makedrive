@@ -6,7 +6,8 @@ var express = require( "express" ),
     helmet = require( "helmet" ),
     WebmakerAuth = require( "webmaker-auth" ),
     Path = require( "path" ),
-    messina;
+    messina,
+    WebSocketServer = require('ws').Server;
 
 // Expose internals
 var env = require( "./lib/environment" ),
@@ -15,6 +16,7 @@ var env = require( "./lib/environment" ),
 
 var app = express(),
     distDir = Path.resolve( __dirname, "dist" ),
+    wss;
     webmakerAuth = new WebmakerAuth({
       loginURL: env.get( "LOGIN_SERVER_URL_WITH_AUTH" ),
       secretKey: env.get( "SESSION_SECRET" ),
@@ -51,12 +53,15 @@ app.use( app.router );
 app.use( middleware.errorHandler );
 app.use( middleware.fourOhFourHandler );
 
+// Start websocket server
+wss = new WebSocketServer({server: app});
+
 function corsOptions ( req, res ) {
   res.header( "Access-Control-Allow-Origin", "*" );
 }
 
 // Declare routes
-routes( app );
+routes( app, wss );
 
 port = env.get( "PORT", 9090 );
 app.listen( port, function() {
