@@ -6,7 +6,8 @@
 var env = require( "../lib/environment" ),
     filesystem = require( "../lib/filesystem" ),
     uuid = require( "node-uuid" ),
-    emitter = new ( require( "events" ).EventEmitter )();
+    emitter = new ( require( "events" ).EventEmitter )(),
+    SyncMessage = require( "../lib/syncmessage" );
 
 var rsync = require( "../lib/rsync" );
 
@@ -202,7 +203,7 @@ Sync.prototype.onClose = function( ) {
   return function() {
     emitter.removeListener( "updateToLatestSync", connectedClients[ sync.username ][ sync.syncId ].onOutOfDate );
     delete connectedClients[ sync.username ][ sync.syncId ];
-  }
+  };
 };
 
 Sync.prototype.setPath = function( path ){
@@ -314,17 +315,19 @@ Sync.active = {
   checkUser: checkUser,
   isSyncSession: isSyncSession
 };
-Sync.ws.errors = {
-  ETYPHN: createError('ETYPHN', 'The Sync message type cannot be handled by the server'),
-  EUNDEF: createError('EUNDEF', 'No value provided'),
-  EINVDT: createError('EINVDT', 'Invalid content provided'),
-  EINVAL: createError('EINVAL', 'Invalid Message Format. Message must be a sync message'),
-  ERQRSC: createError('ERQRSC', 'Invalid resource requested'),
-  ERSRSC: createError('ERSRSC', 'Resource provided cannot be recognized'),
-  ERECOG: createError('ERECOG', 'Message type not recognized'),
-  ESTATE: createError('ESTATE', 'Sync in incorrect state'),
-  custom: function(code, message) {
+Sync.ws = {
+  errors: {
+    ETYPHN: createError('ETYPHN', 'The Sync message type cannot be handled by the server'),
+    EUNDEF: createError('EUNDEF', 'No value provided'),
+    EINVDT: createError('EINVDT', 'Invalid content provided'),
+    EINVAL: createError('EINVAL', 'Invalid Message Format. Message must be a sync message'),
+    ERQRSC: createError('ERQRSC', 'Invalid resource requested'),
+    ERSRSC: createError('ERSRSC', 'Resource provided cannot be recognized'),
+    ERECOG: createError('ERECOG', 'Message type not recognized'),
+    ESTATE: createError('ESTATE', 'Sync in incorrect state'),
+    custom: function(code, message) {
     return createError(code, message);
+  }
   }
 };
 Sync.connections = {
@@ -360,15 +363,18 @@ Sync.retrieve = function( username, syncId ) {
     return connectedClients[ username ][ syncId ].sync;
   }
 
-  var client;
-  Object.keys(connectedClients).forEach(function( user, index, array ) {
-    client = connectedClients[ user ][ syncId ];
+  var client,
+      keys = Object.keys(connectedClients)
+
+  for (var i = 0; i < keys.length; i++) {
+    client = connectedClients[ keys[i] ][ syncId ];
 
     if ( client ) {
       return client.sync;
     }
-  }
-}
+  };
+  return null;
+};
 
 /**
  * Exports

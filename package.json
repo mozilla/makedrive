@@ -40,7 +40,8 @@
     "newrelic": "1.4.0",
     "node-uuid": "^1.4.1",
     "noxmox": "0.2.4",
-    "webmaker-auth": "0.0.14"
+    "webmaker-auth": "0.0.14",
+    "ws": "^0.4.31"
   },
   "devDependencies": {
     "browserify": "^4.1.8",

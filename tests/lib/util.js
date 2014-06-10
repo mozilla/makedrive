@@ -1,8 +1,10 @@
 var request = require('request');
 var expect = require('chai').expect;
 var app = require('../../server/index.js');
+var ws = require('ws');
 
-var serverURL = 'http://0.0.0.0:9090';
+var serverURL = 'http://0.0.0.0:9090',
+    socketURL = serverURL.replace( 'http', 'ws' );
 
 // Mock Webmaker auth
 var mockAuthFound = false;
@@ -94,13 +96,8 @@ function authenticate(options, callback){
     options = {};
   }
 
-console.log('options', options);
-
   options.jar = options.jar || jar();
   options.username = options.username || uniqueUsername();
-
-console.log('options.jar');
-console.dir(options.jar);
 
   request.post({
     url: serverURL + '/mocklogin/' + options.username,
@@ -121,8 +118,6 @@ function authenticateAndConnect(options, callback) {
     options = {};
   }
 
-console.log('authenticateAndConnect Options', options);
-
   options.jar = options.jar || jar();
 
   authenticate(options, function(err, result) {
@@ -130,8 +125,6 @@ console.log('authenticateAndConnect Options', options);
       return callback(err);
     }
     var username = result.username;
-
-console.log('getConnectionId Options', options);
 
     getConnectionID(options, function(err, result){
       if(err) {
@@ -242,9 +235,28 @@ function diffRouteConnect(options, extras, callback){
   });
 }
 
+function openSocket( options ) {
+  var socket = new ws(socketURL);
+
+  function defaultHandler(msg) {
+    return function() {
+      console.error("Unexpected socket on ", msg);
+      expect(true).to.be.false;
+    }
+  }
+
+  socket.on("message", options.onMessage || defaultHandler("message"));
+  socket.on("error", options.onError || defaultHandler("error"));
+  socket.on("open", options.onOpen || defaultHandler("open"));
+  socket.on("close", options.onClose || defaultHandler("close"));
+
+  return socket;
+}
+
 module.exports = {
   app: app,
   serverURL: serverURL,
+  socketURL: socketURL,
   connection: getConnectionID,
   username: uniqueUsername,
   createJar: jar,
@@ -253,5 +265,6 @@ module.exports = {
   syncRouteConnect: syncRouteConnect,
   sourceRouteConnect: sourceRouteConnect,
   csRouteConnect: csRouteConnect,
-  diffRouteConnect: diffRouteConnect
+  diffRouteConnect: diffRouteConnect,
+  openSocket: openSocket
 };

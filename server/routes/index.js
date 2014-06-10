@@ -5,7 +5,9 @@ var middleware = require( './middleware' ),
     util = require( '../lib/util' ),
     formidable = require('formidable'),
     ws = require('ws'),
-    SyncMessage = require('../lib/syncmessage');
+    SyncMessage = require('../lib/syncmessage'),
+    WebSocket = require('ws'),
+    WebSocketServer = WebSocket.Server;
 
 // TODO: Factor route groupings into their own files,
 //       build a system to require them here
@@ -192,7 +194,7 @@ console.log('Trying to start sync session ' + sync.id);
 
         });
       }
-    }
+    };
 
     form.on('end', function() {
       sync.patch( diffs, function( err ) {
@@ -207,33 +209,4 @@ console.log('Trying to start sync session ' + sync.id);
   });
 
   app.get( "/healthcheck", routes.healthcheck );
-
-  // Websockets
-  wss.on('connection', function(ws) {
-    ws.once('message', function(data, flags) {
-      // Capture the connectionId
-      // Remove event listener for "this"
-      var match = /data: {"connectionId"\s*:\s*"(\w{8}(-\w{4}){3}-\w{12}?)"}/.exec(data),
-          // TODO: Research websocket authentication (so we can pass username here)
-          sync;
-
-      if ( match ) {
-        sync = Sync.retrieve( match[1] );
-        sync.addSocket( match[1], ws );
-
-        ws.on('message', function(data, flags) {
-          if(!flags.binary) {
-            try {
-              data = JSON.parse(data);
-              Sync.messageHandler(data);
-            } catch(error) {
-              var Error = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ERROR);
-              Error.setContent(error);
-              ws.send(JSON.stringify(Error));
-            }
-          }
-        });
-      }
-    });
-  });
 };

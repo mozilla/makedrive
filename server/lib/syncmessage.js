@@ -29,13 +29,15 @@ function validateParams(param, paramType) {
 }
 
 function SyncMessage(type, name) {
-  this.type = validateParams(type, 'TYPE') ? type : throw new Error('SyncMessage(type, name) requires a valid type');
-  this.name = validateParams(name, 'NAME') ? name : throw new Error('SyncMessage(type, name) requires a valid name');
+  this.type = validateParams(type, 'TYPE') ? type : null;
+  this.name = validateParams(name, 'NAME') ? name : null;
   this.content = 'No content';
 }
 
 SyncMessage.prototype.setContent = function(content) {
   this.content = content;
 }
+
+// TODO: Expose a .toJSON method
 
 module.exports = SyncMessage;

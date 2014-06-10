@@ -6,17 +6,17 @@ var express = require( "express" ),
     helmet = require( "helmet" ),
     WebmakerAuth = require( "webmaker-auth" ),
     Path = require( "path" ),
-    messina,
-    WebSocketServer = require('ws').Server;
+    http = require( "http" ),
+    messina;
 
 // Expose internals
 var env = require( "./lib/environment" ),
     middleware = require( "./middleware" ),
-    routes = require( "./routes" );
+    routes = require( "./routes" ),
+    socketServer = require( "./lib/socket-server" );
 
 var app = express(),
     distDir = Path.resolve( __dirname, "dist" ),
-    wss;
     webmakerAuth = new WebmakerAuth({
       loginURL: env.get( "LOGIN_SERVER_URL_WITH_AUTH" ),
       secretKey: env.get( "SESSION_SECRET" ),
@@ -53,19 +53,17 @@ app.use( app.router );
 app.use( middleware.errorHandler );
 app.use( middleware.fourOhFourHandler );
 
-// Start websocket server
-wss = new WebSocketServer({server: app});
-
 function corsOptions ( req, res ) {
   res.header( "Access-Control-Allow-Origin", "*" );
 }
 
 // Declare routes
-routes( app, wss );
+routes( app );
 
 port = env.get( "PORT", 9090 );
-app.listen( port, function() {
-  console.log( "MakeDrive server listening ( Probably http://localhost:%d )", port );
-});
+var server = http.createServer( app );
+server.listen(9090);
+
+socketServer( server );
 
 module.exports = app;
