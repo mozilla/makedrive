@@ -74,6 +74,33 @@ function createError(code, message) {
   return error;
 }
 
+function convertDiffs( diffs ) {
+  for (var i = 0; i < diffs.length; i++) {
+    if (diffs[i].contents) {
+      for (var j = 0; j < diffs[i].contents.length; j++) {
+        for (var k = 0; k < diffs[i].contents[j].diff.length; k++) {
+          if (Object.prototype.toString.call(diffs[i].contents[j].diff[k].data) === "[object Uint8Array]") {
+            diffs[i].contents[j].diff[k].data = {
+              __isUint8Array: true,
+              __array: u8toArray(diffs[i].contents[j].diff[k].data)
+            };
+          }
+        }
+      }
+    } else {
+      for (var k = 0; k < diffs[i].diff.length; k++) {
+        if (Object.prototype.toString.call(diffs[i].diff[k].data) === "[object Uint8Array]") {
+          diffs[i].diff[k].data = {
+            __isUint8Array: true,
+            __array: u8toArray(diffs[i].diff[k].data)
+          };
+        }
+      }
+    }
+  }
+  return diffs;
+}
+
 /**
  * Constructor
  */

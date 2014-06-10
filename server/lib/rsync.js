@@ -1,3 +1,11 @@
+// rsync.js
+// Implement rsync to sync between two Filer filesystems
+// Portions used from Node.js Anchor module
+// Copyright(c) 2011 Mihai Tomescu <matomesc@gmail.com>
+// Copyright(c) 2011 Tolga Tezel <tolgatezel11@gmail.com>
+// MIT Licensed
+// https://github.com/ttezel/anchor
+
 var Filer = require('filer'),
     Path = Filer.Path,
     Errors = Filer.Errors,
@@ -6,9 +14,10 @@ var Filer = require('filer'),
     _ = require('lodash'),
     rsync = {};
 
-function configure() {
+// Configure options passed
+function configureOptions() {
   var options;
-
+  
   if(typeof this === 'function') {
     options = {};
     options.size = 750;
@@ -29,18 +38,34 @@ function configure() {
   return options;
 }
 
-//MD5 hashing for RSync
-//Used from Node.js Anchor module
-//MIT Licensed
-//https://github.com/ttezel/anchor
+// Set the callback in case options are not provided
+function findCallback(callback, options) {
+  if(!callback && typeof options === 'function') {
+    callback = options;
+  }
+  
+  return callback;
+}
+
+// Validate the parameters sent to each rsync method
+function validateParams(fs, path) {
+  if(!fs || !(fs instanceof Filer.FileSystem)) {
+    return new Errors.EINVAL('No filesystem provided');
+  }
+  
+  if(!path) {
+    return new Errors.EINVAL('Path must be specified');
+  }
+  
+  return null;
+}
+
+// MD5 hashing for RSync
 function _md5(data) {
   return CryptoJS.MD5(String.fromCharCode(data)).toString();
 }
 
-//Weak32 hashing for RSync
-//Used from Node.js Anchor module
-//MIT Licensed
-//https://github.com/ttezel/anchor
+// Weak32 hashing for RSync
 function _weak32(data, prev, start, end) {
   var a = 0;
   var b = 0;
@@ -74,24 +99,17 @@ function _weak32(data, prev, start, end) {
   return { a: a, b: b, sum: a + b * M };
 }
 
-//Weak16 hashing for RSync
-//Used from Node.js Anchor module
-//MIT Licensed
-//https://github.com/ttezel/anchor
+// Weak16 hashing for RSync
 function _weak16(data) {
   return 0xffff & (data >> 16 ^ data*1009);
 }
 
-/* RSync Algorithm function
-* Copyright(c) 2011 Mihai Tomescu <matomesc@gmail.com>
-* Copyright(c) 2011 Tolga Tezel <tolgatezel11@gmail.com>
-* https://github.com/ttezel/anchor
-* MIT Licensed
-*/
+// RSync algorithm to create a hashtable from checksums
 function createHashtable(checksums) {
   var hashtable = {};
   var len = checksums.length;
   var i = 0;
+
   for (; i < len; i++) {
     var checksum = checksums[i];
     var weak16 = _weak16(checksum.weak);
@@ -104,12 +122,7 @@ function createHashtable(checksums) {
   return hashtable;
 }
 
-/* RSync Algorithm function
-* Copyright(c) 2011 Mihai Tomescu <matomesc@gmail.com>
-* Copyright(c) 2011 Tolga Tezel <tolgatezel11@gmail.com>
-* https://github.com/ttezel/anchor
-* MIT Licensed
-*/
+// RSync algorithm to perform data rolling
 function roll(data, checksums, chunkSize) {
   var results = [];
   var hashtable = createHashtable(checksums);
@@ -120,12 +133,14 @@ function roll(data, checksums, chunkSize) {
   var lastMatchedEnd = 0;
       // This gets updated every iteration with the previous weak 32bit hash
   var prevRollingWeak = null;
+
   for (; end <= length; start++, end++) {
     var weak = _weak32(data, prevRollingWeak, start, end);
     var weak16 = _weak16(weak.sum);
     var match = false;
     var d;
     prevRollingWeak = weak;
+
     if (hashtable[weak16]) {
       var len = hashtable[weak16].length;
       var i = 0;
@@ -134,6 +149,7 @@ function roll(data, checksums, chunkSize) {
           var mightMatch = hashtable[weak16][i];
           var chunk = data.subarray(start, end);
           var strong = _md5(chunk);
+
           if (mightMatch.strong === strong) {
             match = mightMatch;
             break;
@@ -168,19 +184,13 @@ function roll(data, checksums, chunkSize) {
       });
     }
   }
-
   return results;
 }
 
-/* RSync Checksum Function
-* Based on Node.js Anchor module checksum function
-* Copyright(c) 2011 Mihai Tomescu <matomesc@gmail.com>
-* Copyright(c) 2011 Tolga Tezel <tolgatezel11@gmail.com>
-* https://github.com/ttezel/anchor
-* MIT Licensed
-*/
+// RSync function to calculate checksums
 function checksum (path, options, callback) {
   var cache = {};
+
   this.readFile(path, function (err, data) {
     if (!err) {
       // cache file
@@ -198,10 +208,12 @@ function checksum (path, options, callback) {
     var end = incr > length ? length : incr;
     var blockIndex = 0;
     var result = [];
+
     while (start < length) {
       var chunk  = cache[path].subarray(start, end);
       var weak   = _weak32(chunk).sum;
       var strong = _md5(chunk);
+
       result.push({
         index: blockIndex,
         weak: weak,
@@ -213,36 +225,32 @@ function checksum (path, options, callback) {
       // update block index
       blockIndex++;
     }
-    return callback(null, result);
+    callback(null, result);
   });
 }
 
+// Generate the list of paths at the source file system
 rsync.sourceList = function getSrcList(srcFS, path, options, callback) {
-  if(typeof callback === 'undefined' && typeof options === 'function') {
-    callback = options;
+  callback = findCallback(callback, options);
+  
+  var paramError = validateParams(srcFS, path);
+  
+  if(paramError) {
+    return callback(paramError);
   }
-
-  if(!srcFS || !(typeof srcFS === 'object' && srcFS instanceof Filer.FileSystem)) {
-    return callback(new Errors.EINVAL('No filesystem provided'));
-  }
-
-  if(!path || !(typeof path === 'string')) {
-    return callback(new Errors.EINVAL('Path must be specified'));
-  }
-
-  configure.call(options);
-
+  
+  configureOptions.call(options);
+  
   var result = [];
+
   srcFS.lstat(path, function(err, stats) {
     if(err) {
-      callback(err);
-      return;
+      return callback(err);
     }
     if(stats.isDirectory()) {
       srcFS.readdir(path, function(err, entries) {
         if(err) {
-          callback(err);
-          return;
+          return callback(err);
         }
 
         function getSrcContents(_name, callback) {
@@ -250,8 +258,7 @@ rsync.sourceList = function getSrcList(srcFS, path, options, callback) {
           srcFS.lstat(name, function(error, stats) {
 
             if(error) {
-              callback(error);
-              return;
+              return callback(error);
             }
 
             var entry = {
@@ -264,8 +271,7 @@ rsync.sourceList = function getSrcList(srcFS, path, options, callback) {
             if(options.recursive && stats.isDirectory()) {
               getSrcList(srcFS, name, options, function(error, items) {
                 if(error) {
-                  callback(error);
-                  return;
+                  return callback(error);
                 }
                 entry.contents = items;
                 result.push(entry);
@@ -300,35 +306,30 @@ rsync.sourceList = function getSrcList(srcFS, path, options, callback) {
   });
 };
 
+// Generate checksums for every node in a given destination path
 rsync.checksums = function(fs, destPath, srcList, options, callback) {
-  if(typeof callback === 'undefined' && typeof options === 'function') {
-    callback = options;
+  callback = findCallback(callback, options);
+  
+  var paramError = validateParams(fs, destPath);
+  
+  if(paramError) {
+    return callback(paramError);
   }
-
-  if(!fs || !(typeof fs === 'object' && fs instanceof Filer.FileSystem)) {
-    return callback(new Errors.EINVAL('No filesystem provided'));
-  }
-
-  if(!destPath || !(typeof destPath === 'string')) {
-    return callback(new Errors.EINVAL('Path must be specified'));
-  }
-
-  if(!srcList) {
-    return callback(new Errors.EINVAL('Source list must be provided'));
-  }
-
-  configure.call(options);
+  
+  configureOptions.call(options);
   fs.mkdir(destPath, function(err) {
     var result = [];
+
     function getDirChecksums(entry, callback) {
       var item = { path: entry.path, node: entry.node };
+
       if(options.recursive && entry.type === 'DIRECTORY') {
         rsync.checksums(fs, Path.join(destPath, entry.path), entry.contents, options, function(error, items) {
           if(error) {
-            callback(error);
-            return;
+            return callback(error);
           }
-          item.contents = items || []; // for empty directories where items is undefined
+          // for empty directories where items is undefined
+          item.contents = items || [];
           result.push(item);
           callback();
         });
@@ -336,8 +337,9 @@ rsync.checksums = function(fs, destPath, srcList, options, callback) {
         if(!options.checksum || options.recursive) {
           fs.stat(Path.join(destPath, entry.path), function(err, stat) {
             if(!err && stat.mtime === entry.modified && stat.size === entry.size) {
-              item.checksum = [];
+              item.checksums = [];
               item.modified = entry.modified;
+              // Indicates that the item is identical to the item in the source
               item.identical = true;
               result.push(item);
               callback();
@@ -345,13 +347,12 @@ rsync.checksums = function(fs, destPath, srcList, options, callback) {
             else {
               checksum.call(fs, Path.join(destPath, entry.path), options, function(err, checksums) {
                 if(err) {
-                  callback(err);
-                  return;
+                  return callback(err);
                 }
-                item.checksum = checksums;
+                item.checksums = checksums;
                 item.modified = entry.modified;
-                result.push(item);
-                callback();
+                result.push(item); 
+                callback();               
               });
             }
           });
@@ -359,13 +360,12 @@ rsync.checksums = function(fs, destPath, srcList, options, callback) {
         else {
           checksum.call(fs, Path.join(destPath, entry.path), options, function(err, checksums) {
             if(err) {
-              callback(err);
-              return;
+              return callback(err);
             }
-            item.checksum = checksums;
+            item.checksums = checksums;
             item.modified = entry.modified;
-            result.push(item);
-            callback();
+            result.push(item); 
+            callback();               
           });
         }
       }
@@ -396,324 +396,292 @@ rsync.checksums = function(fs, destPath, srcList, options, callback) {
       } else if (result.length === 0) {
         callback(null, result);
       } else {
-        callback(error, result);
+        callback(null, result);
       }
     });
   });
 };
 
-/* RSync Checksum Function
-* Based on Node.js Anchor module diff function
-* Copyright(c) 2011 Mihai Tomescu <matomesc@gmail.com>
-* Copyright(c) 2011 Tolga Tezel <tolgatezel11@gmail.com>
-* https://github.com/ttezel/anchor
-* MIT Licensed
-*/
+// Generate diffs from the source based on destination checksums
 rsync.diff = function(fs, path, checksums, options, callback) {
-  if(typeof callback === 'undefined') {
-    callback = options;
+  callback = findCallback(callback, options);
+  
+  var paramError = validateParams(fs, path);
+  
+  if(paramError) {
+    return callback(paramError);
   }
 
-  if(!fs || !(typeof fs === 'object' && fs instanceof Filer.FileSystem)) {
-    return callback(new Errors.EINVAL('No filesystem provided'));
-  }
-
-  if(!path || !(typeof path === 'string')) {
-    return callback(new Errors.EINVAL('Path must be specified'));
-  }
-
-  configure.call(options);
-
+  configureOptions.call(options);
+  
   if(options.checksum && !checksums) {
     return callback(new Errors.EINVAL('Checksums must be provided'));
   }
+  
+  var itemDiffs = [];
 
-  var diffs = [];
   fs.lstat(path, function(err, stat) {
     if(stat.isDirectory()) {
       async.each(checksums, getDiff, function(err) {
-        callback(err, diffs);
-      });
+        if(err) {
+          return callback(err);
+        }
+        callback(null, itemDiffs);
+      }); 
     }
     else if (stat.isFile() || !options.links) {
-      if(!(typeof checksums[0].identical === 'undefined')) {
-        diffs.push({
-          diff: [],
+      if(checksums[0].identical) {
+        itemDiffs.push({
+          diffs: [],
           modified: checksums[0].modified,
           path: checksums[0].path,
           identical: true
         });
-        callback(null, diffs);
+        callback(null, itemDiffs);
       } else {
         fs.readFile(path, function (err, data) {
-          if (err) { return callback(err); }
-          diffs.push({
-            diff: roll(data, checksums[0].checksum, options.size),
+          if (err) { 
+            return callback(err); 
+          }
+          itemDiffs.push({
+            diffs: roll(data, checksums[0].checksums, options.size),
             modified: checksums[0].modified,
             path: checksums[0].path
           });
-          callback(err, diffs);
+          if(err) {
+            return callback(err);
+          }
+          callback(null, itemDiffs);
         });
       }
     }
     else if (stat.isSymbolicLink()) {
       fs.readlink(path, function(err, linkContents) {
         if(err) {
-          callback(err);
-          return;
+          return callback(err);
         }
         fs.lstat(path, function(err, stats){
           if(err) {
-            callback(err);
-            return;
+            return callback(err);
           }
-          diffs.push({
+          itemDiffs.push({
             link: linkContents,
             modified: stats.mtime,
             path: checksums[0].path
           });
-          callback(err, diffs);
+          callback(null, itemDiffs);
         });
       });
     }
   });
 
   function getDiff(entry, callback) {
+    var entryPath = Path.join(path, entry.path);
+
     if(entry.hasOwnProperty('contents')) {
-      rsync.diff(fs, Path.join(path, entry.path), entry.contents, options, function(err, stuff) {
+      rsync.diff(fs, entryPath, entry.contents, options, function(err, diffs) {
         if(err) {
-          callback(err);
-          return;
+          return callback(err);
         }
-        diffs.push({
+        itemDiffs.push({
           path: entry.path,
-          contents: stuff
+          contents: diffs
         });
         callback();
       });
     } else if (entry.hasOwnProperty('link')) {
-      fs.readlink(Path.join(path, entry.path), function(err, linkContents) {
+      fs.readlink(entryPath, function(err, linkContents) {
         if(err) {
-          callback(err);
-          return;
+          return callback(err);
         }
-        fs.lstat(Path.join(path, entry.path), function(err, stats){
+        fs.lstat(entryPath, function(err, stats){
           if(err) {
-            callback(err);
-            return;
+            return callback(err);
           }
-          diffs.push({
+          itemDiffs.push({
             link: linkContents,
             modified: stats.mtime,
             path: entry.path
           });
-          callback(err, diffs);
+          callback(err, itemDiffs);
         });
       });
     } else {
-      if(!(typeof entry.identical === 'undefined')) {
-        diffs.push({
-          diff: [],
+      if(entry.identical) {
+        itemDiffs.push({
+          diffs: [],
           modified: entry.modified,
           path: entry.path,
+          // Indicates that since the checksum was identical to the source, no diffs should be applied
           identical: true
         });
-        callback(null, diffs);
+        callback(null, itemDiffs);
       } else {
-        fs.readFile(Path.join(path,entry.path), function (err, data) {
-          if (err) { return callback(err); }
-          diffs.push({
-            diff: roll(data, entry.checksum, options.size),
+        fs.readFile(entryPath, function (err, data) {
+          if (err) { 
+            return callback(err); 
+          }
+          itemDiffs.push({
+            diffs: roll(data, entry.checksums, options.size),
             modified: entry.modified,
             path: entry.path
           });
-          callback(err, diffs);
+          callback(null, itemDiffs);
         });
       }
     }
   }
 };
 
-/* RSync Checksum Function
-* Based on Node.js Anchor module sync function
-* Copyright(c) 2011 Mihai Tomescu <matomesc@gmail.com>
-* Copyright(c) 2011 Tolga Tezel <tolgatezel11@gmail.com>
-* https://github.com/ttezel/anchor
-* MIT Licensed
-*/
+// Path the destination filesystem by applying diffs
 rsync.patch = function(fs, path, diff, options, callback) {
-  if(typeof callback === 'undefined') {
-    callback = options;
+  callback = findCallback(callback, options);
+  
+  var paramError = validateParams(fs, path);
+  
+  if(paramError) {
+    return callback(paramError);
   }
-
-  if(!fs || !(typeof fs === 'object' && fs instanceof Filer.FileSystem)) {
-    return callback(new Errors.EINVAL('No filesystem provided'));
-  }
-
-  if(!path || !(typeof path === 'string')) {
-    return callback(new Errors.EINVAL('Path must be specified'));
-  }
-
-  configure.call(options, callback);
-
-  function syncEach(entry, callback) {
-
-    //get slice of raw file from block's index
-    function rawslice(index) {
-      var start = index*options.size;
-      var end = start + options.size > raw.length ? raw.length : start + options.size;
-      return raw.subarray(start, end);
+  
+  configureOptions.call(options, callback);
+  
+  // Remove the nodes in the patched directory that are no longer present in the source
+  function removeNodes(destPath, entryDiff, callback) {
+    if(typeof entryDiff === 'function') {
+      callback = entryDiff;
+      entryDiff = null;
     }
+    
+    fs.readdir(destPath, function(err, destContents) {
+      if(err) {
+        return callback(err);
+      }
+      var deletedNodes = destContents;
 
+      if(entryDiff) {
+        var srcContents = !entryDiff ? [] : entryDiff.map(function(element) {
+          return element.path;
+        });
+        deletedNodes = _.difference(destContents, srcContents);
+      }
+
+      function unlink(item, callback) {
+        fs.unlink(Path.join(path, item), callback);
+      }
+
+      async.each(deletedNodes, unlink, callback);
+    });
+  }
+
+  function syncEach(entry, callback) { 
+    
     if(entry.hasOwnProperty('contents')) {
-      rsync.patch(fs, Path.join(path, entry.path), entry.contents, options, function(err) {
+      return rsync.patch(fs, Path.join(path, entry.path), entry.contents, options, function(err) {
         if(err) {
           return callback(err);
         }
-        fs.readdir(Path.join(path, entry.path), function(err, dirContents) {
-          if(err) {
-            return callback(err);
-          }
-          var srcContents = [];
-          if(entry.contents) {
-            entry.contents.forEach(function(element, index, array) {
-              srcContents.push(element.path);
-            });
-          }
-          var deletedNodes = _.difference(dirContents, srcContents);
-          deletedNodes.forEach(function(element, index, array) {
-            fs.unlink(Path.join(path, element));
-          });
-          return callback();
-        });
+         removeNodes(Path.join(path, entry.path), entry.contents, callback);
       });
-    } else if (entry.hasOwnProperty('link')) {
+    } 
+    
+    if (entry.hasOwnProperty('link')) {
       var syncPath = Path.join(path,entry.path);
-      fs.symlink(entry.link, syncPath, function(err){
+      return fs.symlink(entry.link, syncPath, function(err){ 
         if(err) {
-          callback(err);
-          return;
+          return callback(err);
         }
-        return callback();
-      });
-    } else {
-      if(typeof entry.identical === 'undefined') {
+        callback();
+      }); 
+    }
+    
+    if(!entry.identical) {
+      return fs.readFile(Path.join(path, entry.path), function(err, data) {
         var raw;
-        fs.readFile(Path.join(path, entry.path), function(err, data) {
-          if (!err) {
-            raw = data;
-          }
-          else if (err && err.code === 'ENOENT') {
-            raw = [];
-          }
-          else {
+
+        //get slice of raw file from block's index
+        function rawslice(index) {
+          var start = index*options.size;
+          var end = start + options.size > raw.length ? raw.length : start + options.size;
+
+          return raw.subarray(start, end);
+        }
+
+        if(err) {
+          if(err.code !== 'ENOENT') {
             return callback(err);
           }
+          raw = new Uint8Array();
+        } else {
+          raw = data;
+        }
 
-          var i = 0;
-          var len = entry.diff.length;
-          if(typeof raw === 'undefined') {
-            return callback('must do checksum() first', null);
-          }
+        var len = entry.diffs.length;
+        var buf = new Uint8Array();
 
-          var buf = new Uint8Array();
-          for(; i < len; i++) {
-            var chunk = entry.diff[i];
-            if(typeof chunk.data === 'undefined') { //use slice of original file
+        for(var i = 0; i < len; i++) {
+          var chunk = entry.diffs[i];
+
+          if(!chunk.data) { 
+            //use slice of original file
+            buf = appendBuffer(buf, rawslice(chunk.index));
+          } else {
+            buf = appendBuffer(buf, chunk.data);
+            if(chunk.index) {
               buf = appendBuffer(buf, rawslice(chunk.index));
-            } else {
-              buf = appendBuffer(buf, chunk.data);
-              if(typeof chunk.index !== 'undefined') {
-                buf = appendBuffer(buf, rawslice(chunk.index));
-              }
             }
           }
-          fs.writeFile(Path.join(path,entry.path), buf, function(err) {
-            if(err) {
-              callback(err);
-              return;
-            }
-            if(options.time) {
-              fs.utimes(Path.join(path,entry.path), entry.modified, entry.modified, function(err) {
-                if(err) {
-                  callback(err);
-                  return;
-                }
-                return callback();
-              });
-            }
-            else {
-              return callback();
-            }
-          });
-        });
-      }
-      else {
-        return callback();
-      }
-    }
-  }
-  fs.mkdir(path, function(err){
-    if(err && err.code != "EEXIST"){
-      callback(err);
-      return;
-    }
-    if(diff) {
-      async.each(diff, syncEach, function(err) {
-        fs.lstat(path, function(err, stats) {
+        }
+        return fs.writeFile(Path.join(path,entry.path), buf, function(err) {
           if(err) {
             return callback(err);
           }
-          if(stats.isDirectory()) {
-            fs.readdir(path, function(err, dirContents) {
+          if(options.time) {
+            fs.utimes(Path.join(path,entry.path), entry.modified, entry.modified, function(err) {
               if(err) {
                 return callback(err);
               }
-              var srcContents = [];
-              async.each(diff, function(element, callback) {
-                srcContents.push(element.path);
-                return callback();
-              }, function() {
-                var deletedNodes = _.difference(dirContents, srcContents);
-                async.each(deletedNodes, function(element, callback) {
-                  fs.unlink(Path.join(path, element), function(err) {
-                    return callback();
-                  });
-                }, function() {
-                  return callback();
-                });
-              });
+              callback();
             });
+          }
+          else {
+            callback();
           }
         });
       });
-    } else {
-      fs.lstat(path, function(err, stats) {
-        if(err) {
-          return callback(err);
-        }
-        if(stats.isDirectory()) {
-          fs.readdir(path, function(err, dirContents) {
-            if(err) {
-              return callback(err);
-            }
-            var deletedNodes = dirContents;
-            async.each(deletedNodes, function(element, callback) {
-              fs.unlink(Path.join(path, element), function(err) {
-                return callback();
-              });
-            }, function() {
-              return callback();
-            });
-          });
-        }
+    }
+    callback();
+  }
+  
+  // Remove deleted nodes in the destination path
+  function removeNodesInParent(diff, callback) {
+    callback = findCallback(callback, diff);
+    fs.lstat(path, function(err, stats) {
+      if(err) {
+        return callback(err);
+      }
+      if(stats.isDirectory()) {
+        removeNodes(path, diff, callback);
+      }
+    });
+  }
+
+  fs.mkdir(path, function(err){
+    if(err && err.code != "EEXIST"){
+      return callback(err);  
+    }
+    if(diff) {
+      return async.each(diff, syncEach, function(err) {
+        removeNodesInParent(diff, callback);
       });
     }
+    removeNodesInParent(callback);
   });
 };
 
+// Concatenate two Uint8Array buffers
 function appendBuffer( buffer1, buffer2 ) {
   var tmp = new Uint8Array( buffer1.byteLength + buffer2.byteLength );
+
   tmp.set( new Uint8Array( buffer1 ), 0 );
   tmp.set( new Uint8Array( buffer2 ), buffer1.byteLength );
   return tmp;
