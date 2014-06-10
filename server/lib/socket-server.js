@@ -1,5 +1,5 @@
-var Sync = require( '../lib/sync'),
-    SyncMessage = require('../lib/syncmessage'),
+var Sync = require( './sync'),
+    SyncMessage = require('./syncmessage'),
     WebSocketServer = require('ws').Server;
 
 module.exports = function( server ) {

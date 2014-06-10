@@ -3,13 +3,13 @@
  * between client and server
  */
 
-var env = require( "../lib/environment" ),
-    filesystem = require( "../lib/filesystem" ),
+var env = require( "./environment" ),
+    filesystem = require( "./filesystem" ),
     uuid = require( "node-uuid" ),
     emitter = new ( require( "events" ).EventEmitter )(),
-    SyncMessage = require( "../lib/syncmessage" );
+    SyncMessage = require( "./syncmessage" );
 
-var rsync = require( "../lib/rsync" );
+var rsync = require( "./rsync" );
 
 /**
  * Static public variables
