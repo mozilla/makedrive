@@ -4,7 +4,9 @@
     "async": "0.9.0",
     "filer": "0.0.9",
     "jquery": "2.1.1",
-    "makerstrap": "0.1.8"
+    "makerstrap": "0.1.8",
+    "superagent": "0.18.0",
+    "lodash": "2.4.1"
   },
   "version": "0.0.1"
 }

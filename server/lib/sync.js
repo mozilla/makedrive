@@ -3,24 +3,31 @@
  * between client and server
  */
 
-var env = require( "../lib/environment" ),
-    filesystem = require( "../lib/filesystem" ),
+var env = require( "./environment" ),
+    filesystem = require( "./filesystem" ),
     uuid = require( "node-uuid" ),
-    emitter = new ( require( "events" ).EventEmitter )();
+    emitter = new ( require( "events" ).EventEmitter )(),
+    SyncMessage = require( "./syncmessage" );
 
-var rsync = require( "../lib/rsync" );
+var rsync = require( "./rsync" );
 
 /**
  * Static public variables
  */
 
-// Constants for each state of the sync process
+// Constants for each state of the upstream sync process
 Sync.CONNECTED = 1;
 Sync.STARTED = 2;
 Sync.FILE_IDENTIFICATION = 3;
 Sync.CHECKSUMS = 4;
 Sync.DIFFS = 5;
 Sync.ENDED = 6;
+
+// Constants for downstream sync process
+Sync.SRCLIST = 7;
+Sync.CHECKSUM = 8;
+Sync.DIFF = 9;
+Sync.WSCON = 10;
 
 /**
  * Static private variables
@@ -59,6 +66,12 @@ function checkData( sync ) {
     return "This sync data hasn't been set! setPath() & setSrcList() must be called first.";
   }
   return null;
+}
+
+function createError(code, message) {
+  var error = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ERROR);
+  error.setContent({state: code, message: message});
+  return error;
 }
 
 /**
@@ -190,7 +203,7 @@ Sync.prototype.onClose = function( ) {
   return function() {
     emitter.removeListener( "updateToLatestSync", connectedClients[ sync.username ][ sync.syncId ].onOutOfDate );
     delete connectedClients[ sync.username ][ sync.syncId ];
-  }
+  };
 };
 
 Sync.prototype.setPath = function( path ){
@@ -214,12 +227,108 @@ Sync.prototype.setSrcList = function( srcList ){
     this.state = Sync.FILE_IDENTIFICATION;
   }
 };
+
+Sync.prototype.messageHandler = function( data ) {
+  if(!data || !data.content) {
+    return this.socket.send(Sync.socket.errors.EUNDEF);
+  }
+  if(!(data instanceof SyncMessage)) {
+    return this.socket.send(Sync.socket.errors.EINVAL);
+  }
+
+  var res;
+
+  if(data.type === SyncMessage.REQUEST) {
+
+    if(data.name === SyncMessage.SOURCE_LIST) {
+      if(!(this.socketState === Sync.WSCON) || !(this.socketState === Sync.SRCLIST)) {
+        return this.socket.send(Sync.socket.errors.ESTATE);
+      }
+      rsync.sourceList(this.fs, this.path, rsyncOptions, function(err, srcList) {
+        if(err) {
+          res = Sync.socket.errors.custom('ESRCLS', err);
+        } else {
+          res = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.SOURCE_LIST);
+          res.setContent({srcList: srcList, path: this.path});
+          this.socketState = Sync.SRCLIST;
+        }
+        return this.socket.send(JSON.stringify(res));
+      });
+    }
+
+    if(data.name === SyncMessage.DIFF) {
+      if(!(this.socketState === Sync.CHECKSUM) || !(this.socketState === Sync.DIFF)) {
+        return this.socket.send(Sync.socket.errors.ESTATE);
+      }
+      if(!(typeof data.content === 'object')) {
+        return this.socket.send(Sync.socket.errors.EINVDT);
+      }
+      rsync.diff(this.fs, this.path, data.content, rsyncOptions, function(err, diffs) {
+        if(err) {
+          res = Sync.socket.errors.custom('EDIFFS', err);
+        } else {
+          res = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.DIFF);
+          res.setContent({diffs: convertDiffs(diffs), path: this.path});
+          this.socketState = Sync.DIFF;
+        }
+        return this.socket.send(JSON.stringify(res));
+      });
+    }
+
+    if(data.name === SyncMessage.RESET) {
+      this.socketState = Sync.WSCON;
+      return this.socket.send(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
+    }
+
+    return this.socket.send(JSON.stringify(Sync.socket.errors.ERQRSC));
+
+  }
+
+  if(data.type === SyncMessage.RESPONSE) {
+
+    if(data.name === SyncMessage.CHECKSUM && this.socketState === Sync.SRCLIST) {
+      this.socketState = Sync.CHECKSUM;
+      return this.socket.send(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
+    }
+
+    if(data.name === SyncMessage.PATCH && this.socketState === Sync.DIFF) {
+      this.socketState = Sync.WSCON;
+      return this.socket.send(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
+    }
+
+    return this.socket.send(JSON.stringify(Sync.socket.errors.ERSRSC));
+
+  }
+
+  return this.socket.send(JSON.stringify(Sync.socket.errors.ETYPHN));
+};
+
+Sync.prototype.addSocket = function( ws ) {
+  this.socket = ws;
+  this.socketState = Sync.WSCON;
+};
+
 /**
  * Public static methods
  */
 Sync.active = {
   checkUser: checkUser,
   isSyncSession: isSyncSession
+};
+Sync.ws = {
+  errors: {
+    ETYPHN: createError('ETYPHN', 'The Sync message type cannot be handled by the server'),
+    EUNDEF: createError('EUNDEF', 'No value provided'),
+    EINVDT: createError('EINVDT', 'Invalid content provided'),
+    EINVAL: createError('EINVAL', 'Invalid Message Format. Message must be a sync message'),
+    ERQRSC: createError('ERQRSC', 'Invalid resource requested'),
+    ERSRSC: createError('ERSRSC', 'Resource provided cannot be recognized'),
+    ERECOG: createError('ERECOG', 'Message type not recognized'),
+    ESTATE: createError('ESTATE', 'Sync in incorrect state'),
+    custom: function(code, message) {
+    return createError(code, message);
+  }
+  }
 };
 Sync.connections = {
   doesIdMatchUser: function( id, username ){
@@ -239,12 +348,33 @@ Sync.kill = function( username ) {
   }
 };
 Sync.retrieve = function( username, syncId ) {
-  if ( !connectedClients[ username ] || !connectedClients[ username ][ syncId ] ) {
-    return null;
+  // Parameter handling
+  if ( !syncId && username ) {
+    syncId = username;
+    username = null;
   }
 
-  return connectedClients[ username ][ syncId ].sync;
-}
+  // Better performance if we have both parameters
+  if ( username ) {
+    if ( !connectedClients[ username ] || !connectedClients[ username ][ syncId ] ) {
+      return null;
+    }
+
+    return connectedClients[ username ][ syncId ].sync;
+  }
+
+  var client,
+      keys = Object.keys(connectedClients)
+
+  for (var i = 0; i < keys.length; i++) {
+    client = connectedClients[ keys[i] ][ syncId ];
+
+    if ( client ) {
+      return client.sync;
+    }
+  };
+  return null;
+};
 
 /**
  * Exports

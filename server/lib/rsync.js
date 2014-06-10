@@ -3,27 +3,28 @@ var Filer = require('filer'),
     Errors = Filer.Errors,
     CryptoJS = require('crypto-js'),
     async = require('async'),
-    cache = {},
+    _ = require('lodash'),
     rsync = {};
 
 function configure() {
   var options;
+
   if(typeof this === 'function') {
-    callback = this;
     options = {};
     options.size = 750;
-    options.checksum = false;
+    options.checksum = true;
     options.recursive = false;
     options.time = false;
     options.links = false;
-  }
-  else {
+    options.delete = false;
+  } else {
     options = this || {};
     options.size = options.size || 750;
-    options.checksum = options.checksum || false;
+    options.checksum = typeof options.checksum === 'undefined' ? true : options.checksum;
     options.recursive = options.recursive || false;
     options.time = options.time || false;
     options.links = options.links || false;
+    options.delete = options.delete || false;
   }
   return options;
 }
@@ -167,6 +168,7 @@ function roll(data, checksums, chunkSize) {
       });
     }
   }
+
   return results;
 }
 
@@ -178,7 +180,7 @@ function roll(data, checksums, chunkSize) {
 * MIT Licensed
 */
 function checksum (path, options, callback) {
-  //var destFS = this;
+  var cache = {};
   this.readFile(path, function (err, data) {
     if (!err) {
       // cache file
@@ -188,7 +190,7 @@ function checksum (path, options, callback) {
       cache[path] = [];
     }
     else {
-      callback(err);
+      return callback(err);
     }
     var length = cache[path].length;
     var incr = options.size;
@@ -215,8 +217,21 @@ function checksum (path, options, callback) {
   });
 }
 
-rsync.sourceList = function getSrcList(srcFs, path, options, callback) {
+rsync.sourceList = function getSrcList(srcFS, path, options, callback) {
+  if(typeof callback === 'undefined' && typeof options === 'function') {
+    callback = options;
+  }
+
+  if(!srcFS || !(typeof srcFS === 'object' && srcFS instanceof Filer.FileSystem)) {
+    return callback(new Errors.EINVAL('No filesystem provided'));
+  }
+
+  if(!path || !(typeof path === 'string')) {
+    return callback(new Errors.EINVAL('Path must be specified'));
+  }
+
   configure.call(options);
+
   var result = [];
   srcFS.lstat(path, function(err, stats) {
     if(err) {
@@ -240,13 +255,14 @@ rsync.sourceList = function getSrcList(srcFs, path, options, callback) {
             }
 
             var entry = {
+              node: stats.node,
               path: Path.basename(name),
               modified: stats.mtime,
               size: stats.size,
               type: stats.type
             };
             if(options.recursive && stats.isDirectory()) {
-              getSrcList(name, function(error, items) {
+              getSrcList(srcFS, name, options, function(error, items) {
                 if(error) {
                   callback(error);
                   return;
@@ -272,6 +288,7 @@ rsync.sourceList = function getSrcList(srcFs, path, options, callback) {
     }
     else {
       var entry = {
+        node: stats.node,
         path: Path.basename(path),
         size: stats.size,
         type: stats.type,
@@ -284,25 +301,45 @@ rsync.sourceList = function getSrcList(srcFs, path, options, callback) {
 };
 
 rsync.checksums = function(fs, destPath, srcList, options, callback) {
+  if(typeof callback === 'undefined' && typeof options === 'function') {
+    callback = options;
+  }
+
+  if(!fs || !(typeof fs === 'object' && fs instanceof Filer.FileSystem)) {
+    return callback(new Errors.EINVAL('No filesystem provided'));
+  }
+
+  if(!destPath || !(typeof destPath === 'string')) {
+    return callback(new Errors.EINVAL('Path must be specified'));
+  }
+
+  if(!srcList) {
+    return callback(new Errors.EINVAL('Source list must be provided'));
+  }
+
+  configure.call(options);
   fs.mkdir(destPath, function(err) {
-    configure.call(options);
     var result = [];
     function getDirChecksums(entry, callback) {
-      var item = { path: entry.path };
+      var item = { path: entry.path, node: entry.node };
       if(options.recursive && entry.type === 'DIRECTORY') {
         rsync.checksums(fs, Path.join(destPath, entry.path), entry.contents, options, function(error, items) {
           if(error) {
             callback(error);
             return;
           }
-          item.contents = items;
+          item.contents = items || []; // for empty directories where items is undefined
           result.push(item);
           callback();
         });
       } else if(entry.type === 'FILE' || !options.links) {
-        if(!options.checksum) {
+        if(!options.checksum || options.recursive) {
           fs.stat(Path.join(destPath, entry.path), function(err, stat) {
             if(!err && stat.mtime === entry.modified && stat.size === entry.size) {
+              item.checksum = [];
+              item.modified = entry.modified;
+              item.identical = true;
+              result.push(item);
               callback();
             }
             else {
@@ -333,9 +370,11 @@ rsync.checksums = function(fs, destPath, srcList, options, callback) {
         }
       }
       else if(entry.type === 'SYMLINK'){
-        if(!options.checksum) {
+        if(!options.checksum || options.recursive) {
           fs.stat(Path.join(destPath, entry.path), function(err, stat){
             if(!err && stat.mtime === entry.modified && stat.size === entry.size) {
+              item.link = true;
+              result.push(item);
               callback();
             }
             else {
@@ -355,7 +394,7 @@ rsync.checksums = function(fs, destPath, srcList, options, callback) {
       if(error) {
         callback(err);
       } else if (result.length === 0) {
-        callback();
+        callback(null, result);
       } else {
         callback(error, result);
       }
@@ -371,9 +410,24 @@ rsync.checksums = function(fs, destPath, srcList, options, callback) {
 * MIT Licensed
 */
 rsync.diff = function(fs, path, checksums, options, callback) {
-  //var srcFS = this;
-  // roll through the file
+  if(typeof callback === 'undefined') {
+    callback = options;
+  }
+
+  if(!fs || !(typeof fs === 'object' && fs instanceof Filer.FileSystem)) {
+    return callback(new Errors.EINVAL('No filesystem provided'));
+  }
+
+  if(!path || !(typeof path === 'string')) {
+    return callback(new Errors.EINVAL('Path must be specified'));
+  }
+
   configure.call(options);
+
+  if(options.checksum && !checksums) {
+    return callback(new Errors.EINVAL('Checksums must be provided'));
+  }
+
   var diffs = [];
   fs.lstat(path, function(err, stat) {
     if(stat.isDirectory()) {
@@ -382,15 +436,25 @@ rsync.diff = function(fs, path, checksums, options, callback) {
       });
     }
     else if (stat.isFile() || !options.links) {
-      fs.readFile(path, function (err, data) {
-        if (err) { return callback(err); }
+      if(!(typeof checksums[0].identical === 'undefined')) {
         diffs.push({
-          diff: roll(data, checksums[0].checksum, options.size),
+          diff: [],
           modified: checksums[0].modified,
-          path: checksums[0].path
+          path: checksums[0].path,
+          identical: true
         });
-        callback(err, diffs);
-      });
+        callback(null, diffs);
+      } else {
+        fs.readFile(path, function (err, data) {
+          if (err) { return callback(err); }
+          diffs.push({
+            diff: roll(data, checksums[0].checksum, options.size),
+            modified: checksums[0].modified,
+            path: checksums[0].path
+          });
+          callback(err, diffs);
+        });
+      }
     }
     else if (stat.isSymbolicLink()) {
       fs.readlink(path, function(err, linkContents) {
@@ -406,7 +470,7 @@ rsync.diff = function(fs, path, checksums, options, callback) {
           diffs.push({
             link: linkContents,
             modified: stats.mtime,
-            path: path
+            path: checksums[0].path
           });
           callback(err, diffs);
         });
@@ -416,7 +480,7 @@ rsync.diff = function(fs, path, checksums, options, callback) {
 
   function getDiff(entry, callback) {
     if(entry.hasOwnProperty('contents')) {
-      rsync.diff(fs, Path.join(path, entry.path), entry.contents, function(err, stuff) {
+      rsync.diff(fs, Path.join(path, entry.path), entry.contents, options, function(err, stuff) {
         if(err) {
           callback(err);
           return;
@@ -447,15 +511,25 @@ rsync.diff = function(fs, path, checksums, options, callback) {
         });
       });
     } else {
-      fs.readFile(Path.join(path,entry.path), function (err, data) {
-        if (err) { return callback(err); }
+      if(!(typeof entry.identical === 'undefined')) {
         diffs.push({
-          diff: roll(data, entry.checksum, options.size),
+          diff: [],
           modified: entry.modified,
-          path: entry.path
+          path: entry.path,
+          identical: true
         });
-        callback(err, diffs);
-      });
+        callback(null, diffs);
+      } else {
+        fs.readFile(Path.join(path,entry.path), function (err, data) {
+          if (err) { return callback(err); }
+          diffs.push({
+            diff: roll(data, entry.checksum, options.size),
+            modified: entry.modified,
+            path: entry.path
+          });
+          callback(err, diffs);
+        });
+      }
     }
   }
 };
@@ -468,7 +542,20 @@ rsync.diff = function(fs, path, checksums, options, callback) {
 * MIT Licensed
 */
 rsync.patch = function(fs, path, diff, options, callback) {
-  configure.call(options);
+  if(typeof callback === 'undefined') {
+    callback = options;
+  }
+
+  if(!fs || !(typeof fs === 'object' && fs instanceof Filer.FileSystem)) {
+    return callback(new Errors.EINVAL('No filesystem provided'));
+  }
+
+  if(!path || !(typeof path === 'string')) {
+    return callback(new Errors.EINVAL('Path must be specified'));
+  }
+
+  configure.call(options, callback);
+
   function syncEach(entry, callback) {
 
     //get slice of raw file from block's index
@@ -481,10 +568,24 @@ rsync.patch = function(fs, path, diff, options, callback) {
     if(entry.hasOwnProperty('contents')) {
       rsync.patch(fs, Path.join(path, entry.path), entry.contents, options, function(err) {
         if(err) {
-          callback(err);
-          return;
+          return callback(err);
         }
-        callback();
+        fs.readdir(Path.join(path, entry.path), function(err, dirContents) {
+          if(err) {
+            return callback(err);
+          }
+          var srcContents = [];
+          if(entry.contents) {
+            entry.contents.forEach(function(element, index, array) {
+              srcContents.push(element.path);
+            });
+          }
+          var deletedNodes = _.difference(dirContents, srcContents);
+          deletedNodes.forEach(function(element, index, array) {
+            fs.unlink(Path.join(path, element));
+          });
+          return callback();
+        });
       });
     } else if (entry.hasOwnProperty('link')) {
       var syncPath = Path.join(path,entry.path);
@@ -496,45 +597,60 @@ rsync.patch = function(fs, path, diff, options, callback) {
         return callback();
       });
     } else {
-      var raw = cache[Path.join(path,entry.path)];
-      var i = 0;
-      var len = entry.diff.length;
-      if(typeof raw === 'undefined') {
-        return callback('must do checksum() first', null);
-      }
-
-      var buf = new Uint8Array();
-      for(; i < len; i++) {
-        var chunk = entry.diff[i];
-        if(typeof chunk.data === 'undefined') { //use slice of original file
-          buf = appendBuffer(buf, rawslice(chunk.index));
-        } else {
-          buf = appendBuffer(buf, chunk.data);
-          if(typeof chunk.index !== 'undefined') {
-            buf = appendBuffer(buf, rawslice(chunk.index));
+      if(typeof entry.identical === 'undefined') {
+        var raw;
+        fs.readFile(Path.join(path, entry.path), function(err, data) {
+          if (!err) {
+            raw = data;
           }
-        }
-      }
-      delete cache[Path.join(path,entry.path)];
-      fs.writeFile(Path.join(path,entry.path), buf, function(err) {
-        if(err) {
-          callback(err);
-          return;
-        }
-        if(options.time) {
-          fs.utimes(Path.join(path,entry.path), entry.modified, entry.modified, function(err) {
+          else if (err && err.code === 'ENOENT') {
+            raw = [];
+          }
+          else {
+            return callback(err);
+          }
+
+          var i = 0;
+          var len = entry.diff.length;
+          if(typeof raw === 'undefined') {
+            return callback('must do checksum() first', null);
+          }
+
+          var buf = new Uint8Array();
+          for(; i < len; i++) {
+            var chunk = entry.diff[i];
+            if(typeof chunk.data === 'undefined') { //use slice of original file
+              buf = appendBuffer(buf, rawslice(chunk.index));
+            } else {
+              buf = appendBuffer(buf, chunk.data);
+              if(typeof chunk.index !== 'undefined') {
+                buf = appendBuffer(buf, rawslice(chunk.index));
+              }
+            }
+          }
+          fs.writeFile(Path.join(path,entry.path), buf, function(err) {
             if(err) {
               callback(err);
               return;
             }
-            return callback();
+            if(options.time) {
+              fs.utimes(Path.join(path,entry.path), entry.modified, entry.modified, function(err) {
+                if(err) {
+                  callback(err);
+                  return;
+                }
+                return callback();
+              });
+            }
+            else {
+              return callback();
+            }
           });
-        }
-        else {
-          return callback();
-        }
-      });
-
+        });
+      }
+      else {
+        return callback();
+      }
     }
   }
   fs.mkdir(path, function(err){
@@ -542,9 +658,57 @@ rsync.patch = function(fs, path, diff, options, callback) {
       callback(err);
       return;
     }
-    async.each(diff, syncEach, function(err) {
-      callback(err);
-    });
+    if(diff) {
+      async.each(diff, syncEach, function(err) {
+        fs.lstat(path, function(err, stats) {
+          if(err) {
+            return callback(err);
+          }
+          if(stats.isDirectory()) {
+            fs.readdir(path, function(err, dirContents) {
+              if(err) {
+                return callback(err);
+              }
+              var srcContents = [];
+              async.each(diff, function(element, callback) {
+                srcContents.push(element.path);
+                return callback();
+              }, function() {
+                var deletedNodes = _.difference(dirContents, srcContents);
+                async.each(deletedNodes, function(element, callback) {
+                  fs.unlink(Path.join(path, element), function(err) {
+                    return callback();
+                  });
+                }, function() {
+                  return callback();
+                });
+              });
+            });
+          }
+        });
+      });
+    } else {
+      fs.lstat(path, function(err, stats) {
+        if(err) {
+          return callback(err);
+        }
+        if(stats.isDirectory()) {
+          fs.readdir(path, function(err, dirContents) {
+            if(err) {
+              return callback(err);
+            }
+            var deletedNodes = dirContents;
+            async.each(deletedNodes, function(element, callback) {
+              fs.unlink(Path.join(path, element), function(err) {
+                return callback();
+              });
+            }, function() {
+              return callback();
+            });
+          });
+        }
+      });
+    }
   });
 };
 

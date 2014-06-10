@@ -1,8 +1,10 @@
 var request = require('request');
 var expect = require('chai').expect;
 var app = require('../../server/index.js');
+var ws = require('ws');
 
-var serverURL = 'http://0.0.0.0:9090';
+var serverURL = 'http://0.0.0.0:9090',
+    socketURL = serverURL.replace( 'http', 'ws' );
 
 // Mock Webmaker auth
 var mockAuthFound = false;
@@ -14,6 +16,7 @@ app.routes.post.forEach(function(route) {
 
 if(!mockAuthFound) {
   app.post('/mocklogin/:username', function(req, res) {
+console.log('/mocklogin route', req.param('username'));
     var username = req.param('username');
     if(!username){
       // Expected username.
@@ -34,14 +37,18 @@ function uniqueUsername() {
   return 'user' + seed++;
 }
 
-function getConnectionID(jar, callback){
+function getConnectionID(options, callback){
+  if(!(options && options.jar)) {
+    throw('Expected options.jar');
+  }
+
   var headers = {
-   'Accept-Encoding': 'gzip',
+   'Accept-Encoding': 'zlib',
    'Content-Type': 'text/event-stream'
   };
   var stream = request({
     url: serverURL + '/api/sync/updates',
-    jar: jar,
+    jar: options.jar,
     headers: headers
   });
   var callbackCalled = false;
@@ -54,15 +61,15 @@ function getConnectionID(jar, callback){
 
     data += chunk;
 
-    // Look for something like data: {"connectionId":"91842458-d5f7-486f-9297-52e460c3ab38"}
-    var match = /data: {"connectionId"\s*:\s*"(\w{8}(-\w{4}){3}-\w{12}?)"}/.exec(data);
+    // Look for something like data: {"syncId":"91842458-d5f7-486f-9297-52e460c3ab38"}
+    var match = /data: {"syncId"\s*:\s*"(\w{8}(-\w{4}){3}-\w{12}?)"}/.exec(data);
     if(match) {
       callbackCalled = true;
       callback(null, {
         close: function() {
           stream && stream.end();
         },
-        connectionID: match[1]
+        syncId: match[1]
       });
     }
   });
@@ -86,7 +93,7 @@ function authenticate(options, callback){
   // If no options passed, generate a unique username and jar
   if(typeof options === 'function') {
     callback = options;
-    options = {}
+    options = {};
   }
 
   options.jar = options.jar || jar();
@@ -96,9 +103,12 @@ function authenticate(options, callback){
     url: serverURL + '/mocklogin/' + options.username,
     jar: options.jar
   }, function(err, res, body) {
-      expect(err).not.to.exist;
-      expect(res.statusCode).to.equal(200);
-      callback(null, options);
+    if(err) {
+      return callback(err);
+    }
+
+    expect(res.statusCode).to.equal(200);
+    callback(null, options);
   });
 }
 
@@ -116,7 +126,7 @@ function authenticateAndConnect(options, callback) {
     }
     var username = result.username;
 
-    getConnectionID(options.jar, function(err, result){
+    getConnectionID(options, function(err, result){
       if(err) {
         return callback(err);
       }
@@ -125,6 +135,7 @@ function authenticateAndConnect(options, callback) {
       result.username = username;
       result.done = function() {
         result.close();
+        console.log('calling done', !!options.done);
         options.done && options.done();
       };
 
@@ -133,12 +144,127 @@ function authenticateAndConnect(options, callback) {
   });
 }
 
+function syncRouteConnect(options, callback){
+  if(!(options && options.jar && options.syncId && callback)) {
+    throw('You must pass options, options.jar, options.syncId and callback');
+  }
+
+console.log('syncRouteConnect Options', options);
+
+  request.get({
+    url: serverURL + '/api/sync/' + options.syncId,
+    jar: options.jar
+  }, function(err, res, body) {
+    if(err) {
+      return callback(err);
+    }
+
+    options.statusCode = res.statusCode;
+    callback(null, options);
+  });
+}
+
+function sourceRouteConnect(options, extras, callback){
+  if(typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+
+  if(typeof extras === 'function') {
+    callback = extras;
+    extras = {};
+  }
+
+  extras.url = serverURL + '/api/sync/' + options.syncId + '/sources';
+  extras.jar =  options.jar;
+
+  request.post(extras, function(err, res, body) {
+    if(err) {
+      return callback(err);
+    }
+
+    options.statusCode = res.statusCode;
+    callback(null, options);
+  });
+}
+
+function csRouteConnect(options, extras, callback){
+  if(typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+
+  if(typeof extras === 'function') {
+    callback = extras;
+    extras = {};
+  }
+
+  extras.url = serverURL + '/api/sync/' + options.syncId + '/checksums';
+  extras.jar =  options.jar;
+
+  request.get(extras, function(err, res, body) {
+    if(err) {
+      return callback(err);
+    }
+    options.statusCode = res.statusCode;
+    options.body = body;
+    callback(null, options);
+  });
+}
+
+function diffRouteConnect(options, extras, callback){
+  if(typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+
+  if(typeof extras === 'function') {
+    callback = extras;
+    extras = {};
+  }
+
+  extras.url = serverURL + '/api/sync/' + options.syncId + '/diffs';
+  extras.jar =  options.jar;
+
+  request.put(extras, function(err, res, body) {
+    if(err) {
+      return callback(err);
+    }
+    options.statusCode = res.statusCode;
+    callback(null, options);
+  });
+}
+
+function openSocket( options ) {
+  var socket = new ws(socketURL);
+
+  function defaultHandler(msg) {
+    return function() {
+      console.error("Unexpected socket on ", msg);
+      expect(true).to.be.false;
+    }
+  }
+
+  socket.on("message", options.onMessage || defaultHandler("message"));
+  socket.on("error", options.onError || defaultHandler("error"));
+  socket.on("open", options.onOpen || defaultHandler("open"));
+  socket.on("close", options.onClose || defaultHandler("close"));
+
+  return socket;
+}
+
 module.exports = {
   app: app,
   serverURL: serverURL,
+  socketURL: socketURL,
   connection: getConnectionID,
   username: uniqueUsername,
   createJar: jar,
   authenticate: authenticate,
-  authenticatedConnection: authenticateAndConnect
+  authenticatedConnection: authenticateAndConnect,
+  syncRouteConnect: syncRouteConnect,
+  sourceRouteConnect: sourceRouteConnect,
+  csRouteConnect: csRouteConnect,
+  diffRouteConnect: diffRouteConnect,
+  openSocket: openSocket
 };

@@ -3,11 +3,15 @@ var middleware = require( './middleware' ),
     routes = require( './routes' ),
     Sync = require( '../lib/sync'),
     util = require( '../lib/util' ),
-    formidable = require('formidable');
+    formidable = require('formidable'),
+    ws = require('ws'),
+    SyncMessage = require('../lib/syncmessage'),
+    WebSocket = require('ws'),
+    WebSocketServer = WebSocket.Server;
 
 // TODO: Factor route groupings into their own files,
 //       build a system to require them here
-module.exports = function createRoutes( app ) {
+module.exports = function createRoutes( app, wss ) {
   app.get( "/", routes.index );
   app.get( "/p/*", middleware.authenticationHandler, routes.retrieveFiles );
 
@@ -27,7 +31,7 @@ module.exports = function createRoutes( app ) {
         res.write("data: " + 'You are out of date! Sync from source to update current session.' + '\n\n');
       }
     };
-console.log('here')
+
     // Create this client's connection
     var sync = req.session.sync = Sync.create( username, onOutOfDate );
 
@@ -78,12 +82,14 @@ console.log('here')
     if ( !Sync.connections.doesIdMatchUser( req.param( 'connectionId' ), username ) ) {
       return res.json(400, { message: "User/client missmatch: connectionId doesn't match user!" });
     }
-
+console.log('Trying to start sync session ' + sync.id);
     sync.start(function( err, id ) {
       if ( err ) {
+        console.error('sync.start error: ' + err);
         return res.json( 500, err );
       }
 
+      console.log('started sync session for ' + username + ' syncID ' + id);
       res.json(200, {
         syncId: id
       });
@@ -134,10 +140,10 @@ console.log('here')
     sync.generateChecksums(function( err, checksums ) {
       if ( err ) {
         sync.end();
+        console.error('/api/sync/:syncId/checksums error: ' + err);
         delete req.session.sync;
         return res.json(500, { message: "Ending sync! Fatal error generating checksums: " + err });
       }
-
       res.json(200, { checksums: checksums });
     });
   });
@@ -188,12 +194,13 @@ console.log('here')
 
         });
       }
-    }
+    };
 
     form.on('end', function() {
       sync.patch( diffs, function( err ) {
         sync.end();
         if ( err ) {
+          console.error('/api/sync/:syncId/diffs error: ' + err);
           return res.json(500, { message: "Ending sync! Fatal error while patching: " + err });
         }
         return res.json(200);

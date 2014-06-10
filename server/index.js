@@ -6,12 +6,14 @@ var express = require( "express" ),
     helmet = require( "helmet" ),
     WebmakerAuth = require( "webmaker-auth" ),
     Path = require( "path" ),
+    http = require( "http" ),
     messina;
 
 // Expose internals
 var env = require( "./lib/environment" ),
     middleware = require( "./middleware" ),
-    routes = require( "./routes" );
+    routes = require( "./routes" ),
+    socketServer = require( "./lib/socket-server" );
 
 var app = express(),
     distDir = Path.resolve( __dirname, "dist" ),
@@ -35,12 +37,12 @@ if ( env.get( "ENABLE_GELF_LOGS" ) ) {
 }
 
 // General middleware
-app.use(express.static(Path.join(__dirname,'../client')));
 app.disable( "x-powered-by" );
 app.use( helmet.contentTypeOptions() );
 app.use( helmet.hsts() );
 app.enable( "trust proxy" );
 app.use( express.compress() );
+app.use(express.static(Path.join(__dirname,'../client')));
 app.use( express.json() );
 app.use( express.urlencoded() );
 app.use( webmakerAuth.cookieParser() );
@@ -59,8 +61,9 @@ function corsOptions ( req, res ) {
 routes( app );
 
 port = env.get( "PORT", 9090 );
-app.listen( port, function() {
-  console.log( "MakeDrive server listening ( Probably http://localhost:%d )", port );
-});
+var server = http.createServer( app );
+server.listen(9090);
+
+socketServer( server );
 
 module.exports = app;

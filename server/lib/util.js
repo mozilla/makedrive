@@ -10,4 +10,4 @@ toArrayBuffer: function (buffer) {
    return view;
  }
 
-}
+};
