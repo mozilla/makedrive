@@ -41,21 +41,31 @@ if(!uploadFound) {
     var parts = req.path.split('/');
     var username = parts[2];
     var path = '/' + parts.slice(3).join('/');
-    // TODO: this is horrible, fix to just use Buffers when we update filer
-    var fileData = new Uint8Array(new Buffer(req.body.toString('binary'), 'binary'));
 
-    var fs = filesystem.create({
-      keyPrefix: username,
-      name: username
+    var fileData = [];
+    req.on('data', function(chunk) {
+      fileData.push(new Buffer(chunk));
     });
+    req.on('end', function() {
+      fileData = Buffer.concat(fileData);
 
-    fs.writeFile(path, fileData, function(err, data) {
-      if(err) {
-        res.send(500, {error: err});
-        return;
-      }
+      var fs = filesystem.create({
+        keyPrefix: username,
+        name: username
+      });
 
-      res.send(200);
+      // XXXhumph: this hack is just here until we switch Filer to Buffers
+      fileData = new Uint8Array(fileData.toJSON());
+
+      fs.writeFile(path, fileData, function(err, data) {
+        if(err) {
+          res.send(500, {error: err});
+          return;
+        }
+
+        res.send(200);
+      });
+
     });
   });
 }

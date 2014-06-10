@@ -154,15 +154,46 @@ describe('Test util.js', function(){
         expect(err).not.to.exist;
         expect(result.jar).to.exist;
 
+        // /p/index.html should come back as uploaded
         request.get({
           url: util.serverURL + '/p/index.html',
           jar: result.jar
         }, function(err, res, body) {
           expect(err).not.to.exist;
           expect(res.statusCode).to.equal(200);
-          console.log('content', body);
-          done();
+          expect(body).to.equal(content.toString('utf8'));
+
+          // /p/ should come back with dir listing
+          request.get({
+            url: util.serverURL + '/p/',
+            jar: result.jar
+          }, function(err, res, body) {
+            expect(err).not.to.exist;
+            expect(res.statusCode).to.equal(200);
+            // Look for artifacts we'd expect in the directory listing
+            expect(body).to.match(/<head><title>Index of \/<\/title>/);
+            expect(body).to.match(/<a href="\/p\/index.html">index.html<\/a>/);
+            done();
+          });
         });
+      });
+    });
+  });
+
+  it('/p/ should give a 404 if the path is unknown', function(done) {
+    util.authenticate(function(err, result) {
+      expect(err).not.to.exist;
+      expect(result.jar).to.exist;
+
+      request.get({
+        url: util.serverURL + '/p/no/file/here.html',
+        jar: result.jar
+      }, function(err, res, body) {
+        expect(err).not.to.exist;
+        expect(res.statusCode).to.equal(200);
+        expect(body).to.match(/<title>404 Not Found<\/title>/);
+        expect(body).to.match(/The requested URL \/no\/file\/here.html was not found on this server./);
+        done();
       });
     });
   });

@@ -59,7 +59,7 @@ function handleDir(fs, path, res) {
         '<th><a href="#">Size</a></th><th><a href="#">Description</a></th></tr>' +
         '<tr><th colspan="5"><hr></th></tr>' +
         '<tr><td valign="top"><img src="/icons/back.png" alt="[DIR]"></td>' +
-        '<td><a href="?' + parent + '">Parent Directory</a> </td><td>&nbsp;</td>' +
+        '<td><a href="' + parent + '">Parent Directory</a> </td><td>&nbsp;</td>' +
         '<td align="right"> - </td><td>&nbsp;</td></tr>';
 
   var footer = '<tr><th colspan="5"><hr></th></tr>' +
@@ -126,7 +126,7 @@ function handleDir(fs, path, res) {
     entries.forEach(function(entry) {
       var name = Path.basename(entry.path);
       var ext = Path.extname(entry.path);
-      var href = '/p/' + Path.join(path, entry.path);
+      var href = '/p' + Path.join(path, entry.path);
       var icon;
       var alt;
 
