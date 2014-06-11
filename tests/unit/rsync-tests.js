@@ -1,5 +1,5 @@
 var Filer = require('filer'),
-    rsync = require('../../server/lib/rsync'),
+    rsync = require('./rsync'),
     expect = require('chai').expect,
     fs, 
     fs2,

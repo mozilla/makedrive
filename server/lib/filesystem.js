@@ -18,7 +18,7 @@ module.exports = {
     });
 
     return new Filer.FileSystem({
-      provider: new Provider( options )
+      provider: new Filer.FileSystem.providers.Memory( options )
     });
   }
 };

@@ -37,7 +37,7 @@ var syncTable = {},
     // TODO: Examine these. Are they what we need?
     rsyncOptions = {
       size: 5,
-      links: false,
+      time: true,
       recursive: true
     };
 
@@ -74,26 +74,35 @@ function createError(code, message) {
   return error;
 }
 
+function u8toArray(u8) {
+  var array = [];
+  var len = u8.length;
+  for (var i = 0; i < len; i++) {
+    array[i] = u8[i];
+  }
+  return array;
+}
+
 function convertDiffs( diffs ) {
   var i, j, k;
   for (i = 0; i < diffs.length; i++) {
     if (diffs[i].contents) {
       for (j = 0; j < diffs[i].contents.length; j++) {
-        for (k = 0; k < diffs[i].contents[j].diff.length; k++) {
-          if (Object.prototype.toString.call(diffs[i].contents[j].diff[k].data) === "[object Uint8Array]") {
-            diffs[i].contents[j].diff[k].data = {
+        for (k = 0; k < diffs[i].contents[j].diffs.length; k++) {
+          if (Object.prototype.toString.call(diffs[i].contents[j].diffs[k].data) === "[object Uint8Array]") {
+            diffs[i].contents[j].diffs[k].data = {
               __isUint8Array: true,
-              __array: u8toArray(diffs[i].contents[j].diff[k].data)
+              __array: u8toArray(diffs[i].contents[j].diffs[k].data)
             };
           }
         }
       }
     } else {
-      for (k = 0; k < diffs[i].diff.length; k++) {
-        if (Object.prototype.toString.call(diffs[i].diff[k].data) === "[object Uint8Array]") {
-          diffs[i].diff[k].data = {
+      for (k = 0; k < diffs[i].diffs.length; k++) {
+        if (Object.prototype.toString.call(diffs[i].diffs[k].data) === "[object Uint8Array]") {
+          diffs[i].diffs[k].data = {
             __isUint8Array: true,
-            __array: u8toArray(diffs[i].diff[k].data)
+            __array: u8toArray(diffs[i].diffs[k].data)
           };
         }
       }
@@ -119,8 +128,19 @@ function Sync( username, onOutOfDate ) {
     sync: this
   };
   emitter.addListener( "updateToLatestSync", onOutOfDate );
-
-  this.state = Sync.CONNECTED;
+  this.fs = filesystem.create({
+    keyPrefix: this.username,
+    name: this.username
+  });
+  var that = this;
+  // TODO: Decide what our root path will be (currently /projects)
+  this.fs.mkdir("/projects", function( err ) {
+    if ( err && err.code !== 'EEXIST' ) {
+      console.err( "Error creating the user's root directory: " + err );
+    }
+    that.state = Sync.CONNECTED;
+    that.path = '/projects';
+  });
 }
 
 // Plug into this user's server-side filesystem,
@@ -128,23 +148,17 @@ function Sync( username, onOutOfDate ) {
 Sync.prototype.start = function( callback ) {
   var that = this;
 
-  var fs = that.fs = filesystem.create({
-    keyPrefix: that.username
-  });
+//  var fs = that.fs = filesystem.create({
+//    keyPrefix: that.username,
+//    name: that.username
+//  });
 
-  // TODO: Decide what our root path will be (currently /projects)
-  fs.mkdir("/projects", function( err ) {
-    if ( err && err.code !== 'EEXIST' ) {
-      return callback( "Error creating the user's root directory: " + err );
-    }
+  syncTable[ that.username ] = {
+    syncId: that.syncId
+  };
 
-    syncTable[ that.username ] = {
-      syncId: that.syncId
-    };
-
-    that.state = Sync.STARTED;
-    callback( null, that.syncId );
-  });
+  that.state = Sync.STARTED;
+  callback( null, that.syncId );
 };
 
 Sync.prototype.end = function() {
@@ -184,35 +198,7 @@ Sync.prototype.patch = function( diffs, callback ) {
   if ( !diffs ) {
     callback( "Diffs must be passed" );
   }
-
-  // TODO: Swap this out for Ali's solution to this problem
-  // Parse JSON diffs to Uint8Array
   var i, j, k;
-  for (i = 0; i < diffs.length; i++) {
-    if(diffs[i].contents) {
-      for (j = 0; j < diffs[i].contents.length; j++) {
-        for (k = 0; k < diffs[i].contents[j].diff.length; k++) {
-          if (diffs[i].contents[j].diff[k].data) {
-            diffs[i].contents[j].diff[k].data = diffs[i].contents[j].diff[k].data;
-            // Deal with special-cased flattened typed arrays in WebSQL (see put() below)
-            if (diffs[i].contents[j].diff[k].data.__isUint8Array) {
-              diffs[i].contents[j].diff[k].data = new Uint8Array(diffs[i].contents[j].diff[k].data.__array);
-            }
-          }
-        }
-      }
-    } else {
-      for (k = 0; k < diffs[i].diff.length; k++) {
-        if (diffs[i].diff[k].data) {
-          diffs[i].diff[k].data = diffs[i].diff[k].data;
-          // Deal with special-cased flattened typed arrays in WebSQL (see put() below)
-          if (diffs[i].diff[k].data.__isUint8Array) {
-            diffs[i].diff[k].data = new Uint8Array(diffs[i].diff[k].data.__array);
-          }
-        }
-      }
-    }
-  }
 
   rsync.patch( that.fs, that.path, diffs, rsyncOptions, function ( err, data ) {
     if ( err ) {
@@ -256,49 +242,50 @@ Sync.prototype.setSrcList = function( srcList ){
 };
 
 Sync.prototype.messageHandler = function( data ) {
+  var that = this;
   if(!data || !data.content) {
     return this.socket.send(Sync.socket.errors.EUNDEF);
   }
-  if(!(data instanceof SyncMessage)) {
-    return this.socket.send(Sync.socket.errors.EINVAL);
-  }
+  // TODO: validate that the message sent is a SyncMessage
 
   var res;
 
   if(data.type === SyncMessage.REQUEST) {
 
     if(data.name === SyncMessage.SOURCE_LIST) {
-      if(this.socketState !== Sync.WSCON || this.socketState !== Sync.SRCLIST) {
+      if(this.socketState !== Sync.WSCON && this.socketState !== Sync.SRCLIST) {
         return this.socket.send(Sync.socket.errors.ESTATE);
       }
-      rsync.sourceList(this.fs, this.path, rsyncOptions, function(err, srcList) {
+      return rsync.sourceList(this.fs, this.path, rsyncOptions, function(err, srcList) {
         if(err) {
           res = Sync.socket.errors.custom('ESRCLS', err);
         } else {
           res = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.SOURCE_LIST);
-          res.setContent({srcList: srcList, path: this.path});
-          this.socketState = Sync.SRCLIST;
+          res.setContent({srcList: srcList, path: that.path});
+          that.socketState = Sync.SRCLIST;
         }
-        return this.socket.send(JSON.stringify(res));
+        that.socket.send(JSON.stringify(res));
       });
     }
 
     if(data.name === SyncMessage.DIFF) {
-      if(this.socketState !== Sync.CHECKSUM || this.socketState !== Sync.DIFF) {
+      if(this.socketState !== Sync.CHECKSUM && this.socketState !== Sync.DIFF) {
         return this.socket.send(Sync.socket.errors.ESTATE);
       }
       if(typeof data.content !== 'object') {
         return this.socket.send(Sync.socket.errors.EINVDT);
       }
-      rsync.diff(this.fs, this.path, data.content, rsyncOptions, function(err, diffs) {
+      var checksums;
+      checksums = data.content.checksums;
+      return rsync.diff(this.fs, this.path, checksums, rsyncOptions, function(err, diffs) {
         if(err) {
           res = Sync.socket.errors.custom('EDIFFS', err);
         } else {
           res = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.DIFF);
-          res.setContent({diffs: convertDiffs(diffs), path: this.path});
-          this.socketState = Sync.DIFF;
+          res.setContent({diffs: convertDiffs(diffs), path: that.path});
+          that.socketState = Sync.DIFF;
         }
-        return this.socket.send(JSON.stringify(res));
+        that.socket.send(JSON.stringify(res));
       });
     }
 
@@ -315,7 +302,9 @@ Sync.prototype.messageHandler = function( data ) {
 
     if(data.name === SyncMessage.CHECKSUM && this.socketState === Sync.SRCLIST) {
       this.socketState = Sync.CHECKSUM;
-      return this.socket.send(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
+      res = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK);
+      res.setContent({path: that.path});
+      return this.socket.send(JSON.stringify(res));
     }
 
     if(data.name === SyncMessage.PATCH && this.socketState === Sync.DIFF) {
@@ -342,7 +331,7 @@ Sync.active = {
   checkUser: checkUser,
   isSyncSession: isSyncSession
 };
-Sync.ws = {
+Sync.socket = {
   errors: {
     ETYPHN: createError('ETYPHN', 'The Sync message type cannot be handled by the server'),
     EUNDEF: createError('EUNDEF', 'No value provided'),
