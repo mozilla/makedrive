@@ -75,10 +75,11 @@ function createError(code, message) {
 }
 
 function convertDiffs( diffs ) {
-  for (var i = 0; i < diffs.length; i++) {
+  var i, j, k;
+  for (i = 0; i < diffs.length; i++) {
     if (diffs[i].contents) {
-      for (var j = 0; j < diffs[i].contents.length; j++) {
-        for (var k = 0; k < diffs[i].contents[j].diff.length; k++) {
+      for (j = 0; j < diffs[i].contents.length; j++) {
+        for (k = 0; k < diffs[i].contents[j].diff.length; k++) {
           if (Object.prototype.toString.call(diffs[i].contents[j].diff[k].data) === "[object Uint8Array]") {
             diffs[i].contents[j].diff[k].data = {
               __isUint8Array: true,
@@ -88,7 +89,7 @@ function convertDiffs( diffs ) {
         }
       }
     } else {
-      for (var k = 0; k < diffs[i].diff.length; k++) {
+      for (k = 0; k < diffs[i].diff.length; k++) {
         if (Object.prototype.toString.call(diffs[i].diff[k].data) === "[object Uint8Array]") {
           diffs[i].diff[k].data = {
             __isUint8Array: true,
@@ -268,7 +269,7 @@ Sync.prototype.messageHandler = function( data ) {
   if(data.type === SyncMessage.REQUEST) {
 
     if(data.name === SyncMessage.SOURCE_LIST) {
-      if(!(this.socketState === Sync.WSCON) || !(this.socketState === Sync.SRCLIST)) {
+      if(this.socketState !== Sync.WSCON || this.socketState !== Sync.SRCLIST) {
         return this.socket.send(Sync.socket.errors.ESTATE);
       }
       rsync.sourceList(this.fs, this.path, rsyncOptions, function(err, srcList) {
@@ -284,10 +285,10 @@ Sync.prototype.messageHandler = function( data ) {
     }
 
     if(data.name === SyncMessage.DIFF) {
-      if(!(this.socketState === Sync.CHECKSUM) || !(this.socketState === Sync.DIFF)) {
+      if(this.socketState !== Sync.CHECKSUM || this.socketState !== Sync.DIFF) {
         return this.socket.send(Sync.socket.errors.ESTATE);
       }
-      if(!(typeof data.content === 'object')) {
+      if(typeof data.content !== 'object') {
         return this.socket.send(Sync.socket.errors.EINVDT);
       }
       rsync.diff(this.fs, this.path, data.content, rsyncOptions, function(err, diffs) {
@@ -391,7 +392,7 @@ Sync.retrieve = function( username, syncId ) {
   }
 
   var client,
-      keys = Object.keys(connectedClients)
+      keys = Object.keys(connectedClients);
 
   for (var i = 0; i < keys.length; i++) {
     client = connectedClients[ keys[i] ][ syncId ];
@@ -399,7 +400,7 @@ Sync.retrieve = function( username, syncId ) {
     if ( client ) {
       return client.sync;
     }
-  };
+  }
   return null;
 };
 
