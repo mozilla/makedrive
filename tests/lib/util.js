@@ -16,7 +16,6 @@ app.routes.post.forEach(function(route) {
 
 if(!mockAuthFound) {
   app.post('/mocklogin/:username', function(req, res) {
-console.log('/mocklogin route', req.param('username'));
     var username = req.param('username');
     if(!username){
       // Expected username.
@@ -135,7 +134,6 @@ function authenticateAndConnect(options, callback) {
       result.username = username;
       result.done = function() {
         result.close();
-        console.log('calling done', !!options.done);
         options.done && options.done();
       };
 
@@ -148,8 +146,6 @@ function syncRouteConnect(options, callback){
   if(!(options && options.jar && options.syncId && callback)) {
     throw('You must pass options, options.jar, options.syncId and callback');
   }
-
-console.log('syncRouteConnect Options', options);
 
   request.get({
     url: serverURL + '/api/sync/' + options.syncId,

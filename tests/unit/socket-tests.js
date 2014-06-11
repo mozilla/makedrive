@@ -64,7 +64,7 @@ describe('Test initial socket connection', function(){
                 ws.send(JSON.stringify({syncId: result.syncId}));
               }
             })
-          });
+            });
         },
         onOpen: function() {
           ws.send(JSON.stringify({syncId: result.syncId}));
@@ -73,3 +73,7 @@ describe('Test initial socket connection', function(){
     });
   });
 });
+
+//describe('Test initial socket connection', function(){
+//  it('
+//});

@@ -10,11 +10,7 @@ module.exports = function( server ) {
     console.error("Socket server error: ", error );
   });
 
-  wss.on('headers', function(headers) {
-    console.error("HEADERS: ", headers);
-  });
-
-  wss.on('connection', function(ws) { console.log("We have a connection!");
+  wss.on('connection', function(ws) {
    ws.on('message', function(data, flags) {
      // Capture the connectionId
      // Remove event listener for "this"
