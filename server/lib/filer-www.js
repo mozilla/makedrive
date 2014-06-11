@@ -126,7 +126,7 @@ function handleDir(fs, path, res) {
     entries.forEach(function(entry) {
       var name = Path.basename(entry.path);
       var ext = Path.extname(entry.path);
-      var href = '/p' + Path.join(path, entry.path);
+      var href = Path.join('/p', path, entry.path);
       var icon;
       var alt;
 
