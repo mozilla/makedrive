@@ -82,14 +82,12 @@ module.exports = function createRoutes( app, wss ) {
     if ( !Sync.connections.doesIdMatchUser( req.param( 'connectionId' ), username ) ) {
       return res.json(400, { message: "User/client missmatch: connectionId doesn't match user!" });
     }
-console.log('Trying to start sync session ' + sync.id);
     sync.start(function( err, id ) {
       if ( err ) {
         console.error('sync.start error: ' + err);
         return res.json( 500, err );
       }
 
-      console.log('started sync session for ' + username + ' syncID ' + id);
       res.json(200, {
         syncId: id
       });

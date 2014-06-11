@@ -105,7 +105,10 @@ function getConnectionID(options, callback){
       callbackCalled = true;
       callback(null, {
         close: function() {
-          stream = null;
+          // HTML5 provides an easy way to
+          // close SSE connections, but this doesn't
+          // exist in NodeJS, so force it.
+          stream.req.abort();
         },
         syncId: match[1]
       });
@@ -273,19 +276,41 @@ function diffRouteConnect(options, extras, callback){
 function openSocket( options ) {
   var socket = new ws(socketURL);
 
-  function defaultHandler(msg) {
+  function defaultHandler(msg, failout) {
+    failout = failout || true;
     return function() {
-      console.error("Unexpected socket on ", msg);
-      expect(true).to.be.false;
-    }
+      console.error("Unexpected socket on " + msg);
+      expect(failout).to.be.false;
+    };
   }
 
-  socket.on("message", options.onMessage || defaultHandler("message"));
-  socket.on("error", options.onError || defaultHandler("error"));
-  socket.on("open", options.onOpen || defaultHandler("open"));
-  socket.on("close", options.onClose || defaultHandler("close"));
+  var onMessage = options.onMessage || defaultHandler("message");
+  var onError = options.onError || defaultHandler("error");
+  var onOpen = options.onOpen || defaultHandler("open");
+  var onClose = options.onClose || defaultHandler("close");
 
-  return socket;
+  socket.on("message", onMessage);
+  socket.on("error", onError);
+  socket.on("open", onOpen);
+  socket.on("close", onClose);
+
+  return {
+    socket: socket,
+    onClose: onClose
+  };
+}
+
+// Expects 1 parameter, with each subsequent one being an object
+// containing a socket and an onClose callback to be deregistered
+function cleanupSockets(done) {
+  var sockets = Array.prototype.slice.call(arguments, 1);
+  sockets.forEach(function(socketPackage) {
+    var socket = socketPackage.socket;
+
+    socket.removeListener('close', socketPackage.onClose);
+    socket.close();
+  });
+  done();
 }
 
 function upload(username, path, contents, callback) {
@@ -316,5 +341,6 @@ module.exports = {
   csRouteConnect: csRouteConnect,
   diffRouteConnect: diffRouteConnect,
   openSocket: openSocket,
-  upload: upload
+  upload: upload,
+  cleanupSockets: cleanupSockets
 };
