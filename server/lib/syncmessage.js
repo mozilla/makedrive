@@ -36,7 +36,7 @@ function SyncMessage(type, name) {
 
 SyncMessage.prototype.setContent = function(content) {
   this.content = content;
-}
+};
 
 // TODO: Expose a .toJSON method
 

@@ -9,7 +9,7 @@ var version = require('../../package.json').version;
 function write(content, contentType, res) {
   res.header({'Content-Type': contentType});
   res.send(200, content);
-};
+}
 
 /**
  * Send an Apache-style 404
@@ -25,7 +25,7 @@ function handle404(url, res) {
         '<address>MakeDrive/' + version + ' (Web) Server</address>' +
         '</body></html>';
   write(html, 'text/html', res);
-};
+}
 
 /**
  * Send the raw file, making it somewhat more readable
@@ -42,7 +42,7 @@ function handleFile(fs, path, res) {
 
     write(data, contentType, res);
   });
-};
+}
 
 /**
  * Send an Apache-style directory listing
@@ -159,7 +159,7 @@ function handleDir(fs, path, res) {
     }
     processEntries(list);
   });
-};
+}
 
 
 function FilerWebServer(username) {

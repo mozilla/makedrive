@@ -165,6 +165,7 @@ console.log('Trying to start sync session ' + sync.id);
     // formidable handle parsing from request
     form.parse(req);
     form.onPart = function(part) {
+      var i, j, k;
       if (!part.filename) {
         part.addListener('data', function(data) {
           diffs = JSON.parse(data);
@@ -174,17 +175,17 @@ console.log('Trying to start sync session ' + sync.id);
       } else {
         part.addListener('data', function(data) {
           // Parse JSON diffs to Uint8Array
-          for (var i = 0; i < diffs.length; i++) {
+          for (i = 0; i < diffs.length; i++) {
             if(diffs[i].contents) {
-              for (var j = 0; j < diffs[i].contents.length; j++) {
-                for (var k = 0; k < diffs[i].contents[j].diff.length; k++) {
+              for (j = 0; j < diffs[i].contents.length; j++) {
+                for (k = 0; k < diffs[i].contents[j].diff.length; k++) {
                   if (diffs[i].contents[j].diff[k].data) {
                     diffs[i].contents[j].diff[k].data = util.toArrayBuffer(data);
                   }
                 }
               }
             } else {
-              for (var k = 0; k < diffs[i].diff.length; k++) {
+              for (k = 0; k < diffs[i].diff.length; k++) {
                 if (diffs[i].diff[k].data) {
                   diffs[i].diff[k].data = util.toArrayBuffer(data);
                 }
