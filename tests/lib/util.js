@@ -105,7 +105,7 @@ function getConnectionID(options, callback){
       callbackCalled = true;
       callback(null, {
         close: function() {
-          stream && stream.end();
+          stream = null;
         },
         syncId: match[1]
       });
