@@ -60,6 +60,16 @@ function validateParams(fs, path) {
   return null;
 }
 
+// Get the 'directory' path from the given path for an entry
+// /dir/file.txt returns /dir
+// /dir/folder returns /dir/folder
+function getDirPath(path, entry) {
+  if(Path.basename(path) === entry) {
+   return Path.dirname(path);
+  }
+  return path;
+}
+
 // MD5 hashing for RSync
 function _md5(data) {
   return CryptoJS.MD5(String.fromCharCode(data)).toString();
@@ -317,14 +327,21 @@ rsync.checksums = function(fs, destPath, srcList, options, callback) {
   }
   
   configureOptions.call(options);
-  fs.mkdir(destPath, function(err) {
-    var result = [];
+  var result = [];
 
-    function getDirChecksums(entry, callback) {
-      var item = { path: entry.path, node: entry.node };
+  function getDirChecksums(entry, callback) {
+    var item = { path: entry.path, node: entry.node };
+    var dirPath = getDirPath(destPath, entry.path);
+    var absPath = Path.join(dirPath, entry.path);
 
-      if(options.recursive && entry.type === 'DIRECTORY') {
-        rsync.checksums(fs, Path.join(destPath, entry.path), entry.contents, options, function(error, items) {
+    if(options.recursive && entry.type === 'DIRECTORY') {
+      var path = Path.join(destPath, entry.path);
+      // Create the directory if it does not exist
+      fs.mkdir(path, function(err) {
+        if(err && err.code !== 'EEXIST') {
+          return callback(err);
+        }
+        rsync.checksums(fs, path, entry.contents, options, function(error, items) {
           if(error) {
             return callback(error);
           }
@@ -333,9 +350,15 @@ rsync.checksums = function(fs, destPath, srcList, options, callback) {
           result.push(item);
           callback();
         });
-      } else if(entry.type === 'FILE' || !options.links) {
+      });
+    } else if(entry.type === 'FILE' || !options.links) {
+      // Make parent directories that do not exist
+      fs.mkdir(dirPath, function(err) {
+        if(err && err.code !== 'EEXIST') {
+          return callback(err);
+        }
         if(!options.checksum || options.recursive) {
-          fs.stat(Path.join(destPath, entry.path), function(err, stat) {
+          fs.stat(absPath, function(err, stat) {
             if(!err && stat.mtime === entry.modified && stat.size === entry.size) {
               item.checksums = [];
               item.modified = entry.modified;
@@ -345,7 +368,7 @@ rsync.checksums = function(fs, destPath, srcList, options, callback) {
               callback();
             }
             else {
-              checksum.call(fs, Path.join(destPath, entry.path), options, function(err, checksums) {
+              checksum.call(fs, absPath, options, function(err, checksums) {
                 if(err) {
                   return callback(err);
                 }
@@ -356,9 +379,8 @@ rsync.checksums = function(fs, destPath, srcList, options, callback) {
               });
             }
           });
-        }
-        else {
-          checksum.call(fs, Path.join(destPath, entry.path), options, function(err, checksums) {
+        } else {
+          checksum.call(fs, absPath, options, function(err, checksums) {
             if(err) {
               return callback(err);
             }
@@ -368,10 +390,16 @@ rsync.checksums = function(fs, destPath, srcList, options, callback) {
             callback();               
           });
         }
-      }
-      else if(entry.type === 'SYMLINK'){
+      });
+    }
+    else if(entry.type === 'SYMLINK'){
+      // Make parent directories that do not exist
+      fs.mkdir(dirPath, function(err) {
+        if(err && err.code !== 'EEXIST') {
+          return callback(err);
+        }
         if(!options.checksum || options.recursive) {
-          fs.stat(Path.join(destPath, entry.path), function(err, stat){
+          fs.stat(absPath, function(err, stat){
             if(!err && stat.mtime === entry.modified && stat.size === entry.size) {
               item.link = true;
               result.push(item);
@@ -388,17 +416,17 @@ rsync.checksums = function(fs, destPath, srcList, options, callback) {
           result.push(item);
           callback();
         }
-      }
+      });
     }
-    async.each(srcList, getDirChecksums, function(error) {
-      if(error) {
-        callback(err);
-      } else if (result.length === 0) {
-        callback(null, result);
-      } else {
-        callback(null, result);
-      }
-    });
+  }
+  async.each(srcList, getDirChecksums, function(error) {
+    if(error) {
+      callback(error);
+    } else if (result.length === 0) {
+      callback(null, result);
+    } else {
+      callback(null, result);
+    }
   });
 };
 
@@ -574,6 +602,8 @@ rsync.patch = function(fs, path, diff, options, callback) {
   }
 
   function syncEach(entry, callback) { 
+    var dirPath = getDirPath(path, entry.path);
+    var syncPath = Path.join(dirPath, entry.path);
     
     if(entry.hasOwnProperty('contents')) {
       return rsync.patch(fs, Path.join(path, entry.path), entry.contents, options, function(err) {
@@ -585,7 +615,6 @@ rsync.patch = function(fs, path, diff, options, callback) {
     } 
     
     if (entry.hasOwnProperty('link')) {
-      var syncPath = Path.join(path,entry.path);
       return fs.symlink(entry.link, syncPath, function(err){ 
         if(err) {
           return callback(err);
@@ -595,7 +624,7 @@ rsync.patch = function(fs, path, diff, options, callback) {
     }
     
     if(!entry.identical) {
-      return fs.readFile(Path.join(path, entry.path), function(err, data) {
+      return fs.readFile(syncPath, function(err, data) {
         var raw;
 
         //get slice of raw file from block's index
@@ -605,7 +634,6 @@ rsync.patch = function(fs, path, diff, options, callback) {
 
           return raw.subarray(start, end);
         }
-
         if(err) {
           if(err.code !== 'ENOENT') {
             return callback(err);
@@ -631,12 +659,12 @@ rsync.patch = function(fs, path, diff, options, callback) {
             }
           }
         }
-        return fs.writeFile(Path.join(path,entry.path), buf, function(err) {
+        return fs.writeFile(syncPath, buf, function(err) {
           if(err) {
             return callback(err);
           }
           if(options.time) {
-            fs.utimes(Path.join(path,entry.path), entry.modified, entry.modified, function(err) {
+            fs.utimes(syncPath, entry.modified, entry.modified, function(err) {
               if(err) {
                 return callback(err);
               }
@@ -660,22 +688,18 @@ rsync.patch = function(fs, path, diff, options, callback) {
         return callback(err);
       }
       if(stats.isDirectory()) {
-        removeNodes(path, diff, callback);
+        return removeNodes(path, diff, callback);
       }
+      callback();
     });
   }
 
-  fs.mkdir(path, function(err){
-    if(err && err.code != "EEXIST"){
-      return callback(err);  
-    }
-    if(diff) {
-      return async.each(diff, syncEach, function(err) {
-        removeNodesInParent(diff, callback);
-      });
-    }
-    removeNodesInParent(callback);
-  });
+  if(diff) {
+    return async.each(diff, syncEach, function(err) {
+      removeNodesInParent(diff, callback);
+    });
+  }
+  removeNodesInParent(callback);
 };
 
 // Concatenate two Uint8Array buffers
