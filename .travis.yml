@@ -1,0 +1,8 @@
+---
+before_script:
+- "npm install -g grunt-cli"
+env:
+- "PORT=3000 NODE_ENV=\"development\" ENABLE_GELF_LOGS=false SESSION_SECRET="secret value" FORCE_SSL=false"
+language: node_js
+node_js:
+- "0.10"
