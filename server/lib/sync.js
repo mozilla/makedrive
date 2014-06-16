@@ -178,7 +178,6 @@ Sync.prototype.patch = function( diffs, callback ) {
   if ( err ) {
     callback( err );
   }
-
   // Fail loudly if the server allows this method to be called
   // without passing diffs
   // TODO: Add diff validation logic
