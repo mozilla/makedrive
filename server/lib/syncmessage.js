@@ -1,13 +1,13 @@
-SyncMessage.REQUEST = 1;
-SyncMessage.RESPONSE = 2;
-SyncMessage.STREAM = 3;
-SyncMessage.ACK = 4;
-SyncMessage.SOURCE_LIST = 5;
-SyncMessage.CHECKSUM = 6;
-SyncMessage.DIFF = 7;
-SyncMessage.PATCH = 8;
-SyncMessage.RESET = 9;
-SyncMessage.ERROR = 0;
+SyncMessage.REQUEST = "REQUEST";
+SyncMessage.RESPONSE = "RESPONSE";
+SyncMessage.STREAM = "STREAM";
+SyncMessage.ACK = "ACK";
+SyncMessage.SOURCE_LIST = "SOURCE_LIST";
+SyncMessage.CHECKSUM = "CHECKSUM";
+SyncMessage.DIFF = "DIFF";
+SyncMessage.PATCH = "PATCH";
+SyncMessage.RESET = "RESET";
+SyncMessage.ERROR = "ERROR";
 
 function validateParams(param, paramType) {
   if(param) {

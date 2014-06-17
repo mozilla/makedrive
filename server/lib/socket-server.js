@@ -10,36 +10,44 @@ module.exports = function( server ) {
     console.error("Socket server error: ", error );
   });
 
-  wss.on('connection', function f(ws) {
-   ws.onmessage = function(data, flags) {
+  wss.on('connection', function(ws) {
+   ws.once('message', function(data, flags) {
+     // Socket data sent from a web browser
+     // is accessed through `data.data`, whereas
+     // requests sent from the NodeJS `request` module
+     // are accessed through `data`.
+     if (typeof data !== "string") {
+       data = data.data;
+     }
+
      // Capture the connectionId
-     // Remove event listener for "this"
-     var match = /{"syncId"\s*:\s*"(\w{8}(-\w{4}){3}-\w{12}?)"}/.exec(data.data),
+     var match = /{"syncId"\s*:\s*"(\w{8}(-\w{4}){3}-\w{12}?)"}/.exec(data),
          // TODO: Research websocket authentication (so we can pass username here)
          sync;
 
      if ( !match ) {
-       console.error('Sync ID provided was not recognized');
        return ws.close();
      }
-     ws.onmessage = null;
      ws.send(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
 
      sync = Sync.retrieve( match[1] );
-     sync.addSocket( ws );
-     ws.onmessage = function(data, flags) {
+     sync.addSocket( this );
+
+     ws.on('message', function(data, flags) {
        if(!flags || (flags && !flags.binary)) {
-         data = data.data;
+         if (typeof data !== "string") {
+           data = data.data;
+         }
          try {
            data = JSON.parse(data);
            sync.messageHandler(data);
          } catch(error) {
            var Error = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ERROR);
-           Error.setContent(error);
-           ws.send(JSON.stringify(Error));
+           Error.setContent(error.toString() || error);
+           this.send(JSON.stringify(Error));
          }
        }
-     };
-   };
+     });
+   });
   });
 };

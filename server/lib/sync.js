@@ -16,18 +16,18 @@ var rsync = require( "./rsync" );
  */
 
 // Constants for each state of the upstream sync process
-Sync.CONNECTED = 1;
-Sync.STARTED = 2;
-Sync.FILE_IDENTIFICATION = 3;
-Sync.CHECKSUMS = 4;
-Sync.DIFFS = 5;
-Sync.ENDED = 6;
+Sync.CONNECTED = "CONNECTED";
+Sync.STARTED = "STARTED";
+Sync.FILE_IDENTIFICATION = "FILE_IDENTIFICATION";
+Sync.CHECKSUMS = "CHECKSUMS";
+Sync.DIFFS = "DIFFS";
+Sync.ENDED = "ENDED";
 
 // Constants for downstream sync process
-Sync.SRCLIST = 7;
-Sync.CHECKSUM = 8;
-Sync.DIFF = 9;
-Sync.WSCON = 10;
+Sync.SRCLIST = "SRCLIST";
+Sync.CHECKSUM = "CHECKSUM";
+Sync.DIFF = "DIFF";
+Sync.WSCON = "WSCON";
 
 /**
  * Static private variables
@@ -243,19 +243,21 @@ Sync.prototype.setSrcList = function( srcList ){
 
 Sync.prototype.messageHandler = function( data ) {
   var that = this;
-  if(!data || !data.content) {
-    return this.socket.send(Sync.socket.errors.EUNDEF);
+  if (typeof data !== "object" || !data.content && !data.type){
+    var errorMessage = Sync.socket.errors.EINVAL;
+    return this.socket.send(JSON.stringify(Sync.socket.errors.EINVAL));
   }
-  // TODO: validate that the message sent is a SyncMessage
+  if(!data.content) {
+    return this.socket.send(JSON.stringify(Sync.socket.errors.EINVDT));
+  }
 
   var res;
-
   if(data.type === SyncMessage.REQUEST) {
-
     if(data.name === SyncMessage.SOURCE_LIST) {
       if(this.socketState !== Sync.WSCON && this.socketState !== Sync.SRCLIST) {
-        return this.socket.send(Sync.socket.errors.ESTATE);
+        return this.socket.send(JSON.stringify(Sync.socket.errors.ESTATE));
       }
+
       return rsync.sourceList(this.fs, this.path, rsyncOptions, function(err, srcList) {
         if(err) {
           res = Sync.socket.errors.custom('ESRCLS', err);
@@ -267,14 +269,14 @@ Sync.prototype.messageHandler = function( data ) {
         that.socket.send(JSON.stringify(res));
       });
     }
-
     if(data.name === SyncMessage.DIFF) {
       if(this.socketState !== Sync.CHECKSUM && this.socketState !== Sync.DIFF) {
-        return this.socket.send(Sync.socket.errors.ESTATE);
+        return this.socket.send(JSON.stringify(Sync.socket.errors.ESTATE));
       }
       if(typeof data.content !== 'object') {
-        return this.socket.send(Sync.socket.errors.EINVDT);
+        return this.socket.send(JSON.stringify(Sync.socket.errors.EINVDT));
       }
+
       var checksums;
       checksums = data.content.checksums;
       return rsync.diff(this.fs, this.path, checksums, rsyncOptions, function(err, diffs) {
@@ -288,18 +290,14 @@ Sync.prototype.messageHandler = function( data ) {
         that.socket.send(JSON.stringify(res));
       });
     }
-
     if(data.name === SyncMessage.RESET) {
       this.socketState = Sync.WSCON;
       return this.socket.send(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
     }
 
     return this.socket.send(JSON.stringify(Sync.socket.errors.ERQRSC));
-
   }
-
   if(data.type === SyncMessage.RESPONSE) {
-
     if(data.name === SyncMessage.CHECKSUM && this.socketState === Sync.SRCLIST) {
       this.socketState = Sync.CHECKSUM;
       res = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK);
@@ -313,7 +311,6 @@ Sync.prototype.messageHandler = function( data ) {
     }
 
     return this.socket.send(JSON.stringify(Sync.socket.errors.ERSRSC));
-
   }
 
   return this.socket.send(JSON.stringify(Sync.socket.errors.ETYPHN));
@@ -342,27 +339,35 @@ Sync.socket = {
     ERECOG: createError('ERECOG', 'Message type not recognized'),
     ESTATE: createError('ESTATE', 'Sync in incorrect state'),
     custom: function(code, message) {
-    return createError(code, message);
-  }
+      return createError(code, message);
+    }
   }
 };
+
 Sync.connections = {
   doesIdMatchUser: function( id, username ){
     return id in connectedClients[ username ];
   }
 };
-Sync.create = function( username, onOutOfDate ){
-  if ( syncTable[ username ] ) {
-    throw( "Error! " + username + " already has a sync in progress!" );
-  }
 
+Sync.create = function( username, onOutOfDate ){
   return new Sync( username, onOutOfDate );
 };
+
 Sync.kill = function( username ) {
+  var user;
   if ( username in syncTable ) {
+    user = syncTable[ username ]
     delete syncTable[ username ];
   }
+
+  if ( username in connectedClients ) {
+    user = connectedClients[ username ];
+    user.socket.close();
+    user.socketState = null;
+  }
 };
+
 Sync.retrieve = function( username, syncId ) {
   // Parameter handling
   if ( !syncId && username ) {

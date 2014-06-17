@@ -100,14 +100,14 @@ describe('/api/sync/:syncId/sources route', function () {
       });
     });
   });
-  it('should return a kosher 200 when sync successfully retrieves path and srcList', function (done){
+  it('should return a 201 when sync successfully retrieves path and srcList', function (done){
     util.authenticatedConnection({done: done}, function(err, result1) {
       expect(err).not.to.exist;
         util.syncRouteConnect(result1, function(err, result2) {
           expect(err).not.to.exist;
           util.sourceRouteConnect(result2, data, function(err, result3) {
             expect(err).not.to.exist;
-            expect(result3.statusCode).to.equal(200);
+            expect(result3.statusCode).to.equal(201);
             result3.done();
           });
       });

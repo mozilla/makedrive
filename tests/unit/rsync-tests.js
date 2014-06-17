@@ -1,7 +1,7 @@
 var Filer = require('filer'),
-    rsync = require('./rsync'),
+    rsync = require('../../server/lib/rsync'),
     expect = require('chai').expect,
-    fs, 
+    fs,
     fs2,
     provider;
 
@@ -19,31 +19,31 @@ describe('Rsync', function() {
   });
 
   it('should fail generating sourceList if filesystem is null', function(done) {
-    rsync.sourceList(null, '/', function(err) {  
+    rsync.sourceList(null, '/', function(err) {
       expect(err).to.exist;
       expect(err.code).to.equal('EINVAL');
       done();
     });
   });
-  
+
   it('should fail generating checksums if filesystem is null', function(done) {
-    rsync.checksums(null, '/', [], function(err) {  
+    rsync.checksums(null, '/', [], function(err) {
       expect(err).to.exist;
       expect(err.code).to.equal('EINVAL');
       done();
     });
   });
-  
+
   it('should fail generating diffs if filesystem is null', function(done) {
-    rsync.diff(null, '/', [],  function(err) {  
+    rsync.diff(null, '/', [],  function(err) {
       expect(err).to.exist;
       expect(err.code).to.equal('EINVAL');
       done();
     });
   });
-  
+
   it('should fail patching if filesystem is null', function(done) {
-    rsync.patch(null, '/', [], function(err) {  
+    rsync.patch(null, '/', [], function(err) {
       expect(err).to.exist;
       expect(err.code).to.equal('EINVAL');
       done();
@@ -51,31 +51,31 @@ describe('Rsync', function() {
   });
 
   it('should fail generating sourceList if source path is null', function(done) {
-    rsync.sourceList(fs, null, function(err) {  
+    rsync.sourceList(fs, null, function(err) {
       expect(err).to.exist;
       expect(err.code).to.equal('EINVAL');
       done();
     });
   });
-  
+
   it('should fail generating checksums if source path is null', function(done) {
-    rsync.checksums(fs, null, [], function(err) {  
+    rsync.checksums(fs, null, [], function(err) {
       expect(err).to.exist;
       expect(err.code).to.equal('EINVAL');
       done();
     });
   });
-  
+
   it('should fail generating diffs if source path is null', function(done) {
-    rsync.diff(fs, null, [], function(err) {  
+    rsync.diff(fs, null, [], function(err) {
       expect(err).to.exist;
       expect(err.code).to.equal('EINVAL');
       done();
     });
   });
-  
+
   it('should fail patching if source path is null', function(done) {
-    rsync.patch(fs, null, [], function(err) {  
+    rsync.patch(fs, null, [], function(err) {
       expect(err).to.exist;
       expect(err.code).to.equal('EINVAL');
       done();
@@ -93,7 +93,7 @@ describe('Rsync', function() {
   it('should succeed if the source file is different in content but not length from the destination file. (Destination edited)', function(done) {
     fs.mkdir('/test', function(err) {
       expect(err).to.not.exist;
-      fs.writeFile('/1.txt','This is my file. It does not have any typos.','utf8',function(err) { 
+      fs.writeFile('/1.txt','This is my file. It does not have any typos.','utf8',function(err) {
         expect(err).to.not.exist;
         fs.writeFile('/test/1.txt','This iz mi fiel. It doez not have any topos,', 'utf8', function(err) {
           expect(err).to.not.exist;
@@ -115,15 +115,15 @@ describe('Rsync', function() {
               });
             });
           });
-        }); 
-      });   
+        });
+      });
     });
   });
 
   it('should succeed if the source file is longer than the destination file. (Destination appended)', function(done) {
     fs.mkdir('/test', function(err) {
       expect(err).to.not.exist;
-      fs.writeFile('/1.txt','This is my file. It is longer than the destination file.', 'utf8', function(err) { 
+      fs.writeFile('/1.txt','This is my file. It is longer than the destination file.', 'utf8', function(err) {
         expect(err).to.not.exist;
         fs.writeFile('/test/1.txt','This is my file.','utf8',function(err) {
           expect(err).to.not.exist;
@@ -145,15 +145,15 @@ describe('Rsync', function() {
               });
             });
           });
-        }); 
-      });   
+        });
+      });
     });
   });
 
   it('should succeed if the source file shorter than the destination file. (Destination truncated)', function(done) {
     fs.mkdir('/test', function(err) {
       expect(err).to.not.exist;
-      fs.writeFile('/1.txt','This is my file.','utf8',function(err) { 
+      fs.writeFile('/1.txt','This is my file.','utf8',function(err) {
         expect(err).to.not.exist;
         fs.writeFile('/test/1.txt','This is my file. It is longer than the source version.', 'utf8', function(err) {
           expect(err).to.not.exist;
@@ -175,15 +175,15 @@ describe('Rsync', function() {
               });
             });
           });
-        }); 
-      });   
+        });
+      });
     });
   });
 
   it('should succeed if the source file does not exist in the destination folder (Destination file created)', function(done) {
     fs.mkdir('/test', function(err) {
       expect(err).to.not.exist;
-      fs.writeFile('/1.txt','This is my file. It does not exist in the destination folder.', 'utf8', function(err) { 
+      fs.writeFile('/1.txt','This is my file. It does not exist in the destination folder.', 'utf8', function(err) {
         expect(err).to.not.exist;
         rsync.sourceList(fs, '/1.txt', {recursive: true, size: 5 }, function(err, data) {
           expect(err).to.not.exist;
@@ -203,14 +203,14 @@ describe('Rsync', function() {
             });
           });
         });
-      }); 
-    });   
+      });
+    });
   });
 
   it('should succeed if no options are provided', function(done) {
     fs.mkdir('/test', function(err) {
       expect(err).to.not.exist;
-      fs.writeFile('/1.txt','This is my file. It does not exist in the destination folder.', 'utf8', function(err) { 
+      fs.writeFile('/1.txt','This is my file. It does not exist in the destination folder.', 'utf8', function(err) {
         expect(err).to.not.exist;
         rsync.sourceList(fs, '/1.txt', {recursive: true, size: 5 }, function(err, data) {
           expect(err).to.not.exist;
@@ -229,13 +229,13 @@ describe('Rsync', function() {
               });
             });
           });
-        }); 
-      });   
+        });
+      });
     });
   });
 
   it('should do nothing if the source file and destination file have the same mtime and size with \'checksum = false\' flag (Default)', function(done){
-    var date = Date.parse('1 Oct 2000 15:33:22'); 
+    var date = Date.parse('1 Oct 2000 15:33:22');
     fs.mkdir('/test', function(err) {
       expect(err).to.not.exist;
       fs.writeFile('/1.txt', 'This is a file.', 'utf8', function(err) {
@@ -263,7 +263,7 @@ describe('Rsync', function() {
                     });
                   });
                 });
-              });   
+              });
             });
           });
         });
@@ -306,7 +306,7 @@ describe('Rsync', function() {
 
     fs.mkdir('/test', function(err) {
       expect(err).to.not.exist;
-      fs.writeFile('/1.txt','This is my file.', 'utf8', function(err) { 
+      fs.writeFile('/1.txt','This is my file.', 'utf8', function(err) {
         expect(err).to.not.exist;
         fs.stat('/1.txt', function(err, stats){
           expect(err).to.not.exist;
@@ -334,9 +334,9 @@ describe('Rsync', function() {
                 });
               });
             });
-          }); 
+          });
         })
-      });   
+      });
     });
   });
 
@@ -367,7 +367,7 @@ describe('Rsync', function() {
                         expect(data).to.equal('This is a file');
                         done();
                       });
-                    });  
+                    });
                   });
                 });
               });
@@ -378,7 +378,7 @@ describe('Rsync', function() {
     });
   });
 
-  it('should copy a symlink as a link with \'links = true\' flag', function(done) {   
+  it('should copy a symlink as a link with \'links = true\' flag', function(done) {
     fs.mkdir('/test', function(err){
       expect(err).to.not.exist;
       fs.writeFile('/apple.txt', 'This is a file', function(err){
@@ -447,7 +447,7 @@ describe('Rsync', function() {
                           expect(data).to.equal('This is a file');
                           done();
                         });
-                      });  
+                      });
                     });
                   });
                 });
@@ -460,7 +460,7 @@ describe('Rsync', function() {
   });
 
   it('should succeed if the destination folder does not exist (Destination directory created)', function(done) {
-    fs.writeFile('/1.txt','This is my file. It does not exist in the destination folder.', 'utf8', function(err) { 
+    fs.writeFile('/1.txt','This is my file. It does not exist in the destination folder.', 'utf8', function(err) {
       expect(err).to.not.exist;
       rsync.sourceList(fs, '/1.txt', {recursive: true, size: 5}, function(err, data) {
         expect(err).to.not.exist;
@@ -479,8 +479,8 @@ describe('Rsync', function() {
             });
           });
         });
-      }); 
-    });   
+      });
+    });
   });
 
   it('should succeed syncing a directory if the destination directory is empty', function(done) {
@@ -488,9 +488,9 @@ describe('Rsync', function() {
       expect(err).to.not.exist;
       fs.mkdir('/test2', function(err) {
         expect(err).to.not.exist;
-        fs.writeFile('/test/1.txt','This is my 1st file. It does not have any typos.', 'utf8', function(err) { 
+        fs.writeFile('/test/1.txt','This is my 1st file. It does not have any typos.', 'utf8', function(err) {
           expect(err).to.not.exist;
-          fs.writeFile('/test/2.txt','This is my 2nd file. It is longer than the destination file.', 'utf8', function(err) { 
+          fs.writeFile('/test/2.txt','This is my 2nd file. It is longer than the destination file.', 'utf8', function(err) {
             expect(err).to.not.exist;
             rsync.sourceList(fs, '/test', {recursive: true, size: 5}, function(err, data) {
               expect(err).to.not.exist;
@@ -515,8 +515,8 @@ describe('Rsync', function() {
                 });
               });
             });
-          }); 
-        });   
+          });
+        });
       });
     });
   });
@@ -528,9 +528,9 @@ describe('Rsync', function() {
         expect(err).to.not.exist;
         fs.mkdir('/test/folder', function(err) {
           expect(err).to.not.exist;
-          fs.writeFile('/test/folder/1.txt','This is my 1st file. It does not have any typos.', 'utf8', function(err) { 
+          fs.writeFile('/test/folder/1.txt','This is my 1st file. It does not have any typos.', 'utf8', function(err) {
             expect(err).to.not.exist;
-            fs.writeFile('/test/folder/2.txt','This is my 2nd file. It is longer than the destination file.', 'utf8', function(err) { 
+            fs.writeFile('/test/folder/2.txt','This is my 2nd file. It is longer than the destination file.', 'utf8', function(err) {
             expect(err).to.not.exist;
               rsync.sourceList(fs, '/test', {recursive: true, size: 5}, function(err, data) {
                 expect(err).to.not.exist;
@@ -560,16 +560,16 @@ describe('Rsync', function() {
                   });
                 });
               });
-            }); 
-          });   
+            });
+          });
         });
       });
     });
   });
 
   it('should succeed syncing a directory recursively, skipping same-size and time files (recursive: true, checksum: false)', function(done) {
-    var date = Date.parse('1 Oct 2000 15:33:22'); 
-    
+    var date = Date.parse('1 Oct 2000 15:33:22');
+
     fs.mkdir('/test', function(err) {
       expect(err).to.not.exist;
       fs.mkdir('/test/sync', function(err){
@@ -578,13 +578,13 @@ describe('Rsync', function() {
           expect(err).to.not.exist;
           fs.mkdir('/test2/sync', function(err){
             expect(err).to.not.exist;
-            fs.writeFile('/test/1.txt','This is my 1st file.', 'utf8', function(err) { 
+            fs.writeFile('/test/1.txt','This is my 1st file.', 'utf8', function(err) {
               expect(err).to.not.exist;
-              fs.writeFile('/test/sync/2.txt','This is my 2nd file.', 'utf8', function(err) { 
+              fs.writeFile('/test/sync/2.txt','This is my 2nd file.', 'utf8', function(err) {
                 expect(err).to.not.exist;
-                fs.writeFile('/test/sync/3.txt','This is my 3rd file.', 'utf8', function(err) { 
+                fs.writeFile('/test/sync/3.txt','This is my 3rd file.', 'utf8', function(err) {
                   expect(err).to.not.exist;
-                  fs.writeFile('/test2/sync/3.txt','This shouldn\'t sync.', 'utf8', function(err) { 
+                  fs.writeFile('/test2/sync/3.txt','This shouldn\'t sync.', 'utf8', function(err) {
                     expect(err).to.not.exist;
                     fs.utimes('/test/sync/3.txt', date, date, function(err) {
                       expect(err).to.not.exist;
@@ -613,12 +613,12 @@ describe('Rsync', function() {
                                       done();
                                     });
                                   });
-                                }); 
+                                });
                               });
                             });
                           });
                         });
-                      }); 
+                      });
                     });
                   });
                 });
@@ -637,11 +637,11 @@ describe('Rsync', function() {
         expect(err).to.not.exist;
         fs.mkdir('/projects/proj_2', function(err) {
           expect(err).to.not.exist;
-          fs.writeFile('/projects/proj_1/index.html','Hello world', 'utf8', function(err) { 
+          fs.writeFile('/projects/proj_1/index.html','Hello world', 'utf8', function(err) {
             expect(err).to.not.exist;
-            fs.writeFile('/projects/proj_1/styles.css','CSS', 'utf8', function(err) { 
+            fs.writeFile('/projects/proj_1/styles.css','CSS', 'utf8', function(err) {
               expect(err).to.not.exist;
-              fs.writeFile('/projects/proj_2/styles2.css','CSS', 'utf8', function(err) { 
+              fs.writeFile('/projects/proj_2/styles2.css','CSS', 'utf8', function(err) {
                 expect(err).to.not.exist;
                 fs.mkdir('/projects/proj_2/inside_proj_2', function(err) {
                   expect(err).to.not.exist;
@@ -692,7 +692,7 @@ describe('Rsync', function() {
         expect(err).to.not.exist;
         fs.mkdir('/test/dir/dirdir', function(err) {
           expect(err).to.not.exist;
-          fs.writeFile('/test/dir/dirdir/1.txt','This is my 1st file. It does not have any typos.', 'utf8', function(err) { 
+          fs.writeFile('/test/dir/dirdir/1.txt','This is my 1st file. It does not have any typos.', 'utf8', function(err) {
             expect(err).to.not.exist;
             rsync.sourceList(fs, '/test', {recursive: true, size: 5}, function(err, data) {
               expect(err).to.not.exist;
@@ -714,18 +714,18 @@ describe('Rsync', function() {
             });
           });
         });
-      });   
+      });
     });
   });
 
   it('should succeed syncing a directory if the destination directories do not exist', function(done) {
     fs.mkdir('/test', function(err) {
       expect(err).to.not.exist;
-      fs.mkdir('/test/dir1', function(err) { 
+      fs.mkdir('/test/dir1', function(err) {
         expect(err).to.not.exist;
-        fs.mkdir('/test/dir2', function(err) { 
+        fs.mkdir('/test/dir2', function(err) {
           expect(err).to.not.exist;
-          fs.mkdir('/test/dir1/dir12', function(err) { 
+          fs.mkdir('/test/dir1/dir12', function(err) {
             expect(err).to.not.exist;
             fs.mkdir('/test2', function(err) {
               expect(err).to.not.exist;
@@ -764,8 +764,8 @@ describe('Rsync', function() {
               });
             });
           });
-        }); 
-      });   
+        });
+      });
     });
   });
 
