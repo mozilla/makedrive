@@ -220,7 +220,6 @@ function sourceRouteConnect(options, extras, callback){
     if(err) {
       return callback(err);
     }
-
     options.statusCode = res.statusCode;
     callback(null, options);
   });
@@ -239,6 +238,7 @@ function csRouteConnect(options, extras, callback){
 
   extras.url = serverURL + '/api/sync/' + options.syncId + '/checksums';
   extras.jar =  options.jar;
+  extras.json = true;
 
   request.get(extras, function(err, res, body) {
     if(err) {
@@ -246,29 +246,6 @@ function csRouteConnect(options, extras, callback){
     }
     options.statusCode = res.statusCode;
     options.body = body;
-    callback(null, options);
-  });
-}
-
-function diffRouteConnect(options, extras, callback){
-  if(typeof options === 'function') {
-    callback = options;
-    options = {};
-  }
-
-  if(typeof extras === 'function') {
-    callback = extras;
-    extras = {};
-  }
-
-  extras.url = serverURL + '/api/sync/' + options.syncId + '/diffs';
-  extras.jar =  options.jar;
-
-  request.put(extras, function(err, res, body) {
-    if(err) {
-      return callback(err);
-    }
-    options.statusCode = res.statusCode;
     callback(null, options);
   });
 }
@@ -339,7 +316,6 @@ module.exports = {
   syncRouteConnect: syncRouteConnect,
   sourceRouteConnect: sourceRouteConnect,
   csRouteConnect: csRouteConnect,
-  diffRouteConnect: diffRouteConnect,
   openSocket: openSocket,
   upload: upload,
   cleanupSockets: cleanupSockets

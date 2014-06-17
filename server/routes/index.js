@@ -176,16 +176,16 @@ module.exports = function createRoutes( app, wss ) {
           for (i = 0; i < diffs.length; i++) {
             if(diffs[i].contents) {
               for (j = 0; j < diffs[i].contents.length; j++) {
-                for (k = 0; k < diffs[i].contents[j].diff.length; k++) {
-                  if (diffs[i].contents[j].diff[k].data) {
-                    diffs[i].contents[j].diff[k].data = util.toArrayBuffer(data);
+                for (k = 0; k < diffs[i].contents[j].diffs.length; k++) {
+                  if (diffs[i].contents[j].diffs[k].data) {
+                    diffs[i].contents[j].diffs[k].data = util.toArrayBuffer(data);
                   }
                 }
               }
             } else {
-              for (k = 0; k < diffs[i].diff.length; k++) {
-                if (diffs[i].diff[k].data) {
-                  diffs[i].diff[k].data = util.toArrayBuffer(data);
+              for (k = 0; k < diffs[i].diffs.length; k++) {
+                if (diffs[i].diffs[k].data) {
+                  diffs[i].diffs[k].data = util.toArrayBuffer(data);
                 }
               }
             }
