@@ -1,78 +1,109 @@
-<!--[if lt IE 7]>      <html class="no-js lt-ie9 lt-ie8 lt-ie7" prefix="og: http://ogp.me/ns# fb: http://www.facebook.com/2008/fbml"> <![endif]-->
-<!--[if IE 7]>         <html class="no-js lt-ie9 lt-ie8" prefix="og: http://ogp.me/ns# fb: http://www.facebook.com/2008/fbml"> <![endif]-->
-<!--[if IE 8]>         <html class="no-js lt-ie9" prefix="og: http://ogp.me/ns# fb: http://www.facebook.com/2008/fbml"> <![endif]-->
-<!--[if gt IE 8]><!-->
-<html class="no-js" prefix="og: http://ogp.me/ns# fb: http://www.facebook.com/2008/fbml">
-<!--<![endif]-->
+<!--[if lt IE 7]>
+    <html class="no-js lt-ie9 lt-ie8 lt-ie7" prefix="og: http://ogp.me/ns# fb: http://www.facebook.com/2008/fbml">
+    <![endif]-->
+    <!--[if IE 7]>
+        <html class="no-js lt-ie9 lt-ie8" prefix="og: http://ogp.me/ns# fb: http://www.facebook.com/2008/fbml">
+        <![endif]-->
+        <!--[if IE 8]>
+            <html class="no-js lt-ie9" prefix="og: http://ogp.me/ns# fb: http://www.facebook.com/2008/fbml">
+            <![endif]-->
+            <!--[if gt IE 8]>
+                <!-->
+                <html class="no-js" prefix="og: http://ogp.me/ns# fb: http://www.facebook.com/2008/fbml">
+                <!--<![endif]-->
+                
+                <head>
+                    <meta charset="utf-8">
+                    <!-- Force the latest IE version, in various cases when it may fall back to IE7 mode. But It is invalid html. -->
+                    <!-- <meta http-equiv="X-UA-Compatible" content="IE=edge"> -->
+                    <title>CDOT Webmaker</title>
+                    <meta name="description" content="">
+                    <meta name="viewport" content="width=device-width">
+                    <meta name="keywords" content="Markdown Parser" />
+                    <link rel="stylesheet" type="text/css" href="../vendors/makerstrap/dist/makerstrap.complete.min.css">
+                    <link rel="stylesheet" type="text/css" href="styles.css">
+                    <script type="text/javascript" src="/vendors/jquery/dist/jquery.min.js"></script>
+                    <link rel="stylesheet" type="text/css" href="/vendors/jquery.treeview/jquery.treeview.css">
+                    <script type='text/javascript' src='/vendors/jquery.treeview/jquery.treeview.js'></script>
+                    <script type='text/javascript' src='../dist/makedrive.js'></script>
+                </head>
+                
+                <body>
+                    <nav id="nav" class="navbar navbar-inverse navbar-fixed-top" role="navigation">
+                        <div class="container">
+                            <!-- Brand and toggle get grouped for better mobile display -->
+                            <div class="navbar-header">
+                                <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1"> <span class="sr-only">Toggle navigation</span>
+ <span class="icon-bar"></span>
+ <span class="icon-bar"></span>
+ <span class="icon-bar"></span>
 
-<head>
-  <meta charset="utf-8">
-  <!-- Force the latest IE version, in various cases when it may fall back to IE7 mode. But It is invalid html. -->
-  <!-- <meta http-equiv="X-UA-Compatible" content="IE=edge"> -->
-  <title>Makedrive Demo!</title>
-  <meta name="description" content="">
-  <meta name="viewport" content="width=device-width">
-  <meta name="keywords" content="Markdown Parser" />
-  <link rel="stylesheet" type="text/css" href="/vendors/makerstrap/dist/makerstrap.complete.min.css">
-  <link rel="stylesheet" type="text/css" href="styles.css">
-  <script type="text/javascript" src="/vendors/jquery/dist/jquery.min.js"></script>
+                                </button> <a class="navbar-brand" href="https://cdot.senecacollege.ca/">CDOT Webmaker Team</a>
 
-</head>
-  <body>
+                            </div>
+                            <!-- Collect the nav links, forms, and other content for toggling -->
+                            <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+                                <ul class="nav navbar-nav navbar-right">
+                                    <li><a href="https://github.com/humphd/makedrive"><span class="fa fa-github"></span> mozilla/makedrive</a>
 
-    <nav class="navbar navbar-inverse navbar-fixed-top" role="navigation">
+                                    </li>
+                                </ul>
+                            </div>
+                            <!-- /.navbar-collapse -->
+                        </div>
+                        <!-- /.container-fluid -->
+                    </nav>
+                    <div class="jumbotron">
+                        <div class="container center">
+                             <h1>Makedrive</h1>
 
-      <div class="container">
-        <!-- Brand and toggle get grouped for better mobile display -->
-        <div class="navbar-header">
-          <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
-            <span class="sr-only">Toggle navigation</span>
-            <span class="icon-bar"></span>
-            <span class="icon-bar"></span>
-            <span class="icon-bar"></span>
-          </button>
-          <a class="navbar-brand" href="#">Makedrive Demo!</a>
-        </div>
+                            <p>Bi-directional Sync Demo</p>
+                        </div>
+                    </div>
+                    <div class="container">
+                        <div class="row">
+                            <div class="col-xs-7"> <span id="events"></span>
 
-        <!-- Collect the nav links, forms, and other content for toggling -->
-        <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
-
-          <ul class="nav navbar-nav navbar-right">
-            <li><a href="https://github.com/humphd/makedrive"><span class="fa fa-github"></span> mozilla/makedrive</a>
-            </li>
-          </ul>
-        </div>
-        <!-- /.navbar-collapse -->
-      </div>
-      <!-- /.container-fluid -->
-    </nav>
-
-    <div class="jumbotron">
-      <div class="container">
-        <h1>Makedrive Demo!</h1>
-        <p>An awesome demo (Mind blowing!!!!)</p>
-      </div>
-    </div>
-    <div class="container">
-
-    <div>
-    <span id="events"></span>
-      <label class="float-left">File Name:</label>
-      <input type="text" id="fileTitle" class="form-control float-left resize" />
-      <button class="btn btn-info float-left" id="btnSave">Save</button>
-    </div>
-
-      <textarea id='editor' class="pull-left" cols="50" rows="15">alert('Hello world!');</textarea>
-    </div>
-    <footer class="wm-footer footer">
-      </footer>
-
-    <script src="http://crypto-js.googlecode.com/svn/tags/3.1.2/build/rollups/md5.js"></script>
-    <script src="/vendors/async/lib/async.js"></script>
-    <script src="/vendors/filer/dist/filer.min.js"></script>
-    <script src="/vendors/lodash/dist/lodash.min.js"></script>
-    <script src="/vendors/superagent/superagent.js"></script>
-    <script src="/lib/rsync.js"></script>
-    <script src='/demo/makedrive-demo.js' type='text/javascript'></script>
-  </body>
-</html>
+                                <div class="row">
+                                  <div class="col-xs-12">
+                                    <label>File Name:</label>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-xs-12" id="inputContainer">
+                                      <div class="input-group">
+                                        <input type="text" id="fileTitle" class="form-control" />
+                                          <span class="input-group-btn">
+                                            <button class="btn btn-info" id="btnSave">Save</button>
+                                          </span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                  <div class="col-xs-12" id="editorContainer">
+                                    <pre id="editor">alert('Hello world!');</pre>
+                                  </div>
+                                </div>
+                            </div>
+                            <div class="col-xs-5" id="tree">
+                                <ul id="abc" class="filetree treeview">
+                                    <li class="collapsable">
+                                        <div class="hitarea collapsable-hitarea"></div>
+                                        <span class="folder"><span class="padding">projects</span></span>
+                                        <ul id="files">
+                                        </ul>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    <script>
+                        $('#abc').treeview();
+                    </script>
+                    <script src="../vendors/ace-builds/src-min/ace.js" type="text/javascript" charset="utf-8"></script>
+                    <script src="../vendors/ace-builds/src-min/theme-monokai.js"></script>
+                    <script src="../vendors/ace-builds/src-min/mode-javascript.js"></script>
+                    <script src="./index.js"></script>
+                </body>
+                
+                </html>

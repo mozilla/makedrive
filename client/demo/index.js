@@ -1,202 +1,95 @@
-var fs = new Filer.FileSystem({
-    provider: new Filer.FileSystem.providers.Memory()
-  }),
-  syncID,
-  paths,
-  api = 'http://localhost:9090/api/sync/';
-
-function u8toArray(u8) {
-  var array = [];
-  var len = u8.length;
-  for(var i = 0; i < len; i++) {
-    array[i] = u8[i];
-  }
-  return array;
-}
-
-function text(id, text, error) {
-  $(id)
-    .html(text)
-    .show();
-
-  if (error) {
-    $(id).css("color", "red");
-  }
-}
-
-var f = function () {
-  $.get(api + connectionId + '/checksums', function (data) {
-    if (data) {
-      text('#checksumsGet', 'Received checksums from server');
-    } else {
-      text('#checksumsGet', 'Unable to receive checksums', true);
+var count = 1;
+var files = [];
+var currentPath;
+$(document).ready(function() {
+  var editor = ace.edit(document.getElementById('editor'));
+  editor.setTheme("ace/theme/monokai");
+  editor.getSession().setMode("ace/mode/javascript");
+  var Filer = makedrive.Filer;
+  var fs = new Filer.FileSystem({provider: new Filer.FileSystem.providers.Memory("B")});
+  fs.mkdir('/projects', function(err) {
+    if(err) {
+      return console.log(err);
     }
-    return data;
-  })
-    .done(function (data) {
-      var checksums = data.checksums;
-      rsync.diff(fs, path, checksums, {
-        recursive: true,
-        size: 5
-      }, function (error, diffs) {
-        if (error) {
-          text('#diffCalc', 'Could not calculate diffs: ' + error, true);
-        } else {
-          text('#diffCalc', 'Successfully calculated diffs');
-          for(var i = 0; i < diffs.length; i++) {
-            for(var j = 0; j < diffs[i].contents.length; j++) {
-              for(var k = 0; k < diffs[i].contents[j].diff.length; k++) {
-                if (Object.prototype.toString.call(diffs[i].contents[j].diff[k].data) === "[object Uint8Array]") {
-                  diffs[i].contents[j].diff[k].data = {
-                    __isUint8Array: true,
-                    __array: u8toArray(diffs[i].contents[j].diff[k].data)
-                  };
-                }
-              }
+    files.push('projects');
+    var uri = 'http://localhost:9090';
+    makedrive.init(uri, fs, function(err) {
+      if(err) {
+        return console.log(err);
+      }
+      fs.watch('/projects', {recursive: true}, function(event, filename) {
+        var found = false;
+        var fname = filename.replace(/^\//, "");
+        fname = Filer.Path.basename(fname);
+        console.log('Change to:', fname);
+        console.log('Files:', files, "\nfname:", fname);
+        if(currentPath === fname) {
+          fs.readFile('/projects/' + currentPath, 'utf8', function(err, data) {
+            if(err) {
+              return console.log(err);
             }
-          }
-          $.ajax({
-            type: 'PUT',
-            data: JSON.stringify({
-              diffs: diffs
-            }),
-            contentType: 'application/json',
-            url: api + syncID + '/diffs',
-            statusCode: {
-              200: function (response) {},
-              201: function (response) {},
-              401: function (response) {},
-              404: function (response) {}
-            },
-            success: function (data) {
-              if (data) {
-                text('#syncSuccess', 'Sync successful');
-              } else {
-                text('#syncSuccess', 'Sync failed', true);
-              }
-            },
-            error: function (e) {
-              console.log("Error " + e.messages);
-            }
-          })
-        }
-      });
-    });
-};
-
-var source;
-var servopen = false;
-var servto = false;
-var connectionId;
-var syncButton = $("#Etype1");
-
-var sourceinit = function(){
-  source = new EventSource('/update-stream');
-  source.addEventListener('message', function(e) {
-  var data;
-
-    // Adding this into try-catch because it may throw an error when we send e.data as a string.
-    try {
-      data = JSON.parse(e.data);
-      // If this is the first message, capture the connectionId
-      connectionId = data.connectionId;
-    } catch (e) {
-      data = e.data;
-    }
-
-
-
-    // Remove this event listener now that we have connectionId
-    source.removeEventListener('message', this);
-
-    source.addEventListener('message', function(e) {
-      $('#linksul').append('<li>' + e.data + '</li>');
-    }, false);
-
-  });
-
-  source.addEventListener("open", function(e) {
-    $('#clickMe').click(function() {
-
-      fs.mkdir('/data', function (error) {
-        if (error) {
-          text('#createDir1', 'Error generating /data: ' + error, true);
-        } else {
-          path = '/data';
-          text('#createDir1', 'Created /data');
-          fs.mkdir('/data/proj_1', function (error) {
-            if (error) {
-              text('#createDir2', 'Error generating /data/proj_1: ' + error, true);
-            } else {
-              text('#createDir2', 'Created /data/proj_1');
-              fs.writeFile('/data/proj_1/index.html', 'Hello World', function (error) {
-                if (error) {
-                  text('#createFile1', 'Error generating /data/proj_1/index.html: ' + error, true);
-                } else {
-                  text('#createFile1', 'Created /data/proj_1/index.html');
-                  fs.writeFile('/data/proj_1/styles.css', 'Hello World', function (error) {
-                    if (error) {
-                      text('#createFile2', 'Error generating /data/proj_1/styles.css: ' + error, true);
-                    } else {
-                      text('#createFile2', 'Created /data/proj_1/styles.css');
-                      $.get('http://localhost:9090/api/sync/' + connectionId, function (data) {
-                        if (!data.syncId) {
-                          text('#getSyncId', 'Could not receive sync id from server', true);
-                        } else {
-                          text('#getSyncId', 'Retrieved sync id');
-                          syncID = data.syncId;
-                        }
-                      })
-                      .done(function () {
-                        rsync.sourceList(fs, path, {
-                          recursive: true,
-                          size: 5
-                        }, function (error, results) {
-                          if (error) {
-                            text('#sourceList', 'Error getting source list: ' + error, true);
-                          } else {
-                            text('#sourceList', 'Generated source list');
-                            $.ajax({
-                              type: 'POST',
-                              data: JSON.stringify({
-                                path: path,
-                                srcList: results
-                              }),
-                              contentType: 'application/json',
-                              url: api + connectionId + '/sources',
-                              statusCode: {
-                                200: function (response) {},
-                                201: function (response) {},
-                                401: function (response) {},
-                                404: function (response) {}
-                              },
-                              success: function (data) {
-                                if (data) {
-                                  text('#sourceListPost', 'Posted source list to server');
-                                } else {
-                                  text('#sourceListPost', 'Posting source list to server failed', true);
-                                }
-                              },
-                              error: function (e) {
-                                console.log("Error " + e.messages);
-                              }
-                            }).done(f);
-                          }
-                        });
-                      });
-                    }
-                  });
-                }
-              });
-            }
+            console.log(data);
+            editor.setValue(data);
+            $('#fileTitle').val(fname);
           });
         }
+        if(files.indexOf(fname) < 0) {
+          $('#files').append('<li><span class="file"><span class=padding>' + fname + "</span></span></li>");
+          $('.file').unbind('click').click( function(e) {
+            console.log(e.target.innerHTML);
+            currentPath = e.target.innerHTML;
+            fs.readFile('/projects/' + e.target.innerHTML, 'utf8', function(err, data) {
+              if(err) {
+                return console.log(err);
+              }
+              console.log('Data', data.length);
+              editor.setValue(data);
+              $('#fileTitle').val(e.target.innerHTML);
+            });
+          });
+          files.push(fname);
+        }
       });
-
+      $('.file').unbind('click').click( function(e) {
+        console.log(e.target.innerHTML);
+        currentPath = e.target.innerHTML;
+        fs.readFile('/projects/' + e.target.innerHTML, 'utf8', function(err, data) {
+          if(err) {
+            return console.log(err);
+          }
+          console.log('Data', data.length);
+          editor.setValue(data);
+          $('#fileTitle').val(e.target.innerHTML);
+        });
+      });
+      $('#btnSave').unbind("click").click(function(e) {
+        var fname = $('#fileTitle').val() || ('new-file' + count++);
+        var contents = editor.getValue();
+        console.log('Contents', contents.length);
+        fs.writeFile('/projects/' + fname, contents, 'utf8', function(err) {
+          if(err) {
+            return console.log(err);
+          }
+          if(files.indexOf(fname) < 0) {
+            files.push(fname);
+            $('#files').append('<li><span class="file">' + fname + "</span></li>");
+          }
+          currentPath = fname;
+          makedrive.sync('/projects', function(err) {
+            if(err) {
+              return console.log(err);
+            }
+            fs.readFile('/projects/' + currentPath, 'utf8', function(err, data) {
+              if(err) {
+                return console.log(err);
+              }
+              console.log('Data', data.length);
+              editor.setValue(data);
+              $('#fileTitle').val(currentPath);
+            });
+          });
+        });
+      });
     });
   });
-};
-
-$( document ).ready(function() {
-  sourceinit();
 });

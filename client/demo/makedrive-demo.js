@@ -1,6 +1,12 @@
 var fs = new Filer.FileSystem({
   provider: new Filer.FileSystem.providers.Memory()
 });
+var makedriveOptions = {
+  fs: fs,
+  recursive: true,
+  size: 5,
+  time: true
+};
 var watcher;
 var treeSource = [];
 var connectionId;
@@ -25,6 +31,11 @@ source.addEventListener('message', function (e) {
     data = JSON.parse(e.data);
     // If this is the first message, capture the connectionId
     connectionId = data.syncId;
+    // TODO: use browserified client makedrive code
+    // Pseudo code
+    comms(makedriveOptions, function() {
+      
+    });
   } catch (e) {
     data = e.data;
   }

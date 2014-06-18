@@ -1,4 +1,7 @@
+var interface = require('./interface');
+
 module.exports = {
   Filer: require( "filer" ),
-  rsync: require( "../../server/lib/rsync" )
+  init: interface.init,
+  sync: interface.sync
 };

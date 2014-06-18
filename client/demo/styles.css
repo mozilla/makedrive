@@ -3,25 +3,77 @@ body {
 }
 
 #editor {
-  position: absolute;
-  top: 20;
-  left: 20;
+  top: 0;
+  left: 0;
   font-size: 15pt;
-  padding-right: 50px;
-  margin-bottom: 50px;
+  height: 400px;
+  border-color: #272822;
+  width: 100%
 }
 
-#editor, #fileTree {
-  float: left;
-  position: relative;
-  width: 45%;
+#fileTitle {
+  background-color: #272822;
+  border-color: #272822;
+  border-bottom-color: grey;
+  color: #999;
+}
+
+#nav {
+  background-color: #A3000E;
+}
+
+label {
+  font-weight: normal;
 }
 
 .resize {
-  width: 79%;
+  width: 35%;
 }
 
 body {
-  background: #e3eaee;
-  color: #555;
+  background: #4A4A4A;
+  color: white;
+}
+
+#frm #form {
+  display: block;
+  float: left
+}
+
+#nav > div > div.navbar-header > a:hover, #bs-example-navbar-collapse-1 > ul > li > a:hover {
+  background-color: #820000;
+}
+
+#tree {
+  margin-top: 24px;
+  background-color: #272822;
+  border-left-color: grey;
+  border-left-width: medium;
+  height: 435px;
+}
+
+#editorContainer, #inputContainer {
+  padding-right: 0px;
+}
+
+.col-xs-7 {
+  padding-right: 16px;
+}
+
+.folder {
+  color: white;
+}
+#files > li {
+  background-color: #272822;
+}
+.padding {
+   padding-left: 5px;
+}
+
+.collapsable-hitarea {
+  background-color: white;
+}
+
+.center {
+  text-align: center;
 }

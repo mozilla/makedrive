@@ -122,7 +122,7 @@ module.exports = function createRoutes( app, wss ) {
     sync.setSrcList( srcList );
 
 
-    res.json( 201 );
+    res.json( 201, null );
   });
 
   /**
@@ -202,7 +202,7 @@ module.exports = function createRoutes( app, wss ) {
           console.error('/api/sync/:syncId/diffs error: ' + err);
           return res.json(500, { message: "Ending sync! Fatal error while patching: " + err });
         }
-        return res.json(200);
+        return res.json(200, null);
       });
     });
   });
