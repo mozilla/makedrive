@@ -9,9 +9,9 @@ var ws = require( 'ws' ),
     checksum = {};
 
 var rsyncOptions = {
-  size: 5,
   time: true,
-  recursive: true
+  recursive: true,
+  size: 5
 };
 
 var states = {
@@ -54,7 +54,7 @@ function convert() {
   return diffs;
 }
 
-module.exports = { 
+module.exports = {
   init: function( options, initial, callback ) {
     // TODO: Proper URL validation
     if ( !options.uri ) {
@@ -99,7 +99,7 @@ module.exports = {
           } catch( e ) {
             return callback( e );
           }
-          
+
           if( data.type === SyncMessage.RESPONSE && data.name === SyncMessage.ACK ) {
             syncState = states.CONN_OPEN;
             socket.removeEventListener('message', b);
@@ -162,7 +162,7 @@ module.exports = {
                   syncState = states.ERROR;
                   return callback( new Error( data.content ) );
                 }
-                
+
                 if( data.name === SyncMessage.ACK ) {
                   syncState = states.CONN_OPEN;
                   return callback();
@@ -177,7 +177,7 @@ module.exports = {
         };
       };
 
-      socket.onclose = function() { 
+      socket.onclose = function() {
         syncState = states.CONN_CLOSED;
         return callback( new Error( 'Socket connection was closed' ));
       };

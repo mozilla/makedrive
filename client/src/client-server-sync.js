@@ -4,9 +4,9 @@ var syncID,
     request = require( 'request' ),
     superagentRequest = require( 'superagent' ),
     rsyncOptions = {
-      size: 5,
       time: true,
-      recursive: true
+      recursive: true,
+      size: 5
     };
 
 module.exports = {
@@ -22,7 +22,7 @@ module.exports = {
       }
       syncID = JSON.parse( body ).syncId;
       uri += syncID + '/';
-      
+
       rsync.sourceList( fs, path, rsyncOptions, function( err, srcList ) {
         if( err ) {
           return callback( err );
@@ -90,6 +90,6 @@ module.exports = {
           });
         });
       });
-    });  
+    });
   }
 };

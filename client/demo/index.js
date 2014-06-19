@@ -58,7 +58,7 @@ $(document).ready(function() {
       $('#btnSave').unbind("click").click(function(e) {
         var fname = $('#fileTitle').val() || ('new-file' + count++);
         var contents = editor.getValue();
-        fs.writeFile('/projects/' + fname, contents, 'utf8', function(err) {
+        fs.writeFile('/projects/' + fname, contents, function(err) {
           if(err) {
             return console.log(err);
           }

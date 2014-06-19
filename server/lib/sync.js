@@ -36,9 +36,9 @@ var syncTable = {},
     connectedClients = {},
     // TODO: Examine these. Are they what we need?
     rsyncOptions = {
-      size: 5,
       time: true,
-      recursive: true
+      recursive: true,
+      size: 5
     };
 
 /**
