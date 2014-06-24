@@ -1,4 +1,5 @@
 var Sync = require('../../lib/sync');
+var websocketAuth = require('../../lib/websocket-auth');
 
 function generateError( code, msg ) {
   var err = new Error( msg );
@@ -13,7 +14,12 @@ module.exports = {
       return next( generateError( 401, "Webmaker Authentication Required." ) );
     }
 
+    if ( !req.session.sessionId ) {
+      req.session.sessionId = websocketAuth.createSessionTracker();
+    }
+
     req.params.username = username;
+    req.params.sessionId = req.session.sessionId;
     next();
   },
   crossOriginHandler: function( req, res, next ) {

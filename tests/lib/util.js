@@ -167,6 +167,25 @@ function getConnectionID(options, callback){
   });
 }
 
+function getWebsocketToken(options, callback){
+  // Fail early and noisily when missing options.jar
+  if(!(options && options.jar)) {
+    throw('Expected options.jar');
+  }
+
+  request({
+    url: serverURL + '/api/sync',
+    jar: options.jar,
+    json: true
+  }, function(err, response, body) {
+    expect(err, "[Error getting a token: " + err + "]").to.not.exist;
+    expect(response.statusCode, "[Error getting a token: " + response.body.message + "]").to.equal(200);
+
+    options.token = body;
+    callback(null, options);
+  });
+}
+
 function authenticate(options, callback){
   // If no options passed, generate a unique username and jar
   if(typeof options === 'function') {
@@ -176,6 +195,19 @@ function authenticate(options, callback){
 
   options.jar = options.jar || jar();
   options.username = options.username || uniqueUsername();
+  options.logoutUser = function (cb) {
+    request({
+      url: serverURL + '/logout',
+      jar: options.jar,
+      json: true,
+      method: "POST"
+    }, function(err, res, body){
+      expect(err, "[Automatic logout of user failed: " + err + "]").to.not.exist;
+      expect(res.statusCode, "[Automatic logout of user failed]").to.equal(200);
+      expect(body, "[Automatic logout of user failed").to.deep.equal({ status: "okay" });
+      cb();
+    });
+  };
 
   request.post({
     url: serverURL + '/mocklogin/' + options.username,
@@ -204,19 +236,27 @@ function authenticateAndConnect(options, callback) {
     }
     var username = result.username;
 
-    getConnectionID(options, function(err, result){
+    getConnectionID(options, function(err, result1){
       if(err) {
         return callback(err);
       }
 
-      result.jar = options.jar;
-      result.username = username;
-      result.done = function() {
-        result.close();
-        options.done && options.done();
+      result1.jar = options.jar;
+      result1.username = username;
+      result1.done = function() {
+        options.logoutUser(function() {
+          result1.close();
+          options.done && options.done();
+        });
       };
 
-      callback(null, result);
+      getWebsocketToken(result1, function(err, result2) {
+        if(err){
+          return callback(err);
+        }
+
+        callback(null, result2);
+      });
     });
   });
 }
@@ -297,10 +337,12 @@ function csRouteConnect(options, extras, callback){
 /**
  * Socket Helpers
  */
-function openSocket(syncId, options) {
-  if (typeof syncId === "object") {
-    options = syncId;
-    syncId = null;
+function openSocket(socketData, options) {
+  if (typeof options !== "object") {
+    if (socketData && !socketData.syncId) {
+      options = socketData;
+      socketData = null;
+    }
   }
   options = options || {};
 
@@ -308,15 +350,26 @@ function openSocket(syncId, options) {
 
   function defaultHandler(msg, failout) {
     failout = failout || true;
-    return function() {
-      expect(failout, "[Unexpected socket on" + msg + " event]").to.be.false;
+
+    return function(code, data) {
+      var details = "";
+
+      if (code) {
+        details += ": " + code.toString();
+      }
+      if (data) {
+        details += " " + data.toString();
+      }
+
+      expect(failout, "[Unexpected socket on" + msg + " event]" + details).to.be.false;
     };
   }
 
-  if (syncId) {
+  if (socketData) {
     options.onOpen = function() {
       socket.send(JSON.stringify({
-        syncId: syncId
+        syncId: socketData.syncId,
+        token: socketData.token
       }));
     };
   }
@@ -588,5 +641,6 @@ module.exports = {
   resolveToJSON: resolveToJSON,
   resolveFromJSON: resolveFromJSON,
   prepareSync: prepareSync,
-  syncSteps: syncSteps
+  syncSteps: syncSteps,
+  getWebsocketToken: getWebsocketToken
 };

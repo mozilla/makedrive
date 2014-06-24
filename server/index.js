@@ -58,7 +58,7 @@ function corsOptions ( req, res ) {
 }
 
 // Declare routes
-routes( app );
+routes( app, webmakerAuth );
 
 port = env.get( "PORT", 9090 );
 var server = http.createServer( app );

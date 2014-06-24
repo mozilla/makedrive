@@ -5,7 +5,7 @@ var Sync = require('../../server/lib/sync');
 
 describe('[Downstream Syncing with Websockets]', function(){
   describe('The server', function(){
-    it('should close a socket if bad data is sent in place of syncId', function(done) {
+    it('should close a socket if bad data is sent in place of syncId/auth token', function(done) {
       util.authenticatedConnection({ done: done }, function( err, result ) {
         expect(err).not.to.exist;
 
@@ -25,11 +25,38 @@ describe('[Downstream Syncing with Websockets]', function(){
         });
       });
     });
-    it('should send an ACK when a syncId is sent from the client', function(done) {
+    it('shouldn\'t allow the same token to be used twice', function(done) {
       util.authenticatedConnection({ done: done }, function( err, result ) {
         expect(err).not.to.exist;
+        var socketData = {
+          syncId: result.syncId,
+          token: result.token
+        };
 
-         var socketPackage = util.openSocket(result.syncId, {
+        var socketPackage = util.openSocket(socketData, {
+          onMessage: function(message) {
+            expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
+
+            var socketPackage2 = util.openSocket(socketData, {
+              onClose: function(code, reason) {
+                expect(code).to.equal(1008);
+                util.cleanupSockets(result.done, socketPackage, socketPackage2);
+              }
+            });
+          }
+        });
+      });
+    });
+
+    it('should send an ACK when a syncId and the websocket auth token is sent from the client', function(done) {
+      util.authenticatedConnection({ done: done }, function( err, result ) {
+        expect(err).not.to.exist;
+        var socketData = {
+          syncId: result.syncId,
+          token: result.token
+        };
+
+        var socketPackage = util.openSocket(socketData, {
           onMessage: function(message) {
             expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
             util.cleanupSockets(result.done, socketPackage);
@@ -40,15 +67,23 @@ describe('[Downstream Syncing with Websockets]', function(){
     it('should allow two socket connections for the same username from different clients', function(done) {
       util.authenticatedConnection(function( err, result ) {
         expect(err).not.to.exist;
+        var socketData = {
+          syncId: result.syncId,
+          token: result.token
+        };
 
-        var socketPackage = util.openSocket(result.syncId, {
+        var socketPackage = util.openSocket(socketData, {
           onMessage: function(message) {
             expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
 
             util.authenticatedConnection(function(err, result2) {
               expect(err).not.to.exist;
+              socketData = {
+                syncId: result2.syncId,
+                token: result2.token
+              };
 
-              var socketPackage2 = util.openSocket(result2.syncId, {
+              var socketPackage2 = util.openSocket(socketData, {
                 onMessage: function(message) {
                   expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
                   util.cleanupSockets(function() {
@@ -66,8 +101,12 @@ describe('[Downstream Syncing with Websockets]', function(){
     it('should send an "invalid content" SyncMessage error object when a SyncMessage is sent with no content', function(done) {
       util.authenticatedConnection({ done: done }, function(err, result) {
         expect(err).not.to.exist;
+        var socketData = {
+          syncId: result.syncId,
+          token: result.token
+        };
 
-        var socketPackage = util.openSocket(result.syncId, {
+        var socketPackage = util.openSocket(socketData, {
           onMessage: function(message) {
             // First, confirm server acknowledgment
             expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
@@ -89,8 +128,12 @@ describe('[Downstream Syncing with Websockets]', function(){
     it('should send an "invalid data" SyncMessage error object when a non-syncmessage object is sent', function(done) {
       util.authenticatedConnection({ done: done }, function(err, result) {
         expect(err).not.to.exist;
+        var socketData = {
+          syncId: result.syncId,
+          token: result.token
+        };
 
-        var socketPackage = util.openSocket(result.syncId, {
+        var socketPackage = util.openSocket(socketData, {
           onMessage: function(message) {
             // First, confirm server acknowledgment
             expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
@@ -115,8 +158,12 @@ describe('[Downstream Syncing with Websockets]', function(){
     it('should still return a SyncMessage with the sourceList and path for a sync when requested a second time', function(done) {
       util.authenticatedConnection({ done: done }, function( err, result ) {
         expect(err).not.to.exist;
+        var socketData = {
+          syncId: result.syncId,
+          token: result.token
+        };
 
-        var socketPackage = util.openSocket(result.syncId, {
+        var socketPackage = util.openSocket(socketData, {
           onMessage: function(message) {
             expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
 
@@ -142,8 +189,12 @@ describe('[Downstream Syncing with Websockets]', function(){
     it('should return a ESTATE SyncMessage when sent out of turn', function(done) {
       util.authenticatedConnection({ done: done }, function( err, result ) {
         expect(err).not.to.exist;
+        var socketData = {
+          syncId: result.syncId,
+          token: result.token
+        };
 
-        var socketPackage = util.openSocket(result.syncId, {
+        var socketPackage = util.openSocket(socketData, {
           onMessage: function(message) {
             expect(message).to.equal(util.resolveFromJSON(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
 
@@ -168,7 +219,12 @@ describe('[Downstream Syncing with Websockets]', function(){
         expect(err).not.to.exist;
 
         var username = util.username();
-        var socketPackage = util.openSocket(result.syncId, {
+        var socketData = {
+          syncId: result.syncId,
+          token: result.token
+        };
+
+        var socketPackage = util.openSocket(socketData, {
           onMessage: function(message) {
             expect(message).to.equal(util.resolveFromJSON(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
 
@@ -193,7 +249,12 @@ describe('[Downstream Syncing with Websockets]', function(){
         expect(err).not.to.exist;
 
         var username = util.username();
-        var socketPackage = util.openSocket(result.syncId, {
+        var socketData = {
+          syncId: result.syncId,
+          token: result.token
+        };
+
+        var socketPackage = util.openSocket(socketData, {
           onMessage: function(message) {
             expect(message).to.equal(util.resolveFromJSON(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
 
@@ -209,7 +270,6 @@ describe('[Downstream Syncing with Websockets]', function(){
         });
       });
     });
-
   });
   describe('DIFF requests', function() {
     it('should return an RESPONSE message with the diffs', function(done) {
@@ -217,7 +277,12 @@ describe('[Downstream Syncing with Websockets]', function(){
         expect(err).not.to.exist;
 
         var username = util.username();
-        var socketPackage = util.openSocket(result.syncId, {
+        var socketData = {
+          syncId: result.syncId,
+          token: result.token
+        };
+
+        var socketPackage = util.openSocket(socketData, {
           onMessage: function(message) {
             expect(message).to.equal(util.resolveFromJSON(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
 
@@ -241,7 +306,12 @@ describe('[Downstream Syncing with Websockets]', function(){
         expect(err).not.to.exist;
 
         var username = util.username();
-        var socketPackage = util.openSocket(result.syncId, {
+        var socketData = {
+          syncId: result.syncId,
+          token: result.token
+        };
+
+        var socketPackage = util.openSocket(socketData, {
           onMessage: function(message) {
             expect(message).to.equal(util.resolveFromJSON(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
 
@@ -257,12 +327,5 @@ describe('[Downstream Syncing with Websockets]', function(){
         });
       });
     });
-
   });
-
-  describe('State errors (edge-cases, tests others first)', function(){});
 });
-
-// TODO: Line 158, 159
-//   Find out what is required before a checksums response can be sent to the
-//   server, and what the server is expected to send back.

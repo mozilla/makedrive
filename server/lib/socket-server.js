@@ -1,6 +1,7 @@
 var Sync = require( './sync'),
     SyncMessage = require('./syncmessage'),
-    WebSocketServer = require('ws').Server;
+    WebSocketServer = require('ws').Server,
+    websocketAuth = require('./websocket-auth');
 
 module.exports = function( server ) {
   var wss = new WebSocketServer({ server: server });
@@ -11,43 +12,47 @@ module.exports = function( server ) {
   });
 
   wss.on('connection', function(ws) {
-   ws.once('message', function(data, flags) {
-     // Socket data sent from a web browser
-     // is accessed through `data.data`, whereas
-     // requests sent from the NodeJS `request` module
-     // are accessed through `data`.
-     if (typeof data !== "string") {
-       data = data.data;
-     }
+    ws.once('message', function(data, flags) {
+      // Socket data sent from a web browser
+      // is accessed through `data.data`, whereas
+      // requests sent from the NodeJS `request` module
+      // are accessed through `data`.
+      data = data.data || data;
 
-     // Capture the connectionId
-     var match = /{"syncId"\s*:\s*"(\w{8}(-\w{4}){3}-\w{12}?)"}/.exec(data),
-         // TODO: Research websocket authentication (so we can pass username here)
-         sync;
+      // Capture the syncId + token
+      try {
+        data = JSON.parse(data);
+      } catch(e) {
+        return ws.close(1011, "Parsing error: " + e);
+      }
 
-     if ( !match ) {
-       return ws.close();
-     }
-     ws.send(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
+      var syncId = data.syncId;
+      if ( !syncId ) {
+        return ws.close(1008, "SyncId required");
+      }
 
-     sync = Sync.retrieve( match[1] );
-     sync.addSocket( ws );
+      // Authorize user
+      var token = data.token;
+      if ( !token || !websocketAuth.authorizeToken(token) ) {
+        return ws.close(1008, "Valid auth token required");
+      }
+      var sync;
 
-     ws.on('message', function(data, flags) {
-       if(!flags || (flags && !flags.binary)) {
-         if (typeof data !== "string") {
-           data = data.data;
-         }
-         try {
-           data = JSON.parse(data);
-           sync.messageHandler(data);
-         } catch(error) {
-           var Error = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ERROR);
-           Error.setContent(error.toString() || error);
-           ws.send(JSON.stringify(Error));
-         }
-       }
-     });
-   });
+      ws.send(JSON.stringify(SyncMessage.Response.ACK));
+
+      sync = Sync.retrieve( syncId );
+      sync.setSocket( ws );
+
+      ws.on('message', function(data, flags) {
+        if(!flags || (flags && !flags.binary)) {
+          try {
+            data = JSON.parse(data);
+            sync.messageHandler(data);
+          } catch(error) {
+            ws.send(JSON.stringify(SyncMessage.generateError(error)));
+          }
+        }
+      });
+    });
   });
 };

@@ -1,6 +1,7 @@
 var env = require('../../lib/environment'),
     version = require('../../../package.json').version,
-    FilerWebServer = require('../../lib/filer-www.js');
+    FilerWebServer = require('../../lib/filer-www.js'),
+    websocketAuth = require('../../lib/websocket-auth');
 
 module.exports = {
   // TODO: Factor this object into separate files as needed
@@ -20,5 +21,8 @@ module.exports = {
       http: "okay",
       version: version
     });
+  },
+  generateToken: function( req, res ) {
+    res.json(200, websocketAuth.generateTokenForSession(req.params.sessionId));
   }
 };

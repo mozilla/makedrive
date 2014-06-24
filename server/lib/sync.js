@@ -316,7 +316,7 @@ Sync.prototype.messageHandler = function( data ) {
   return this.socket.send(JSON.stringify(Sync.socket.errors.ETYPHN));
 };
 
-Sync.prototype.addSocket = function( ws ) {
+Sync.prototype.setSocket = function( ws ) {
   this.socket = ws;
   this.socketState = Sync.WSCON;
 };

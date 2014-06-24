@@ -38,6 +38,18 @@ SyncMessage.prototype.setContent = function(content) {
   this.content = content;
 };
 
+SyncMessage.generateError = function(errorContent) {
+  var errorMsg = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ERROR);
+  errorMsg.setContent(errorContent.toString() || errorContent);
+
+  return errorMsg;
+};
+
+// Pre-baked instances
+SyncMessage.Response = {
+  ACK: new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)
+};
+
 // TODO: Expose a .toJSON method
 
 module.exports = SyncMessage;

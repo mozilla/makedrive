@@ -75,14 +75,29 @@ describe('Test util.js', function(){
         });
       });
     });
-    it('util.authenticatedConnection should signin and get a syncId, and username', function(done) {
+    it('util.getWebsocketToken should return a token on callback', function(done) {
+      var username = util.username();
+      util.authenticate({username: username}, function(err, authResult) {
+        util.connection(authResult, function(err, connectionResult) {
+          connectionResult.jar = authResult.jar;
+
+          util.getWebsocketToken(connectionResult, function(err, tokenResult) {
+            expect(tokenResult.token).to.be.a('string');
+            connectionResult.close();
+            done();
+          });
+        });
+      });
+    });
+    it('util.authenticatedConnection should signin and get a syncId, username, and ws token', function(done) {
       util.authenticatedConnection(function(err, result) {
-        expect(err).not.to.exist;
-        expect(result).to.exist;
-        expect(result.jar).to.exist;
-        expect(result.syncId).to.be.a.string;
-        expect(result.username).to.be.a.string;
-        expect(result.done).to.be.a.function;
+        expect(err, "[err]").not.to.exist;
+        expect(result, "[result]").to.exist;
+        expect(result.jar, "[result.jar]").to.exist;
+        expect(result.syncId, "[result.syncId]").to.be.a("string");
+        expect(result.username, "[result.username]").to.be.a("string");
+        expect(result.token, "[result.token]").to.be.a("string");
+        expect(result.done, "[result.done]").to.be.a("function");
 
         request.get({
           url: util.serverURL + '/',
@@ -243,7 +258,10 @@ describe('Test util.js', function(){
     });
     it('util.openSocket should automatically generate an onOpen handler to send syncId to the server when passed syncId', function(done) {
       util.authenticatedConnection({ done: done }, function(err, result) {
-        var socketPackage = util.openSocket(result.syncId, {
+        var socketPackage = util.openSocket({
+          syncId: result.syncId,
+          token: result.token
+        }, {
           onMessage: function(message){
             expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
 
@@ -309,7 +327,7 @@ describe('Test util.js', function(){
     it('util.prepareSync should prepare a filesystem for the passed user when finalStep isn\'t specified', function(done) {
       util.authenticatedConnection({done: done}, function(err, result) {
         var username = util.username();
-        var socketPackage = util.openSocket(result.syncId);
+        var socketPackage = util.openSocket({ syncId: result.syncId, token: result.token });
 
         util.prepareSync(username, socketPackage, function(syncData, fs) {
           expect(fs instanceof FileSystem).to.equal.true;
@@ -320,7 +338,12 @@ describe('Test util.js', function(){
     it('util.syncSteps.srcList should complete the srcList step of the sync, exposing srcList and path to the client', function(done) {
       util.authenticatedConnection({ done: done }, function(err, result) {
         var username = util.username();
-        var socketPackage = util.openSocket(result.syncId, {
+        var socketData = {
+          syncId: result.syncId,
+          token: result.token
+        };
+
+        var socketPackage = util.openSocket(socketData, {
           onMessage: function(message) {
             expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
 
@@ -339,7 +362,12 @@ describe('Test util.js', function(){
     it('util.prepareSync should complete the srcList step automatically when passed \'srcList\' as the finalStep', function(done) {
       util.authenticatedConnection({ done: done }, function(err, result) {
         var username = util.username();
-        var socketPackage = util.openSocket(result.syncId, {
+        var socketData = {
+          syncId: result.syncId,
+          token: result.token
+        };
+
+        var socketPackage = util.openSocket(socketData, {
           onMessage: function(message) {
             expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
 
@@ -356,7 +384,12 @@ describe('Test util.js', function(){
     it('util.syncSteps.checksums should execute successfully', function(done) {
       util.authenticatedConnection({ done: done }, function(err, result) {
         var username = util.username();
-        var socketPackage = util.openSocket(result.syncId, {
+        var socketData = {
+          syncId: result.syncId,
+          token: result.token
+        };
+
+        var socketPackage = util.openSocket(socketData, {
           onMessage: function(message) {
             expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
 
@@ -372,7 +405,12 @@ describe('Test util.js', function(){
     it('util.prepareSync should complete the checksums step automatically when passed \'checksums\' as the finalStep', function(done) {
       util.authenticatedConnection({ done: done }, function(err, result) {
         var username = util.username();
-        var socketPackage = util.openSocket(result.syncId, {
+        var socketData = {
+          syncId: result.syncId,
+          token: result.token
+        };
+
+        var socketPackage = util.openSocket(socketData, {
           onMessage: function(message) {
             expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
 
@@ -386,7 +424,12 @@ describe('Test util.js', function(){
     it('util.syncSteps.diffs should return the checksums to the client', function(done) {
       util.authenticatedConnection({ done: done }, function(err, result) {
         var username = util.username();
-        var socketPackage = util.openSocket(result.syncId, {
+        var socketData = {
+          syncId: result.syncId,
+          token: result.token
+        };
+
+        var socketPackage = util.openSocket(socketData, {
           onMessage: function(message) {
             expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
 
@@ -404,7 +447,12 @@ describe('Test util.js', function(){
     it('util.prepareSync should complete the diffs step automatically when passed \'diffs\' as the finalStep', function(done) {
       util.authenticatedConnection({ done: done }, function(err, result) {
         var username = util.username();
-        var socketPackage = util.openSocket(result.syncId, {
+        var socketData = {
+          syncId: result.syncId,
+          token: result.token
+        };
+
+        var socketPackage = util.openSocket(socketData, {
           onMessage: function(message) {
             expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
 
@@ -420,7 +468,12 @@ describe('Test util.js', function(){
     it('util.syncSteps.patch should return an ACK', function(done) {
       util.authenticatedConnection({ done: done }, function(err, result) {
         var username = util.username();
-        var socketPackage = util.openSocket(result.syncId, {
+        var socketData = {
+          syncId: result.syncId,
+          token: result.token
+        };
+
+        var socketPackage = util.openSocket(socketData, {
           onMessage: function(message) {
             expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
 
@@ -438,7 +491,12 @@ describe('Test util.js', function(){
     it('util.prepareSync should complete the patch step automatically when passed \'patch\' as the finalStep', function(done) {
       util.authenticatedConnection({ done: done }, function(err, result) {
         var username = util.username();
-        var socketPackage = util.openSocket(result.syncId, {
+        var socketData = {
+          syncId: result.syncId,
+          token: result.token
+        };
+
+        var socketPackage = util.openSocket(socketData, {
           onMessage: function(message) {
             expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
 
