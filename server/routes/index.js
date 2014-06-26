@@ -4,6 +4,7 @@ var middleware = require( './middleware' ),
     Sync = require( '../lib/sync'),
     util = require( '../lib/util' ),
     formidable = require('formidable'),
+    Buffer = require('filer').Buffer,
     ws = require('ws'),
     SyncMessage = require('../lib/syncmessage'),
     WebSocket = require('ws'),
@@ -181,20 +182,20 @@ module.exports = function createRoutes( app, webmakerAuth  ) {
         form.handlePart(part);
       } else {
         part.addListener('data', function(data) {
-          // Parse JSON diffs to Uint8Array
+          // Parse JSON diffs to Buffer
           for (i = 0; i < diffs.length; i++) {
             if(diffs[i].contents) {
               for (j = 0; j < diffs[i].contents.length; j++) {
                 for (k = 0; k < diffs[i].contents[j].diffs.length; k++) {
                   if (diffs[i].contents[j].diffs[k].data) {
-                    diffs[i].contents[j].diffs[k].data = util.toArrayBuffer(data);
+                    diffs[i].contents[j].diffs[k].data = data;
                   }
                 }
               }
             } else {
               for (k = 0; k < diffs[i].diffs.length; k++) {
                 if (diffs[i].diffs[k].data) {
-                  diffs[i].diffs[k].data = util.toArrayBuffer(data);
+                  diffs[i].diffs[k].data = data;
                 }
               }
             }

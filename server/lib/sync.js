@@ -7,9 +7,12 @@ var env = require( "./environment" ),
     filesystem = require( "./filesystem" ),
     uuid = require( "node-uuid" ),
     emitter = new ( require( "events" ).EventEmitter )(),
+    Buffer = require('filer').Buffer,
     SyncMessage = require( "./syncmessage" );
 
-var rsync = require( "./rsync" );
+var rsync = require( "../../lib/rsync" ),
+    serializeDiff = require('../../lib/diff').serialize,
+    rsyncOptions = require( "../../lib/constants" ).rsyncDefaults;
 
 /**
  * Static public variables
@@ -33,13 +36,7 @@ Sync.WSCON = "WSCON";
  * Static private variables
  */
 var syncTable = {},
-    connectedClients = {},
-    // TODO: Examine these. Are they what we need?
-    rsyncOptions = {
-      time: true,
-      recursive: true,
-      size: 5
-    };
+    connectedClients = {};
 
 /**
  * Helper functions
@@ -72,43 +69,6 @@ function createError(code, message) {
   var error = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ERROR);
   error.setContent({state: code, message: message});
   return error;
-}
-
-function u8toArray(u8) {
-  var array = [];
-  var len = u8.length;
-  for (var i = 0; i < len; i++) {
-    array[i] = u8[i];
-  }
-  return array;
-}
-
-function convertDiffs( diffs ) {
-  var i, j, k;
-  for (i = 0; i < diffs.length; i++) {
-    if (diffs[i].contents) {
-      for (j = 0; j < diffs[i].contents.length; j++) {
-        for (k = 0; k < diffs[i].contents[j].diffs.length; k++) {
-          if (Object.prototype.toString.call(diffs[i].contents[j].diffs[k].data) === "[object Uint8Array]") {
-            diffs[i].contents[j].diffs[k].data = {
-              __isUint8Array: true,
-              __array: u8toArray(diffs[i].contents[j].diffs[k].data)
-            };
-          }
-        }
-      }
-    } else {
-      for (k = 0; k < diffs[i].diffs.length; k++) {
-        if (Object.prototype.toString.call(diffs[i].diffs[k].data) === "[object Uint8Array]") {
-          diffs[i].diffs[k].data = {
-            __isUint8Array: true,
-            __array: u8toArray(diffs[i].diffs[k].data)
-          };
-        }
-      }
-    }
-  }
-  return diffs;
 }
 
 /**
@@ -284,7 +244,7 @@ Sync.prototype.messageHandler = function( data ) {
           res = Sync.socket.errors.custom('EDIFFS', err);
         } else {
           res = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.DIFF);
-          res.setContent({diffs: convertDiffs(diffs), path: that.path});
+          res.setContent({diffs: serializeDiff(diffs), path: that.path});
           that.socketState = Sync.DIFF;
         }
         that.socket.send(JSON.stringify(res));

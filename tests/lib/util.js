@@ -4,7 +4,9 @@ var app = require('../../server/index.js');
 var ws = require('ws');
 var filesystem = require('../../server/lib/filesystem.js');
 var SyncMessage = require('../../server/lib/syncmessage');
-var rsync = require('../../server/lib/rsync');
+var rsync = require('../../lib/rsync');
+var rsyncOptions = require('../../lib/constants').rsyncDefaults;
+var Buffer = require('filer').Buffer;
 
 var serverURL = 'http://0.0.0.0:9090',
     socketURL = serverURL.replace( 'http', 'ws' );
@@ -55,9 +57,6 @@ if(!uploadFound) {
         keyPrefix: username,
         name: username
       });
-
-      // XXXhumph: this hack is just here until we switch Filer to Buffers
-      fileData = new Uint8Array(fileData.toJSON());
 
       fs.writeFile(path, fileData, function(err, data) {
         if(err) {
@@ -527,12 +526,6 @@ var syncSteps = {
       customAssertions(message, cb);
     });
 
-    var rsyncOptions = {
-      size: 5,
-      time: true,
-      recursive: true
-    };
-
     rsync.checksums(fs, path, srcList, rsyncOptions, function( err, checksums ) {
       expect(err).to.be.null;
 
@@ -562,12 +555,6 @@ var syncSteps = {
 
       cb();
     });
-
-    var rsyncOptions = {
-      size: 5,
-      time: true,
-      recursive: true
-    };
 
     rsync.patch(fs, data.path, data.diffs, rsyncOptions, function(err) {
       expect(err).not.to.exist;

@@ -1,18 +1,12 @@
 var ws = require( 'ws' ),
     source,
     socket,
-    request = require( 'request' ),
     SyncMessage = require( './syncmessage' ),
-    rsync = require('./rsync'),
-    fs,
+    rsync = require('../../lib/rsync'),
+    Buffer = require('filer').Buffer,
     uri,
-    checksum = {};
-
-var rsyncOptions = {
-  time: true,
-  recursive: true,
-  size: 5
-};
+    rsyncOptions = require('../../lib/constants').rsyncDefaults,
+    deserializeDiff = require('../../lib/diff').deserialize;
 
 var states = {
   CONN_CLOSED: -1,
@@ -24,44 +18,15 @@ var states = {
 
 var syncState;
 
-function convert() {
-  var diffs = this;
-  var k;
-  // Parse JSON diffs to Uint8Array
-  for ( var i = 0; i < diffs.length; i++ ) {
-    if( diffs[i].contents ) {
-      for ( var j = 0; j < diffs[i].contents.length; j++ ) {
-        for ( k = 0; k < diffs[i].contents[j].diffs.length; k++ ) {
-          if ( diffs[i].contents[j].diffs[k].data ) {
-            diffs[i].contents[j].diffs[k].data = diffs[i].contents[j].diffs[k].data;
-            if ( diffs[i].contents[j].diffs[k].data.__isUint8Array ) {
-              diffs[i].contents[j].diffs[k].data = new Uint8Array( diffs[i].contents[j].diffs[k].data.__array );
-            }
-          }
-        }
-      }
-    } else {
-      for ( k = 0; k < diffs[i].diffs.length; k++ ) {
-        if ( diffs[i].diffs[k].data ) {
-          diffs[i].diffs[k].data = diffs[i].diffs[k].data;
-          if ( diffs[i].diffs[k].data.__isUint8Array ) {
-            diffs[i].diffs[k].data = new Uint8Array( diffs[i].diffs[k].data.__array );
-          }
-        }
-      }
-    }
-  }
-  return diffs;
-}
-
 module.exports = {
   init: function( options, initial, callback ) {
     // TODO: Proper URL validation
     if ( !options.uri ) {
       return initial( new Error( "Socket server URI required" ) );
     }
-    uri = options.uri;
-    fs = options.fs;
+    var uri = options.uri;
+    var fs = options.fs;
+    var checksum = {};
     var path;
     source = new EventSource( uri + '/api/sync/updates' );
     source.addEventListener( 'message', function f( event ) {
@@ -136,7 +101,7 @@ module.exports = {
                   var diffs = data.content.diffs;
                   path = data.content.path;
 
-                  convert.call( diffs );
+                  diffs = deSerializeDiff( diffs );
                   return rsync.patch( fs, path, diffs, rsyncOptions, function( err ) {
                     if ( err ) {
                       syncState = states.ERROR;

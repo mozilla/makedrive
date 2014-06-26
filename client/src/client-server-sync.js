@@ -1,13 +1,9 @@
 var syncID,
-    rsync = require('./rsync'),
+    rsync = require('../../lib/rsync'),
+    rsyncOptions = require( '../../lib/constants' ).rsyncDefaults,
     paths,
     request = require( 'request' ),
-    superagentRequest = require( 'superagent' ),
-    rsyncOptions = {
-      time: true,
-      recursive: true,
-      size: 5
-    };
+    superagentRequest = require( 'superagent' );
 
 module.exports = {
   sync: function sync( fs, uri, connectionId, path, callback ) {
@@ -52,7 +48,7 @@ module.exports = {
               var req = superagentRequest.put( uri + 'diffs' )
                 .field( 'user[diffs]', JSON.stringify( diffs ) );
               var k;
-              // Parse JSON diffs to Uint8Array
+
               for ( var i = 0; i < diffs.length; i++ ) {
                 if ( diffs[i].contents ) {
                   for ( var j = 0; j < diffs[i].contents.length; j++ ) {

@@ -9,13 +9,13 @@ $(document).ready(function() {
   var fs = new Filer.FileSystem({provider: new Filer.FileSystem.providers.Memory("B")});
   fs.mkdir('/projects', function(err) {
     if(err) {
-      return console.log(err);
+      return console.error(err);
     }
     files.push('projects');
     var uri = 'http://localhost:9090';
     makedrive.init(uri, fs, function(err) {
       if(err) {
-        return console.log(err);
+        return console.error(err);
       }
       fs.watch('/projects', {recursive: true}, function(event, filename) {
         var found = false;
@@ -24,7 +24,7 @@ $(document).ready(function() {
         if(currentPath === fname) {
           fs.readFile('/projects/' + currentPath, 'utf8', function(err, data) {
             if(err) {
-              return console.log(err);
+              return console.error(err);
             }
             editor.setValue(data);
             $('#fileTitle').val(fname);
@@ -36,7 +36,7 @@ $(document).ready(function() {
             currentPath = e.target.innerHTML;
             fs.readFile('/projects/' + e.target.innerHTML, 'utf8', function(err, data) {
               if(err) {
-                return console.log(err);
+                return console.error(err);
               }
               editor.setValue(data);
               $('#fileTitle').val(e.target.innerHTML);
@@ -49,7 +49,7 @@ $(document).ready(function() {
         currentPath = e.target.innerHTML;
         fs.readFile('/projects/' + e.target.innerHTML, 'utf8', function(err, data) {
           if(err) {
-            return console.log(err);
+            return console.error(err);
           }
           editor.setValue(data);
           $('#fileTitle').val(e.target.innerHTML);
@@ -60,7 +60,7 @@ $(document).ready(function() {
         var contents = editor.getValue();
         fs.writeFile('/projects/' + fname, contents, function(err) {
           if(err) {
-            return console.log(err);
+            return console.error(err);
           }
           if(files.indexOf(fname) < 0) {
             files.push(fname);
@@ -69,11 +69,11 @@ $(document).ready(function() {
           currentPath = fname;
           makedrive.sync('/projects', function(err) {
             if(err) {
-              return console.log(err);
+              return console.error(err);
             }
             fs.readFile('/projects/' + currentPath, 'utf8', function(err, data) {
               if(err) {
-                return console.log(err);
+                return console.error(err);
               }
               editor.setValue(data);
               $('#fileTitle').val(currentPath);
