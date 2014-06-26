@@ -31,7 +31,7 @@ module.exports = function( server ) {
      ws.send(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
 
      sync = Sync.retrieve( match[1] );
-     sync.addSocket( this );
+     sync.addSocket( ws );
 
      ws.on('message', function(data, flags) {
        if(!flags || (flags && !flags.binary)) {
@@ -44,7 +44,7 @@ module.exports = function( server ) {
          } catch(error) {
            var Error = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ERROR);
            Error.setContent(error.toString() || error);
-           this.send(JSON.stringify(Error));
+           ws.send(JSON.stringify(Error));
          }
        }
      });

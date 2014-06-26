@@ -21,14 +21,11 @@ $(document).ready(function() {
         var found = false;
         var fname = filename.replace(/^\//, "");
         fname = Filer.Path.basename(fname);
-        console.log('Change to:', fname);
-        console.log('Files:', files, "\nfname:", fname);
         if(currentPath === fname) {
           fs.readFile('/projects/' + currentPath, 'utf8', function(err, data) {
             if(err) {
               return console.log(err);
             }
-            console.log(data);
             editor.setValue(data);
             $('#fileTitle').val(fname);
           });
@@ -36,13 +33,11 @@ $(document).ready(function() {
         if(files.indexOf(fname) < 0) {
           $('#files').append('<li><span class="file"><span class=padding>' + fname + "</span></span></li>");
           $('.file').unbind('click').click( function(e) {
-            console.log(e.target.innerHTML);
             currentPath = e.target.innerHTML;
             fs.readFile('/projects/' + e.target.innerHTML, 'utf8', function(err, data) {
               if(err) {
                 return console.log(err);
               }
-              console.log('Data', data.length);
               editor.setValue(data);
               $('#fileTitle').val(e.target.innerHTML);
             });
@@ -51,13 +46,11 @@ $(document).ready(function() {
         }
       });
       $('.file').unbind('click').click( function(e) {
-        console.log(e.target.innerHTML);
         currentPath = e.target.innerHTML;
         fs.readFile('/projects/' + e.target.innerHTML, 'utf8', function(err, data) {
           if(err) {
             return console.log(err);
           }
-          console.log('Data', data.length);
           editor.setValue(data);
           $('#fileTitle').val(e.target.innerHTML);
         });
@@ -65,7 +58,6 @@ $(document).ready(function() {
       $('#btnSave').unbind("click").click(function(e) {
         var fname = $('#fileTitle').val() || ('new-file' + count++);
         var contents = editor.getValue();
-        console.log('Contents', contents.length);
         fs.writeFile('/projects/' + fname, contents, 'utf8', function(err) {
           if(err) {
             return console.log(err);
@@ -83,7 +75,6 @@ $(document).ready(function() {
               if(err) {
                 return console.log(err);
               }
-              console.log('Data', data.length);
               editor.setValue(data);
               $('#fileTitle').val(currentPath);
             });

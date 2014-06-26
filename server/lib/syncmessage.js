@@ -30,7 +30,6 @@ function validateParams(param, paramType) {
 
 function SyncMessage(type, name) {
   this.type = validateParams(type, 'TYPE') ? type : null;
-  //this.name = validateParams(name, 'NAME') ? name : null;
   this.name = name;
   this.content = 'No content';
 }
