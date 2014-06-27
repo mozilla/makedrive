@@ -327,11 +327,17 @@ describe('Test util.js', function(){
     it('util.prepareSync should prepare a filesystem for the passed user when finalStep isn\'t specified', function(done) {
       util.authenticatedConnection({done: done}, function(err, result) {
         var username = util.username();
-        var socketPackage = util.openSocket({ syncId: result.syncId, token: result.token });
+        var socketPackage = util.openSocket({
+          syncId: result.syncId, token: result.token
+        }, {
+          onMessage: function(message) {
+            expect(message).to.equal(JSON.stringify(SyncMessage.Response.ACK));
 
-        util.prepareSync(username, socketPackage, function(syncData, fs) {
-          expect(fs instanceof FileSystem).to.equal.true;
-          util.cleanupSockets(result.done, socketPackage);
+            util.prepareSync(username, socketPackage, function(syncData, fs) {
+              expect(fs instanceof FileSystem).to.equal.true;
+              util.cleanupSockets(result.done, socketPackage);
+            });
+          }
         });
       });
     });

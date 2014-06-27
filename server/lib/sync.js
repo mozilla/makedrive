@@ -134,12 +134,12 @@ function Sync( username, onOutOfDate ) {
   });
   var that = this;
   // TODO: Decide what our root path will be (currently /projects)
-  this.fs.mkdir("/projects", function( err ) {
+  this.fs.mkdir("/", function( err ) {
     if ( err && err.code !== 'EEXIST' ) {
       console.err( "Error creating the user's root directory: " + err );
     }
     that.state = Sync.CONNECTED;
-    that.path = '/projects';
+    that.path = '/';
   });
 }
 
