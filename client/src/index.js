@@ -52,7 +52,7 @@
  * sync.SYNC_ERROR = 4
  */
 
-var MakeDriveSync = require('./interface');
+var MakeDriveSync = require('./sync');
 var Filer = require('filer');
 var EventEmitter = require('events').EventEmitter;
 
@@ -153,7 +153,7 @@ function createFS() {
 
       syncInterval = setInterval(function() {
         if(needsSync) {
-          sync.request();
+          sync.request('/');
           needsSync = false;
         }
       }, 60 * 1000);

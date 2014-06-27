@@ -1,28 +1,30 @@
 SyncMessage.REQUEST = "REQUEST";
 SyncMessage.RESPONSE = "RESPONSE";
-SyncMessage.STREAM = "STREAM";
-SyncMessage.ACK = "ACK";
-SyncMessage.SOURCE_LIST = "SOURCE_LIST";
-SyncMessage.CHECKSUM = "CHECKSUM";
-SyncMessage.DIFF = "DIFF";
+SyncMessage.ERROR = "ERROR";
+SyncMessage.SRCLIST = "SRCLIST";
+SyncMessage.SYNC = "SYNC";
+SyncMessage.CHKSUM = "CHKSUM";
+SyncMessage.DIFFS = "DIFFS";
 SyncMessage.PATCH = "PATCH";
 SyncMessage.RESET = "RESET";
-SyncMessage.ERROR = "ERROR";
+SyncMessage.LOCKED = "LOCKED";
+SyncMessage.AUTHZ = "AUTHORIZED";
 
 function validateParams(param, paramType) {
   if(param) {
     if(paramType === 'TYPE') {
       return param === SyncMessage.REQUEST ||
         param === SyncMessage.RESPONSE ||
-        param === SyncMessage.STREAM;
+        param === SyncMessage.ERROR;
     } else if(paramType === 'NAME') {
-      return param === SyncMessage.SOURCE_LIST ||
-        param === SyncMessage.CHECKSUM ||
-        param === SyncMessage.DIFF ||
+      return param === SyncMessage.SRCLIST ||
+        param === SyncMessage.CHKSUM ||
+        param === SyncMessage.DIFFS ||
+        param === SyncMessage.LOCKED ||
         param === SyncMessage.PATCH ||
-        param === SyncMessage.ERROR ||
-        param === SyncMessage.ACK ||
-        param === SyncMessage.RESET;
+        param === SyncMessage.SYNC ||
+        param === SyncMessage.RESET ||
+        param === SyncMessage.AUTHZ;
     }
   }
   return false;
@@ -30,7 +32,7 @@ function validateParams(param, paramType) {
 
 function SyncMessage(type, name) {
   this.type = validateParams(type, 'TYPE') ? type : null;
-  this.name = name;
+  this.name = validateParams(name, 'NAME') ? name : null;
   this.content = 'No content';
 }
 

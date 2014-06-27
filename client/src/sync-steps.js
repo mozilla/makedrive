@@ -1,0 +1,8 @@
+module.exports = {
+  SYNC_INIT: "SYNC INITIALIZED",
+  CHKSUM: "CHECKSUM",
+  DIFFS: "DIFFS",
+  PATCH: "PATCH",
+  SYNCED: "SYNCED",
+  FAILED: "FAILED"
+};
