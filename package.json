@@ -30,7 +30,7 @@
     "cryptojs": "^2.5.3",
     "express": "3.4.5",
     "filer": "0.0.13",
-    "filer-fs": "git://github.com/humphd/filer-fs.git#3242af86a79f5dc9af45f1a136a2f089c56830d1",
+    "filer-fs": "git://github.com/humphd/filer-fs.git#master",
     "filer-s3": "0.0.2",
     "formidable": "^1.0.14",
     "habitat": "1.1.0",
