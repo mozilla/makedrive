@@ -74,8 +74,8 @@ function createError(code, message) {
 /**
  * Constructor
  */
-function Sync( username, onOutOfDate ) {
-  var id = this.syncId = uuid.v4();
+function Sync( username, sessionId ) {
+  this.sessionId = sessionId;
   this.username = username;
 
   // Ensure the current user exists in our datastore and
@@ -83,24 +83,15 @@ function Sync( username, onOutOfDate ) {
   if (!connectedClients[username]) {
     connectedClients[username] = {};
   }
-  connectedClients[username][id] = {
-    onOutOfDate: onOutOfDate,
+  connectedClients[username][sessionId] = {
     sync: this
   };
-  emitter.addListener( "updateToLatestSync", onOutOfDate );
   this.fs = filesystem.create({
     keyPrefix: this.username,
     name: this.username
   });
-  var that = this;
-  // TODO: Decide what our root path will be (currently /projects)
-  this.fs.mkdir("/", function( err ) {
-    if ( err && err.code !== 'EEXIST' ) {
-      console.err( "Error creating the user's root directory: " + err );
-    }
-    that.state = Sync.CONNECTED;
-    that.path = '/';
-  });
+  this.state = Sync.CONNECTED;
+  this.path = '/';
 }
 
 // Plug into this user's server-side filesystem,
@@ -310,8 +301,8 @@ Sync.connections = {
   }
 };
 
-Sync.create = function( username, onOutOfDate ){
-  return new Sync( username, onOutOfDate );
+Sync.create = function( username, sessionId ){
+  return new Sync( username, sessionId );
 };
 
 Sync.kill = function( username ) {
@@ -328,33 +319,12 @@ Sync.kill = function( username ) {
   }
 };
 
-Sync.retrieve = function( username, syncId ) {
-  // Parameter handling
-  if ( !syncId && username ) {
-    syncId = username;
-    username = null;
+Sync.retrieve = function( username, sessionId ) {
+  if ( !connectedClients[ username ] || !connectedClients[ username ][ sessionId ] ) {
+    return null;
   }
 
-  // Better performance if we have both parameters
-  if ( username ) {
-    if ( !connectedClients[ username ] || !connectedClients[ username ][ syncId ] ) {
-      return null;
-    }
-
-    return connectedClients[ username ][ syncId ].sync;
-  }
-
-  var client,
-      keys = Object.keys(connectedClients);
-
-  for (var i = 0; i < keys.length; i++) {
-    client = connectedClients[ keys[i] ][ syncId ];
-
-    if ( client ) {
-      return client.sync;
-    }
-  }
-  return null;
+  return connectedClients[ username ][ sessionId ].sync;
 };
 
 /**

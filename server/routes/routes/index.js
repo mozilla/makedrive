@@ -23,6 +23,6 @@ module.exports = {
     });
   },
   generateToken: function( req, res ) {
-    res.json(200, websocketAuth.generateTokenForSession(req.params.sessionId));
+    res.json(200, websocketAuth.generateTokenForSession(req.params.username, req.params.sessionId));
   }
 };

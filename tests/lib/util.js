@@ -7,6 +7,7 @@ var SyncMessage = require('../../server/lib/syncmessage');
 var rsync = require('../../lib/rsync');
 var rsyncOptions = require('../../lib/constants').rsyncDefaults;
 var Buffer = require('filer').Buffer;
+var uuid = require( "node-uuid" );
 
 var serverURL = 'http://0.0.0.0:9090',
     socketURL = serverURL.replace( 'http', 'ws' );
@@ -71,13 +72,11 @@ if(!uploadFound) {
   });
 }
 
-var seed = Date.now();
-
 /**
  * Misc Helpers
  */
 function uniqueUsername() {
-  return 'user' + seed++;
+  return 'user' + uuid.v4();
 }
 
 function upload(username, path, contents, callback) {
@@ -115,57 +114,6 @@ function resolveFromJSON(obj) {
 /**
  * Connection Helpers
  */
-function getConnectionID(options, callback){
-  if(!(options && options.jar)) {
-    throw('Expected options.jar');
-  }
-
-  var headers = {
-   'Accept-Encoding': 'zlib',
-   'Content-Type': 'text/event-stream'
-  };
-  var stream = request({
-    url: serverURL + '/api/sync/updates',
-    jar: options.jar,
-    headers: headers
-  });
-  var callbackCalled = false;
-
-  var data = '';
-  stream.on('data', function(chunk) {
-    if(callbackCalled) {
-      return;
-    }
-
-    data += chunk;
-
-    // Look for something like data: {"syncId":"91842458-d5f7-486f-9297-52e460c3ab38"}
-    var match = /data: {"syncId"\s*:\s*"(\w{8}(-\w{4}){3}-\w{12}?)"}/.exec(data);
-    if(match) {
-      callbackCalled = true;
-      callback(null, {
-        close: function() {
-          // HTML5 provides an easy way to
-          // close SSE connections, but this doesn't
-          // exist in NodeJS, so force it.
-          stream.req.abort();
-        },
-        syncId: match[1]
-      });
-    }
-  });
-
-  stream.on('end', function() {
-    if(callbackCalled) {
-      return;
-    }
-
-    callbackCalled = true;
-    stream = null;
-    callback('Remote hung-up');
-  });
-}
-
 function getWebsocketToken(options, callback){
   // Fail early and noisily when missing options.jar
   if(!(options && options.jar)) {
@@ -227,35 +175,24 @@ function authenticateAndConnect(options, callback) {
     options = {};
   }
 
-  options.jar = options.jar || jar();
-
   authenticate(options, function(err, result) {
     if(err) {
       return callback(err);
     }
-    var username = result.username;
 
-    getConnectionID(options, function(err, result1){
-      if(err) {
+    getWebsocketToken(result, function(err, result1) {
+      if(err){
         return callback(err);
       }
 
-      result1.jar = options.jar;
-      result1.username = username;
+      var testDone = result1.done;
       result1.done = function() {
         options.logoutUser(function() {
-          result1.close();
-          options.done && options.done();
+          testDone && testDone();
         });
       };
 
-      getWebsocketToken(result1, function(err, result2) {
-        if(err){
-          return callback(err);
-        }
-
-        callback(null, result2);
-      });
+      callback(null, result1);
     });
   });
 }
@@ -265,80 +202,11 @@ function jar() {
 }
 
 /**
- * HTTP Sync Helpers
- */
-function syncRouteConnect(options, callback){
-  if(!(options && options.jar && options.syncId && callback)) {
-    throw('You must pass options, options.jar, options.syncId and callback');
-  }
-
-  request.get({
-    url: serverURL + '/api/sync/' + options.syncId,
-    jar: options.jar
-  }, function(err, res, body) {
-    if(err) {
-      return callback(err);
-    }
-
-    options.statusCode = res.statusCode;
-    callback(null, options);
-  });
-}
-
-function sourceRouteConnect(options, extras, callback){
-  if(typeof options === 'function') {
-    callback = options;
-    options = {};
-  }
-
-  if(typeof extras === 'function') {
-    callback = extras;
-    extras = {};
-  }
-
-  extras.url = serverURL + '/api/sync/' + options.syncId + '/sources';
-  extras.jar =  options.jar;
-
-  request.post(extras, function(err, res, body) {
-    if(err) {
-      return callback(err);
-    }
-    options.statusCode = res.statusCode;
-    callback(null, options);
-  });
-}
-
-function csRouteConnect(options, extras, callback){
-  if(typeof options === 'function') {
-    callback = options;
-    options = {};
-  }
-
-  if(typeof extras === 'function') {
-    callback = extras;
-    extras = {};
-  }
-
-  extras.url = serverURL + '/api/sync/' + options.syncId + '/checksums';
-  extras.jar =  options.jar;
-  extras.json = true;
-
-  request.get(extras, function(err, res, body) {
-    if(err) {
-      return callback(err);
-    }
-    options.statusCode = res.statusCode;
-    options.body = body;
-    callback(null, options);
-  });
-}
-
-/**
  * Socket Helpers
  */
 function openSocket(socketData, options) {
   if (typeof options !== "object") {
-    if (socketData && !socketData.syncId) {
+    if (socketData && !socketData.token) {
       options = socketData;
       socketData = null;
     }
@@ -367,7 +235,6 @@ function openSocket(socketData, options) {
   if (socketData) {
     options.onOpen = function() {
       socket.send(JSON.stringify({
-        syncId: socketData.syncId,
         token: socketData.token
       }));
     };
@@ -573,13 +440,13 @@ function prepareSync(finalStep, username, socketPackage, cb){
     finalStep = null;
   }
 
-  var fs = require('fs');
+  var node_fs = require('fs');
   var Path = require('path');
-  var content = fs.readFileSync(Path.resolve(__dirname, '../test-files/test.txt'), {encoding: null});
+  var content = node_fs.readFileSync(Path.resolve(__dirname, '../test-files/test.txt'), {encoding: null});
 
-  // Set up src filesystem
+  // Set up server filesystem
   upload(username, '/test.txt', content, function() {
-    // Set up dest filesystem
+    // Set up client filesystem
     var fs = filesystem.create({
       keyPrefix: username,
       name: username
@@ -614,14 +481,10 @@ module.exports = {
   app: app,
   serverURL: serverURL,
   socketURL: socketURL,
-  connection: getConnectionID,
   username: uniqueUsername,
   createJar: jar,
   authenticate: authenticate,
   authenticatedConnection: authenticateAndConnect,
-  syncRouteConnect: syncRouteConnect,
-  sourceRouteConnect: sourceRouteConnect,
-  csRouteConnect: csRouteConnect,
   openSocket: openSocket,
   upload: upload,
   cleanupSockets: cleanupSockets,

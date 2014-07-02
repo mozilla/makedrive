@@ -5,6 +5,9 @@ var Filer = require( "filer" ),
 
 var defaults = {};
 
+// TODO: When do we invalidate cache to prevent memory leaks?
+var cachedFS = {};
+
 if ( providerType === "filer-s3" ) {
   defaults.bucket = env.get( "S3_BUCKET" );
   defaults.key = env.get( "S3_KEY" );
@@ -17,8 +20,12 @@ module.exports = {
       options[ defaultOption ] = options[ defaultOption ] || defaults[ defaultOption ];
     });
 
-    return new Filer.FileSystem({
-      provider: new Provider( options )
-    });
+    // Reuse filesystems whenever possible
+    if (!cachedFS[options.keyPrefix]) {
+      cachedFS[options.keyPrefix] = new Filer.FileSystem({
+        provider: new Provider(options)
+      });
+    }
+    return cachedFS[options.keyPrefix];
   }
 };

@@ -29,20 +29,24 @@ var env = require('./environment');
 var authTable = {};
 var TOKEN_TIMEOUT_MS = env.get("TOKEN_TIMEOUT_MS") || 60000; // Default to 60 sec
 
-function createSessionTracker() {
+function createSessionTracker(username) {
   var sessionId = uuid.v4();
-  authTable[sessionId] = [];
+  if (!authTable[username]) {
+    authTable[username] = {};
+  }
+
+  authTable[username][sessionId] = [];
   return sessionId;
 }
 
-function generateTokenForSession(sessionId) {
-  var sessionData = authTable[sessionId];
+function generateTokenForSession(username, sessionId) {
+  var sessionData = authTable[username][sessionId];
   var token = uuid.v4();
 
   // Invalidate the token if the client doesn't
   // use it in time.
   setTimeout(function(){
-    if (authTable[sessionId]){
+    if (authTable[username][sessionId]){
       sessionData.splice(sessionData.indexOf(token), 1);
     }
   }, TOKEN_TIMEOUT_MS);
@@ -52,21 +56,31 @@ function generateTokenForSession(sessionId) {
 }
 
 function authorizeToken(token) {
-  var sessionId,
-      username,
-      i;
+  var id,
+      username = getUsernameByToken(token),
+      session,
+      index;
 
-  for (sessionId in authTable) {
-    session = authTable[sessionId];
+  // Token isn't valid?
+  if (username === null) {
+    return null;
+  }
 
-    for (i = 0; i < session.length; i++) {
-      if (session[i] === token) {
-        session.splice(i, 1);
-        return true;
-      }
+  // Token is valid, find and delete it,
+  // returning username & sessionId
+  for (id in authTable[username]) {
+    session = authTable[username][id];
+    index = session.indexOf(token);
+
+    if (index >= 0) {
+      session.splice(index, 1);
+      return  {
+        username: username,
+        sessionId: id
+      };
     }
   }
-  return false;
+  return null;
 }
 
 function purgeSession(sessionId) {
@@ -80,6 +94,17 @@ function purgeSession(sessionId) {
 function logoutHandler(req, res, next) {
   purgeSession(req.params.sessionId);
   next();
+}
+
+function getUsernameByToken(token) {
+  for (username in authTable) {
+    for (id in authTable[username]) {
+      if (authTable[username][id].indexOf(token) >= 0) {
+        return username;
+      }
+    }
+  }
+  return null;
 }
 
 module.exports = {

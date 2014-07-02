@@ -5,7 +5,7 @@ var Sync = require('../../server/lib/sync');
 
 describe('[Downstream Syncing with Websockets]', function(){
   describe('The server', function(){
-    it('should close a socket if bad data is sent in place of syncId/auth token', function(done) {
+    it('should close a socket if bad data is sent in place of websocket-auth token', function(done) {
       util.authenticatedConnection({ done: done }, function( err, result ) {
         expect(err).not.to.exist;
 
@@ -29,7 +29,6 @@ describe('[Downstream Syncing with Websockets]', function(){
       util.authenticatedConnection({ done: done }, function( err, result ) {
         expect(err).not.to.exist;
         var socketData = {
-          syncId: result.syncId,
           token: result.token
         };
 
@@ -47,12 +46,10 @@ describe('[Downstream Syncing with Websockets]', function(){
         });
       });
     });
-
     it('should send an ACK when a syncId and the websocket auth token is sent from the client', function(done) {
       util.authenticatedConnection({ done: done }, function( err, result ) {
         expect(err).not.to.exist;
         var socketData = {
-          syncId: result.syncId,
           token: result.token
         };
 
@@ -68,7 +65,6 @@ describe('[Downstream Syncing with Websockets]', function(){
       util.authenticatedConnection(function( err, result ) {
         expect(err).not.to.exist;
         var socketData = {
-          syncId: result.syncId,
           token: result.token
         };
 
@@ -102,7 +98,6 @@ describe('[Downstream Syncing with Websockets]', function(){
       util.authenticatedConnection({ done: done }, function(err, result) {
         expect(err).not.to.exist;
         var socketData = {
-          syncId: result.syncId,
           token: result.token
         };
 
@@ -129,7 +124,6 @@ describe('[Downstream Syncing with Websockets]', function(){
       util.authenticatedConnection({ done: done }, function(err, result) {
         expect(err).not.to.exist;
         var socketData = {
-          syncId: result.syncId,
           token: result.token
         };
 
@@ -159,7 +153,6 @@ describe('[Downstream Syncing with Websockets]', function(){
       util.authenticatedConnection({ done: done }, function( err, result ) {
         expect(err).not.to.exist;
         var socketData = {
-          syncId: result.syncId,
           token: result.token
         };
 
@@ -190,7 +183,6 @@ describe('[Downstream Syncing with Websockets]', function(){
       util.authenticatedConnection({ done: done }, function( err, result ) {
         expect(err).not.to.exist;
         var socketData = {
-          syncId: result.syncId,
           token: result.token
         };
 
@@ -220,7 +212,6 @@ describe('[Downstream Syncing with Websockets]', function(){
 
         var username = util.username();
         var socketData = {
-          syncId: result.syncId,
           token: result.token
         };
 
@@ -250,7 +241,6 @@ describe('[Downstream Syncing with Websockets]', function(){
 
         var username = util.username();
         var socketData = {
-          syncId: result.syncId,
           token: result.token
         };
 
@@ -278,7 +268,6 @@ describe('[Downstream Syncing with Websockets]', function(){
 
         var username = util.username();
         var socketData = {
-          syncId: result.syncId,
           token: result.token
         };
 
@@ -307,7 +296,6 @@ describe('[Downstream Syncing with Websockets]', function(){
 
         var username = util.username();
         var socketData = {
-          syncId: result.syncId,
           token: result.token
         };
 

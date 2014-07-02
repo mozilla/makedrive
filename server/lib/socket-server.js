@@ -26,21 +26,15 @@ module.exports = function( server ) {
         return ws.close(1011, "Parsing error: " + e);
       }
 
-      var syncId = data.syncId;
-      if ( !syncId ) {
-        return ws.close(1008, "SyncId required");
-      }
-
       // Authorize user
       var token = data.token;
-      if ( !token || !websocketAuth.authorizeToken(token) ) {
+      var authData = websocketAuth.authorizeToken(token);
+      if ( !token || !authData ) {
         return ws.close(1008, "Valid auth token required");
       }
-      var sync;
 
-      ws.send(JSON.stringify(SyncMessage.Response.ACK));
-
-      sync = Sync.retrieve( syncId );
+      var sync = Sync.retrieve( authData.username, authData.sessionId );
+      // TODO: Attach 'on out of date' logic
       sync.setSocket( ws );
 
       ws.on('message', function(data, flags) {
@@ -53,6 +47,7 @@ module.exports = function( server ) {
           }
         }
       });
+      ws.send(JSON.stringify(SyncMessage.Response.ACK));
     });
   });
 };

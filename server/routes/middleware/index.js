@@ -15,9 +15,15 @@ module.exports = {
     }
 
     if ( !req.session.sessionId ) {
-      req.session.sessionId = websocketAuth.createSessionTracker();
+      req.session.sessionId = websocketAuth.createSessionTracker(username);
     }
 
+    var sync = Sync.retrieve(req.session.sessionId);
+    if ( !sync ) {
+      sync = Sync.create(username, req.session.sessionId);
+    }
+
+    req.params.sync = sync;
     req.params.username = username;
     req.params.sessionId = req.session.sessionId;
     next();

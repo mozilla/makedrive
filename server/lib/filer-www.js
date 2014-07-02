@@ -172,7 +172,7 @@ function FilerWebServer(username) {
 /**
  * Main entry-point for handling a path request.
  * Each call should use a separate res object, since
- * it will writer headers + body.
+ * it will write headers + body.
  */
 FilerWebServer.prototype.handle = function(path, res) {
   var that = this;
