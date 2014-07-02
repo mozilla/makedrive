@@ -172,9 +172,11 @@ function createFS() {
     // Stop watching for fs changes, stop auto-sync'ing
     if(watcher) {
       watcher.close();
+      watcher = null;
     }
     if(syncInterval) {
       clearInterval(syncInterval);
+      syncInterval = null;
     }
 
     sync.state = sync.SYNC_DISCONNECTED;
@@ -191,7 +193,7 @@ MakeDrive.fs = function() {
   return _fs;
 };
 
-// Expose bits of Filer that client's will need on MakeDrive
+// Expose bits of Filer that clients will need on MakeDrive
 MakeDrive.Buffer = Filer.Buffer;
 MakeDrive.Path = Filer.Path;
 MakeDrive.Errors = Filer.Errors;
