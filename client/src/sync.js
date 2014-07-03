@@ -13,22 +13,19 @@ var syncSession = {
   path: '/'
 };
 
-function init(sync, url, fs, callback) {
+function init(url, token, sync, fs, callback) {
   _sync = sync;
   _fs = fs;
   socket = new WebSocket(url);
+  data = data.data;
   
   function handleAuth(data, flags) {
-    data = data.data;
     try {
       data = JSON.parse(data);
     } catch(e) {
       return callback(e);
     }
     
-    if(data.token) {
-      return socket.send({token: data.token});
-    }
     if(data.type === SyncMessage.RESPONSE && data.name === SyncMessage.AUTHZ) {
       socket.removeEventListener('message', handleAuth);
       syncSession.state = states.READY;
@@ -42,7 +39,6 @@ function init(sync, url, fs, callback) {
   }
 
   function handleClose(code, data) {
-    data = data.data;
     try {
       data = JSON.parse(data);
     } catch(e) {
@@ -60,6 +56,7 @@ function init(sync, url, fs, callback) {
   
   socket.onmessage = handleAuth;
   socket.onclose = handleClose;
+  socket.send(JSON.stringify({token: token}));
 }
 
 function sync(path, callback) {

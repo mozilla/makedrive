@@ -122,7 +122,7 @@ function createFS() {
   };
 
   // Try to connect to the server.
-  sync.connect = function(url) {
+  sync.connect = function(url, token) {
     // Bail if we're already connected
     if(sync.state !== sync.SYNC_DISCONNECTED ||
        sync.state !== sync.ERROR) {
@@ -135,7 +135,7 @@ function createFS() {
     sync.state = sync.SYNC_CONNECTING;
 
     // Try to connect to provided server URL
-    MakeDriveSync.init(url, sync, _fs, function(err) {
+    MakeDriveSync.init(url, token, sync, _fs, function(err) {
       if(err) {
         sync.state = sync.SYNC_ERROR;
         sync.emit('error', err);
