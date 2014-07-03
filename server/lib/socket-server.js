@@ -1,5 +1,5 @@
 var Sync = require( './sync'),
-    SyncMessage = require('./syncmessage'),
+    SyncMessage = require('../../lib/syncmessage'),
     WebSocketServer = require('ws').Server,
     websocketAuth = require('./websocket-auth'),
     rsync = require('../../lib/rsync'),

@@ -1,4 +1,4 @@
-var SyncMessage = require( './syncmessage' ),
+var SyncMessage = require( '../../lib/syncmessage' ),
     messageHandler = require('./message-handler'),
     socket,
     _sync,
