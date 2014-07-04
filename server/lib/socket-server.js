@@ -1,7 +1,9 @@
 var Sync = require( './sync'),
     SyncMessage = require('./syncmessage'),
     WebSocketServer = require('ws').Server,
-    websocketAuth = require('./websocket-auth');
+    websocketAuth = require('./websocket-auth'),
+    rsync = require('../../lib/rsync'),
+    rsyncOptions = require('../../lib/constants').rsyncDefaults;
 
 module.exports = function( server ) {
   var wss = new WebSocketServer({ server: server });
@@ -33,10 +35,10 @@ module.exports = function( server ) {
         return ws.close(1008, "Valid auth token required");
       }
 
-      var sync = Sync.retrieve( authData.username, authData.sessionId );
-      // TODO: Reimplement 'on-out-of-date' logic
-      //       https://github.com/mozilla/makedrive/issues/17
+      var sync = Sync.create( authData.username, authData.sessionId );
       sync.setSocket( ws );
+
+      ws.on('close', sync.onClose);
 
       ws.on('message', function(data, flags) {
         if(!flags || (flags && !flags.binary)) {
@@ -44,11 +46,27 @@ module.exports = function( server ) {
             data = JSON.parse(data);
             sync.messageHandler(data);
           } catch(error) {
-            ws.send(JSON.stringify(SyncMessage.generateError(error)));
+            var errorMessage = SyncMessage.errors.INFRMT;
+            errorMessage.setContent(error);
+            ws.send(JSON.stringify(errorMessage));
           }
         }
       });
-      ws.send(JSON.stringify(SyncMessage.Response.ACK));
+
+      var sucAuthMessage = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.AUTHZ);
+      ws.send(JSON.stringify(sucAuthMessage));
+
+      rsync.sourceList(sync.fs, '/', rsyncOptions, function(err, srcList) {
+        var response;
+        if(err) {
+          response = new SyncMessage(SyncMessage.ERROR, SyncMessage.SRCLIST);
+          response.setContent(err);
+        } else {
+          response = new SyncMessage(SyncMessage.REQUEST, SyncMessage.CHKSUM);
+          response.setContent({srcList: srcList, path: '/'});
+        }
+        ws.send(JSON.stringify(response));
+      });
     });
   });
 };

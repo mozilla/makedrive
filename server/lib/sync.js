@@ -2,79 +2,184 @@
  * Sync() module for creating and managing syncs
  * between client and server
  */
-
-var env = require( "./environment" ),
-    filesystem = require( "./filesystem" ),
-    uuid = require( "node-uuid" ),
-    emitter = new ( require( "events" ).EventEmitter )(),
-    Buffer = require('filer').Buffer,
-    SyncMessage = require( "./syncmessage" );
-
-var rsync = require( "../../lib/rsync" ),
-    serializeDiff = require('../../lib/diff').serialize,
-    rsyncOptions = require( "../../lib/constants" ).rsyncDefaults;
+var filesystem = require( "./filesystem" ),
+    SyncMessage = require('../../lib/syncmessage'),
+    MsgErrors = SyncMessage.errors,
+    InternalError = SyncMessage.generateError,
+    rsync = require('../../lib/rsync'),
+    diffHelper = require('../../lib/diff'),
+    rsyncOptions = require('../../lib/constants').rsyncDefaults;
 
 /**
  * Static public variables
  */
-
-// Constants for each state of the upstream sync process
-Sync.CONNECTED = "CONNECTED";
-Sync.STARTED = "STARTED";
-Sync.FILE_IDENTIFICATION = "FILE_IDENTIFICATION";
-Sync.CHECKSUMS = "CHECKSUMS";
-Sync.DIFFS = "DIFFS";
-Sync.ENDED = "ENDED";
-
-// Constants for downstream sync process
-Sync.SRCLIST = "SRCLIST";
-Sync.CHECKSUM = "CHECKSUM";
-Sync.DIFF = "DIFF";
-Sync.WSCON = "WSCON";
+Sync.LISTENING = "LISTENING";
+Sync.OUT_OF_DATE = "OUT OF DATE";
+Sync.CHKSUM = "CHECKSUM";
+Sync.PATCH = "PATCH";
 
 /**
  * Static private variables
  */
-var syncTable = {},
-    connectedClients = {};
+var connectedClients = {};
 
 /**
  * Helper functions
  */
+// Handle requested resources
+function handleRequest(data) {
+  var that = this;
+  var response;
 
-function checkUser( username ) {
-  return !!syncTable[ username ];
-}
-
-function isSyncSession( username, id ) {
-  return checkUser( username ) && syncTable[ username ].syncId === id;
-}
-
-function checkData( sync ) {
-  if ( !sync.fs ) {
-    return "This sync hasn't started! start() must be called first.";
+  function sendSrcList() {
+    rsync.sourceList(that.fs, '/', rsyncOptions, function(err, srcList) {
+      if(err) {
+        response = new SyncMessage(SyncMessage.ERROR, SyncMessage.SRCLIST);
+        response.setContent(err);
+      } else {
+        response = new SyncMessage(SyncMessage.REQUEST, SyncMessage.CHKSUM);
+        response.setContent({srcList: srcList, path: '/'});
+      }
+      that.socket.send(JSON.stringify(response));
+    });
   }
 
-  if ( !sync.path ) {
-    return "This sync data hasn't been set! setPath() & setSrcList() must be called first.";
+  function resetUpstream() {
+    that.end();
+    that.state = Sync.LISTENING;
   }
 
-  if ( !sync.srcList ) {
-    return "This sync data hasn't been set! setPath() & setSrcList() must be called first.";
+  function handleDiffRequest() {
+    if(!data.content.checksums) {
+      return that.socket.send(JSON.stringify(MsgErrors.INCONT));
+    }
+
+    var checksums = data.content.checksums;
+
+    rsync.diff(that.fs, that.path, checksums, rsyncOptions, function(err, diffs) {
+      if(err) {
+        response = new SyncMessage(SyncMessage.ERROR, SyncMessage.DIFFS);
+        response.setContent(err);
+      } else {
+        response = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.DIFFS);
+        response.setContent({diffs: diffHelper.serialize(diffs), path: that.path});
+      }
+      that.socket.send(JSON.stringify(response));
+    });
   }
-  return null;
+
+  function handleSyncInitRequest() {
+    if(that.canSync()) {
+      response = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.SYNC);
+      that.state = Sync.CHKSUM;
+      that.init();
+    } else {
+      response = new SyncMessage(SyncMessage.ERROR, SyncMessage.LOCKED);
+    }
+    that.socket.send(JSON.stringify(response));
+  }
+
+  function handleChecksumRequest() {
+    if(!data.content.srcList || !data.content.path) {
+      return that.socket.send(JSON.stringify(MsgErrors.INCONT));
+    }
+
+    var srcList = data.content.srcList;
+    var path = data.content.path;
+
+    rsync.checksums(that.fs, path, srcList, rsyncOptions, function(err, checksums) {
+      if(err) {
+        that.state = Sync.LISTENING;
+        that.end();
+        response = new SyncMessage(SyncMessage.ERROR, SyncMessage.CHKSUM);
+        response.setContent(err);
+      } else {
+        response = new SyncMessage(SyncMessage.REQUEST, SyncMessage.DIFFS);
+        response.setContent({checksums: checksums, path: that.path});
+        that.state = Sync.PATCH;
+      }
+      that.socket.send(JSON.stringify(response));
+    });
+  }
+
+  if(data.name === SyncMessage.RESET && that.state === Sync.OUT_OF_DATE) {
+    sendSrcList();
+  } else if(data.name === SyncMessage.RESET && that.state !== Sync.OUT_OF_DATE) {
+    resetUpstream();
+  } else if(data.name === SyncMessage.DIFFS && that.state === Sync.OUT_OF_DATE) {
+    handleDiffRequest();
+  } else if(data.name === SyncMessage.SYNC && that.state === Sync.LISTENING) {
+    handleSyncInitRequest();
+  } else if(data.name === SyncMessage.CHKSUM && that.state === Sync.CHKSUM) {
+    handleChecksumRequest();
+  } else {
+    that.socket.send(JSON.stringify(Sync.errors.ERQRSC));
+  }
 }
 
-function createError(code, message) {
-  var error = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ERROR);
-  error.setContent({state: code, message: message});
-  return error;
+// Handle responses sent by the client
+function handleResponse(data) {
+  var that = this;
+  var response;
+
+  function handleDiffResponse() {
+    if(!data.content.diffs) {
+      return that.socket.send(JSON.stringify(MsgErrors.INCONT));
+    }
+
+    var diffs = diffHelper.deserialize(data.content.diffs);
+    var path = data.content.path;
+    that.state = Sync.LISTENING;
+
+    rsync.patch(that.fs, path, diffs, rsyncOptions, function(err) {
+      if(err) {
+        that.end();
+        return(new SyncMessage(SyncMessage.ERROR, SyncMessage.PATCH));
+      }
+      response = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.PATCH);
+      that.socket.send(response);
+      that.end();
+    });
+  }
+
+  function handlePatchResponse() {
+    // TODO: Figure out how to make sure that the client actually patched successfully
+    // before changing the server's state to allow upstream syncs from that client
+    // https://github.com/mozilla/makedrive/issues/32
+    that.state = Sync.LISTENING;
+  }
+
+  if(data.name === SyncMessage.DIFFS && that.state === Sync.PATCH) {
+    handleDiffResponse();
+  } else if(data.name === SyncMessage.PATCH && that.state === Sync.OUT_OF_DATE) {
+    handlePatchResponse();
+  } else {
+    that.socket.send(JSON.stringify(Sync.errors.ERSRSC));
+  }
+}
+
+// Broadcast an out-of-date message to the clients
+// after an upstream sync process has completed
+function broadcastUpdate(username) {
+  var clients = connectedClients[username];
+  var currSyncingClient = clients.currentSyncSession;
+  var updateMsg = JSON.stringify(new SyncMessage(SyncMessage.REQUEST, SyncMessage.CHKSUM));
+  var outOfDateClient;
+  if(clients) {
+    for(var sessionId in clients) {
+      if(currSyncingClient !== sessionId) {
+        outOfDateClient = clients[sessionId].sync;
+        outOfDateClient.state = Sync.OUT_OF_DATE;
+        outOfDateClient.socket.send(updateMsg);
+      }
+    }
+  }
 }
 
 /**
  * Constructor
  */
-function Sync( username, sessionId ) {
+function Sync(username, sessionId) {
   this.sessionId = sessionId;
   this.username = username;
 
@@ -87,61 +192,17 @@ function Sync( username, sessionId ) {
     sync: this
   };
   this.fs = filesystem.create({
-    keyPrefix: this.username,
-    name: this.username
+    keyPrefix: username,
+    name: username
   });
-  this.state = Sync.CONNECTED;
+  this.state = Sync.OUT_OF_DATE;
   this.path = '/';
 }
 
-// Plug into this user's server-side filesystem,
-// formally starting the sync process
-Sync.prototype.start = function( callback ) {
-  var that = this;
-
-//  var fs = that.fs = filesystem.create({
-//    keyPrefix: that.username,
-//    name: that.username
-//  });
-
-  syncTable[ that.username ] = {
-    syncId: that.syncId
-  };
-
-  that.state = Sync.STARTED;
-  callback( null, that.syncId );
-};
-
-Sync.prototype.end = function() {
-  this.state = Sync.ENDED;
-  delete syncTable[ this.username ];
-  emitter.emit( "updateToLatestSync", this.syncId, this.syncId );
-};
-
-Sync.prototype.generateChecksums = function( callback ) {
-  var that = this;
-
-  var err = checkData( that );
-  if ( err ) {
-    callback( err );
-  }
-
-  rsync.checksums(that.fs, that.path, that.srcList, rsyncOptions, function( err, checksums ) {
-    if ( err ) {
-      return callback( err );
-    }
-
-    that.state = Sync.CHECKSUMS;
-    callback( null, checksums );
-  });
-};
-
-Sync.prototype.patch = function( diffs, callback ) {
-  var that = this;
-
-  var err = checkData( this );
-  if ( err ) {
-    callback( err );
+// Initialize a sync for a client
+Sync.prototype.init = function() {
+  if(!(connectedClients[this.username].currentSyncSession)) {
+    connectedClients[this.username].currentSyncSession = this.sessionId;
   }
   // Fail loudly if the server allows this method to be called
   // without passing diffs
@@ -178,157 +239,68 @@ Sync.prototype.onClose = function( ) {
   };
 };
 
-Sync.prototype.setPath = function( path ){
-  this.path = path;
-
-  // Do we have all the data we need?
-  if ( this.srcList ) {
-    this.state = Sync.FILE_IDENTIFICATION;
+// Terminate a sync for a client
+Sync.prototype.end = function() {
+  if(connectedClients[this.username].currentSyncSession) {
+    broadcastUpdate(this.username);
+    delete connectedClients[this.username].currentSyncSession;
   }
 };
 
-Sync.prototype.setSrcList = function( srcList ){
-  this.srcList = srcList;
-
-  // Do we have all the data we need?
-  if ( this.path ) {
-    this.state = Sync.FILE_IDENTIFICATION;
-  }
+// Can the client begin an upstream sync if
+// there is no other sync in progress for that username
+Sync.prototype.canSync = function() {
+  return connectedClients[this.username] &&
+    !(connectedClients[this.username].currentSyncSession);
 };
 
-Sync.prototype.messageHandler = function( data ) {
-  var that = this;
-  if (typeof data !== "object" || !data.content && !data.type){
-    var errorMessage = Sync.socket.errors.EINVAL;
-    return this.socket.send(JSON.stringify(Sync.socket.errors.EINVAL));
-  }
-  if(!data.content) {
-    return this.socket.send(JSON.stringify(Sync.socket.errors.EINVDT));
+// Handle a message sent by the client
+Sync.prototype.messageHandler = function(data) {
+  if (typeof data !== "object" || !data.content || !data.type || !data.name) {
+    return this.socket.send(JSON.stringify(MsgErrors.INFRMT));
   }
 
-  var res;
   if(data.type === SyncMessage.REQUEST) {
-    if(data.name === SyncMessage.SOURCE_LIST) {
-      if(this.socketState !== Sync.WSCON && this.socketState !== Sync.SRCLIST) {
-        return this.socket.send(JSON.stringify(Sync.socket.errors.ESTATE));
-      }
-
-      return rsync.sourceList(this.fs, this.path, rsyncOptions, function(err, srcList) {
-        if(err) {
-          res = Sync.socket.errors.custom('ESRCLS', err);
-        } else {
-          res = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.SOURCE_LIST);
-          res.setContent({srcList: srcList, path: that.path});
-          that.socketState = Sync.SRCLIST;
-        }
-        that.socket.send(JSON.stringify(res));
-      });
-    }
-    if(data.name === SyncMessage.DIFF) {
-      if(this.socketState !== Sync.CHECKSUM && this.socketState !== Sync.DIFF) {
-        return this.socket.send(JSON.stringify(Sync.socket.errors.ESTATE));
-      }
-      if(typeof data.content !== 'object') {
-        return this.socket.send(JSON.stringify(Sync.socket.errors.EINVDT));
-      }
-
-      var checksums;
-      checksums = data.content.checksums;
-      return rsync.diff(this.fs, this.path, checksums, rsyncOptions, function(err, diffs) {
-        if(err) {
-          res = Sync.socket.errors.custom('EDIFFS', err);
-        } else {
-          res = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.DIFF);
-          res.setContent({diffs: serializeDiff(diffs), path: that.path});
-          that.socketState = Sync.DIFF;
-        }
-        that.socket.send(JSON.stringify(res));
-      });
-    }
-    if(data.name === SyncMessage.RESET) {
-      this.socketState = Sync.WSCON;
-      return this.socket.send(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
-    }
-
-    return this.socket.send(JSON.stringify(Sync.socket.errors.ERQRSC));
+    handleRequest.call(this, data);
+  } else if(data.type === SyncMessage.RESPONSE) {
+    handleResponse.call(this, data);
+  } else {
+    this.socket.send(JSON.stringify(Sync.errors.ETYPHN));
   }
-  if(data.type === SyncMessage.RESPONSE) {
-    if(data.name === SyncMessage.CHECKSUM && this.socketState === Sync.SRCLIST) {
-      this.socketState = Sync.CHECKSUM;
-      res = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK);
-      res.setContent({path: that.path});
-      return this.socket.send(JSON.stringify(res));
-    }
-
-    if(data.name === SyncMessage.PATCH && this.socketState === Sync.DIFF) {
-      this.socketState = Sync.WSCON;
-      return this.socket.send(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
-    }
-
-    return this.socket.send(JSON.stringify(Sync.socket.errors.ERSRSC));
-  }
-
-  return this.socket.send(JSON.stringify(Sync.socket.errors.ETYPHN));
 };
 
-Sync.prototype.setSocket = function( ws ) {
+// Store the socket for the current client
+Sync.prototype.setSocket = function(ws) {
   this.socket = ws;
-  this.socketState = Sync.WSCON;
+};
+
+// Close event for a sync
+Sync.prototype.onClose = function() {
+  var username = this.username;
+  var id = this.syncId;
+
+  return function() {
+    delete connectedClients[username][id];
+
+    // Also remove the username from the list if there are no more connected clients.
+    if(Object.keys(connectedClients[username]).count === 0) {
+      delete connectedClients[username];
+    }
+  };
 };
 
 /**
- * Public static methods
+ * Public static objects/methods
  */
-Sync.active = {
-  checkUser: checkUser,
-  isSyncSession: isSyncSession
-};
-Sync.socket = {
-  errors: {
-    ETYPHN: createError('ETYPHN', 'The Sync message type cannot be handled by the server'),
-    EUNDEF: createError('EUNDEF', 'No value provided'),
-    EINVDT: createError('EINVDT', 'Invalid content provided'),
-    EINVAL: createError('EINVAL', 'Invalid Message Format. Message must be a sync message'),
-    ERQRSC: createError('ERQRSC', 'Invalid resource requested'),
-    ERSRSC: createError('ERSRSC', 'Resource provided cannot be recognized'),
-    ERECOG: createError('ERECOG', 'Message type not recognized'),
-    ESTATE: createError('ESTATE', 'Sync in incorrect state'),
-    custom: function(code, message) {
-      return createError(code, message);
-    }
-  }
+Sync.errors = {
+  ETYPHN: InternalError('The Sync message cannot be handled by the server'),
+  ERQRSC: InternalError('Request cannot be processed'),
+  ERSRSC: InternalError('Resource provided cannot be processed'),
 };
 
-Sync.connections = {
-  doesIdMatchUser: function( id, username ){
-    return id in connectedClients[ username ];
-  }
-};
-
-Sync.create = function( username, sessionId ){
-  return new Sync( username, sessionId );
-};
-
-Sync.kill = function( username ) {
-  var user;
-  if ( username in syncTable ) {
-    user = syncTable[ username ]
-    delete syncTable[ username ];
-  }
-
-  if ( username in connectedClients ) {
-    user = connectedClients[ username ];
-    user.socket.close();
-    user.socketState = null;
-  }
-};
-
-Sync.retrieve = function( username, sessionId ) {
-  if ( !connectedClients[ username ] || !connectedClients[ username ][ sessionId ] ) {
-    return null;
-  }
-
-  return connectedClients[ username ][ sessionId ].sync;
+// Create a new sync object for the client
+Sync.create = function(username, sessionId){
+  return new Sync(username, sessionId);
 };
 
 /**

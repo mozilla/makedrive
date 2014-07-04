@@ -17,9 +17,9 @@ function init(url, token, sync, fs, callback) {
   _sync = sync;
   _fs = fs;
   socket = new WebSocket(url);
-  data = data.data;
   
   function handleAuth(data, flags) {
+    data = data.data;
     try {
       data = JSON.parse(data);
     } catch(e) {

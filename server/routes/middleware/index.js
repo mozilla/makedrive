@@ -17,13 +17,7 @@ module.exports = {
     if ( !req.session.sessionId ) {
       req.session.sessionId = websocketAuth.createSessionTracker(username);
     }
-
-    var sync = Sync.retrieve(req.session.sessionId);
-    if ( !sync ) {
-      sync = Sync.create(username, req.session.sessionId);
-    }
-
-    req.params.sync = sync;
+    
     req.params.username = username;
     req.params.sessionId = req.session.sessionId;
     next();
@@ -31,43 +25,5 @@ module.exports = {
   crossOriginHandler: function( req, res, next ) {
     res.header( "Access-Control-Allow-Origin", "*" );
     next();
-  },
-  validateSync: function( expectedState ) {
-    return function( req, res, next ) {
-      var syncId = req.param( "syncId" );
-      var username = req.params.username;
-
-      // Does the user have a sync in progress?
-      if ( !Sync.active.checkUser( username ) ) {
-        return res.json( 401, { message: "This route requires a sync in progress!" } );
-      }
-
-      if ( !syncId ) {
-        return res.json( 400, { message: "syncId not passed!" } );
-      }
-
-      // Does this user have an active sync from another client?
-      if ( !Sync.active.isSyncSession( username, syncId ) ) {
-        return res.json( 423, { message: "Sync already in progress, try again later!" } );
-      }
-
-      // Confirm the session still contains the sync object,
-      // and if not, kill the sync.
-      var sync = Sync.retrieve( username, syncId );
-      if ( !sync ) {
-        Sync.kill( username );
-        console.error('validateSync 500 - sync lost');
-        return res.json( 500, { message: "Critical error! Sync lost." } );
-      }
-
-      // Check if the current sync is in a valid state for this route
-      if ( expectedState && sync.state !== expectedState ) {
-        return res.json( 401, { message: " called out of order! expected " + expectedState + " but got " + sync.state } );
-      }
-
-      req.params.sync = sync;
-
-      next();
-    };
   }
 };
