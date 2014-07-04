@@ -18,7 +18,7 @@ function callbackError(syncSession, err, callback) {
 }
 
 function handleRequest(data, fs, syncObject, syncSession, socket, callback) {
-  
+
   function handleChecksumRequest() {
     syncObject.state = sync.SYNC_SYNCING;
     var srcList = data.content.srcList;
@@ -38,7 +38,7 @@ function handleRequest(data, fs, syncObject, syncSession, socket, callback) {
       }
     });
   }
-  
+
   function handleDiffRequest() {
     rsync.diff(fs, syncSession.path, data.content.checksums, rsyncOptions, function(err, diffs) {
       if(err){
@@ -52,8 +52,8 @@ function handleRequest(data, fs, syncObject, syncSession, socket, callback) {
       }
     });
   }
-  
-  if (data.name === SyncMessage.CHKSUM  && syncSession.state === states.READY && 
+
+  if (data.name === SyncMessage.CHKSUM  && syncSession.state === states.READY &&
       (syncSession.step === steps.SYNCED || syncSession.step === steps.FAILED)) {
     // DOWNSTREAM - CHKSUM
     handleChecksumRequest();
@@ -67,7 +67,7 @@ function handleRequest(data, fs, syncObject, syncSession, socket, callback) {
 }
 
 function handleResponse(data, fs, syncObject, syncSession, socket, callback) {
-  
+
   function handleSrcListResponse() {
     syncSession.state = states.SYNCING;
     syncSession.step = steps.SYNC_INIT;
@@ -85,14 +85,14 @@ function handleResponse(data, fs, syncObject, syncSession, socket, callback) {
       }
     });
   }
-  
+
   function handlePatchAckResponse() {
     syncSession.state = states.READY;
     syncSession.step = steps.SYNCED;
     syncObject.state = syncObject.SYNC_CONNECTED;
     callback();
   }
-  
+
   function handlePatchResponse() {
     var diffs = data.content.diffs;
     syncSession.path = data.content.path;
@@ -108,7 +108,7 @@ function handleResponse(data, fs, syncObject, syncSession, socket, callback) {
       }
     });
   }
-  
+
   if(data.name === SyncMessage.SYNC) {
     // UPSTREAM - INIT
     handleSrcListResponse();
@@ -126,16 +126,16 @@ function handleResponse(data, fs, syncObject, syncSession, socket, callback) {
 
 function handleError(data, syncObject, syncSession, callback) {
   // DOWNSTREAM - ERROR
-  if(((data.name === SyncMessage.SRCLIST && syncSession.step === steps.SYNCED) || 
-      (data.name === SyncMessage.DIFFS && syncSession.step === steps.SYNCED)) && 
+  if(((data.name === SyncMessage.SRCLIST && syncSession.step === steps.SYNCED) ||
+      (data.name === SyncMessage.DIFFS && syncSession.step === steps.SYNCED)) &&
      syncSession.state === states.READY) {
-    //TODO: handle what to do to reinitiate downstream sync
+    // TODO: handle what to do to reinitiate downstream sync
     emitError(syncSession, syncObject, new Error('Could not sync filesystem from server'));
   } else if(data.name === SyncMessage.LOCKED && syncSession.state === states.READY && syncSession.step === steps.SYNCED) {
     // UPSTREAM - LOCK
     callbackError(syncSession, new Error('Current sync in progress! Try again later!'), callback);
-  } else if(((data.name === SyncMessage.CHKSUM && syncSession.step === steps.DIFFS) || 
-             (data.name === SyncMessage.PATCH && syncSession.step === steps.PATCH)) && 
+  } else if(((data.name === SyncMessage.CHKSUM && syncSession.step === steps.DIFFS) ||
+             (data.name === SyncMessage.PATCH && syncSession.step === steps.PATCH)) &&
             syncSession.state === states.SYNCING) {
     // UPSTREAM - ERROR
     syncSession.step = steps.FAILED;
@@ -153,7 +153,7 @@ function handleMessage(fs, syncObject, syncSession, socket, data, flags, callbac
     syncObject.state = syncObject.SYNC_ERROR;
     return syncObject.emit('error', e);
   }
-  
+
   if (data.type === SyncMessage.REQUEST) {
     handleRequest(data, fs, syncObject, syncSession, socket, callback);
   } else if(data.type === SyncMessage.RESPONSE){

@@ -10,8 +10,6 @@ var middleware = require( './middleware' ),
     WebSocketServer = WebSocket.Server,
     websocketAuth = require('../lib/websocket-auth');
 
-// TODO: Factor route groupings into their own files,
-//       build a system to require them here
 module.exports = function createRoutes( app, webmakerAuth  ) {
   // Client-side Webmaker Auth support
   app.post('/verify', webmakerAuth.handlers.verify);

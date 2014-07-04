@@ -91,6 +91,7 @@ function createFS() {
     // If we're not connected (or are already syncing), ignore this request
     if(sync.state !== sync.SYNC_CONNECTED) {
       // TODO: should we throw/warn as well?
+      //       https://github.com/mozilla/makedrive/issues/20
       return;
     }
 
@@ -113,6 +114,7 @@ function createFS() {
           sync.emit('error', err);
         } else {
           // TODO: can we send the paths/files that were sync'ed too?
+          //       https://github.com/mozilla/makedrive/issues/20
           sync.emit('completed');
         }
       });
@@ -125,6 +127,7 @@ function createFS() {
     if(sync.state !== sync.SYNC_DISCONNECTED ||
        sync.state !== sync.ERROR) {
       // TODO: should we throw/warn as well?
+      //       https://github.com/mozilla/makedrive/issues/20
       return;
     }
 
@@ -145,6 +148,7 @@ function createFS() {
 
       // Start auto-sync'ing fs based on changes every 1 min.
       // TODO: provide more options to control what/when we auto-sync
+      //       https://github.com/mozilla/makedrive/issues/20
       var needsSync = false;
       watcher = fs.watch('/', function(event, filename) {
         // Mark the fs as dirty, and we'll sync on next interval
@@ -166,6 +170,7 @@ function createFS() {
     if(sync.state === sync.SYNC_DISCONNECTED ||
        sync.state === sync.ERROR) {
       // TODO: should we throw/warn as well?
+      //       https://github.com/mozilla/makedrive/issues/20
       return;
     }
 

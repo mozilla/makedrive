@@ -34,7 +34,8 @@ module.exports = function( server ) {
       }
 
       var sync = Sync.retrieve( authData.username, authData.sessionId );
-      // TODO: Attach 'on out of date' logic
+      // TODO: Reimplement 'on-out-of-date' logic
+      //       https://github.com/mozilla/makedrive/issues/17
       sync.setSocket( ws );
 
       ws.on('message', function(data, flags) {

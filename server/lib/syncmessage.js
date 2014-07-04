@@ -50,6 +50,7 @@ SyncMessage.Response = {
   ACK: new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)
 };
 
-// TODO: Expose a .toJSON method
+// TODO: Expose .stringify() method in SyncMessage library
+//       https://github.com/mozilla/makedrive/issues/19
 
 module.exports = SyncMessage;

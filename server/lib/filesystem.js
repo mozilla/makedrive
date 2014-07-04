@@ -5,7 +5,8 @@ var Filer = require( "filer" ),
 
 var defaults = {};
 
-// TODO: When do we invalidate cache to prevent memory leaks?
+// TODO: Invalidate FS instance cache to prevent memory leaks
+//       https://github.com/mozilla/makedrive/issues/16
 var cachedFS = {};
 
 if ( providerType === "filer-s3" ) {

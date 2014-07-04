@@ -145,7 +145,8 @@ Sync.prototype.patch = function( diffs, callback ) {
   }
   // Fail loudly if the server allows this method to be called
   // without passing diffs
-  // TODO: Add diff validation logic
+  // TODO: Add diffs validation to the Sync object
+  //       https://github.com/mozilla/makedrive/issues/18
   if ( !diffs ) {
     callback( "Diffs must be passed" );
   }
@@ -171,8 +172,6 @@ Sync.prototype.onClose = function( ) {
 };
 
 Sync.prototype.setPath = function( path ){
-  // TODO: Add path validation logic
-  // If invalid, throw("Invalid path");
   this.path = path;
 
   // Do we have all the data we need?
@@ -182,8 +181,6 @@ Sync.prototype.setPath = function( path ){
 };
 
 Sync.prototype.setSrcList = function( srcList ){
-  // TODO: Add srcList validation logic
-  // If invalid, throw("Invalid srcList");
   this.srcList = srcList;
 
   // Do we have all the data we need?

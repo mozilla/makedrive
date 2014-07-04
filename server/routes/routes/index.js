@@ -4,8 +4,6 @@ var env = require('../../lib/environment'),
     websocketAuth = require('../../lib/websocket-auth');
 
 module.exports = {
-  // TODO: Factor this object into separate files as needed
-
   index: function( req, res ) {
     res.send( "MakeDrive: https://wiki.mozilla.org/Webmaker/MakeDrive" );
   },
