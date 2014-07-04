@@ -198,7 +198,7 @@ describe('Test util.js', function(){
 
         var socketPackage = util.openSocket(socketData, {
           onMessage: function(message){
-            expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
+            expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.AUTHZ)));
 
             socketPackage.setClose(function() {
               result.done();
@@ -259,141 +259,36 @@ describe('Test util.js', function(){
   });
 
   describe('[Sync Helpers]', function(done) {
-    it('util.prepareSync should prepare a filesystem for the passed user when finalStep isn\'t specified', function(done) {
+    it('util.prepareDownstreamSync should prepare a filesystem for the passed user when finalStep isn\'t specified', function(done) {
       util.authenticatedConnection({done: done}, function(err, result) {
-        var socketData = {
-          token: result.token
-        };
-
         var username = util.username();
-        var socketPackage = util.openSocket(socketData, {
-          onMessage: function(message) {
-            expect(message).to.equal(JSON.stringify(SyncMessage.Response.ACK));
 
-            util.prepareSync(username, socketPackage, function(syncData, fs) {
-              expect(fs instanceof FileSystem).to.equal.true;
-              util.cleanupSockets(result.done, socketPackage);
-            });
-          }
-        });
-      });
-    });
-    it('util.syncSteps.srcList should complete the srcList step of the sync, exposing srcList and path to the client', function(done) {
-      util.authenticatedConnection({ done: done }, function(err, result) {
-        var username = util.username();
-        var socketData = {
-          token: result.token
-        };
-
-        var socketPackage = util.openSocket(socketData, {
-          onMessage: function(message) {
-            expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
-
-            util.prepareSync(username, socketPackage, function(syncData, fs) {
-              util.syncSteps.srcList(socketPackage, function(data) {
-                expect(data.srcList).to.be.an("array");
-                expect(data.path).to.be.a("string");
-
-                util.cleanupSockets(result.done, socketPackage);
-              });
-            });
-          }
-        });
-      });
-    });
-    it('util.prepareSync should complete the srcList step automatically when passed \'srcList\' as the finalStep', function(done) {
-      util.authenticatedConnection({ done: done }, function(err, result) {
-        var username = util.username();
-        var socketData = {
-          token: result.token
-        };
-
-        var socketPackage = util.openSocket(socketData, {
-          onMessage: function(message) {
-            expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
-
-            util.prepareSync("srcList", username, socketPackage, function(syncData, fs) {
-              expect(syncData.srcList).to.be.an("array");
-              expect(syncData.path).to.be.a("string");
-
-              util.cleanupSockets(result.done, socketPackage);
-            });
-          }
-        });
-      });
-    });
-    it('util.syncSteps.checksums should execute successfully', function(done) {
-      util.authenticatedConnection({ done: done }, function(err, result) {
-        var username = util.username();
-        var socketData = {
-          token: result.token
-        };
-
-        var socketPackage = util.openSocket(socketData, {
-          onMessage: function(message) {
-            expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
-
-            util.prepareSync("srcList", username, socketPackage, function(syncData, fs) {
-              util.syncSteps.checksums(socketPackage, syncData, function(data) {
-                util.cleanupSockets(result.done, socketPackage);
-              });
-            });
-          }
-        });
-      });
-    });
-    it('util.prepareSync should complete the checksums step automatically when passed \'checksums\' as the finalStep', function(done) {
-      util.authenticatedConnection({ done: done }, function(err, result) {
-        var username = util.username();
-        var socketData = {
-          token: result.token
-        };
-
-        var socketPackage = util.openSocket(socketData, {
-          onMessage: function(message) {
-            expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
-
-            util.prepareSync("checksums", username, socketPackage, function(syncData, fs) {
-              util.cleanupSockets(result.done, socketPackage);
-            });
-          }
+        util.prepareDownstreamSync(username, result.token, function(syncData, socketPackage, fs) {
+          expect(fs instanceof FileSystem).to.equal.true;
+          util.cleanupSockets(result.done, socketPackage);
         });
       });
     });
     it('util.syncSteps.diffs should return the checksums to the client', function(done) {
       util.authenticatedConnection({ done: done }, function(err, result) {
         var username = util.username();
-        var socketData = {
-          token: result.token
-        };
 
-        var socketPackage = util.openSocket(socketData, {
-          onMessage: function(message) {
-            expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
+        util.prepareDownstreamSync("diffs", username, result.token, function(syncData, socketPackage, fs) {
+          var startSyncMsg = JSON.stringify(new SyncMessage(SyncMessage.REQUEST, SyncMessage.DIFFS));
+          util.sendSyncMessage(socketPackage, startSyncMsg, function(msg){
+            var msg = util.resolveToJSON(msg);
+            expect(msg.content.diffs).to.exist;
 
-            util.prepareSync("checksums", username, socketPackage, function(syncData, fs) {
-              util.syncSteps.diffs(socketPackage, syncData, fs, function(data) {
-                expect(syncData.diffs).to.exist;
-
-                util.cleanupSockets(result.done, socketPackage);
-              });
-            });
-          }
+            util.cleanupSockets(result.done, socketPackage);
+          });
         });
       });
     });
-    it('util.prepareSync should complete the diffs step automatically when passed \'diffs\' as the finalStep', function(done) {
+    it('util.prepareDownstreamSync should complete the diffs step automatically when passed \'diffs\' as the finalStep', function(done) {
       util.authenticatedConnection({ done: done }, function(err, result) {
         var username = util.username();
-        var socketData = {
-          token: result.token
-        };
 
-        var socketPackage = util.openSocket(socketData, {
-          onMessage: function(message) {
-            expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
-
-            util.prepareSync("diffs", username, socketPackage, function(syncData, fs) {
+            util.prepareDownstreamSync("diffs", username, result.token, function(syncData, socketPackage, fs) {
               expect(syncData.diffs).to.exist;
 
               util.cleanupSockets(result.done, socketPackage);
@@ -402,40 +297,24 @@ describe('Test util.js', function(){
         });
       });
     });
-    it('util.syncSteps.patch should return an ACK', function(done) {
+    it('util.syncSteps.patch should return nothing and be perfectly fine', function(done) {
       util.authenticatedConnection({ done: done }, function(err, result) {
         var username = util.username();
-        var socketData = {
-          token: result.token
-        };
 
-        var socketPackage = util.openSocket(socketData, {
-          onMessage: function(message) {
-            expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
+        util.prepareDownstreamSync("diffs", username, result.token, function(syncData, socketPackage, fs) {
+          util.syncSteps.patch(socketPackage, syncData, fs, function(err) {
+            expect(err).not.to.exist;
 
-            util.prepareSync("diffs", username, socketPackage, function(syncData, fs) {
-              util.syncSteps.patch(socketPackage, syncData, fs, function(err) {
-                expect(err).not.to.exist;
-
-                util.cleanupSockets(result.done, socketPackage);
-              });
-            });
-          }
+            util.cleanupSockets(result.done, socketPackage);
+          });
         });
       });
     });
-    it('util.prepareSync should complete the patch step automatically when passed \'patch\' as the finalStep', function(done) {
+    it('util.prepareDownstreamSync should complete the patch step automatically when passed \'patch\' as the finalStep', function(done) {
       util.authenticatedConnection({ done: done }, function(err, result) {
         var username = util.username();
-        var socketData = {
-          token: result.token
-        };
 
-        var socketPackage = util.openSocket(socketData, {
-          onMessage: function(message) {
-            expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ACK)));
-
-            util.prepareSync("patch", username, socketPackage, function(syncData, fs) {
+            util.prepareDownstreamSync("patch", username, result.token, function(syncData, socketPackage, fs) {
               util.cleanupSockets(result.done, socketPackage);
             });
           }

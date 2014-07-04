@@ -296,73 +296,16 @@ function cleanupSockets(done) {
   done();
 }
 
+function sendSyncMessage(socketPackage, syncMessage, callback) {
+  var socket = socketPackage.socket;
+  socketPackage.setMessage(callback);
+  socketPackage.socket.send(resolveFromJSON(syncMessage));
+}
+
 /**
  * Sync Helpers
  */
-var syncSteps = {
-  srcList: function(socketPackage, customAssertions, cb) {
-    if (!cb) {
-      cb = customAssertions;
-      customAssertions = null;
-    }
-
-    socketPackage.socket.removeListener("message", socketPackage.onMessage);
-    socketPackage.socket.once("message", function(message) {
-      // Reattach original listener
-      socketPackage.socket.once("message", socketPackage.onMessage);
-
-      message = resolveToJSON(message);
-      if (!customAssertions) {
-        expect(message).to.exist;
-        expect(message.type).to.equal(SyncMessage.RESPONSE);
-        expect(message.name, "[SyncMessage Type error. SyncMessage.content was: " + message.content + "]").to.equal(SyncMessage.SOURCE_LIST);
-        expect(message.content).to.exist;
-        expect(message.content.srcList).to.exist;
-        expect(message.content.path).to.exist;
-
-        return cb({
-          srcList: message.content.srcList,
-          path: message.content.path
-        });
-      }
-
-      customAssertions(message, cb);
-    });
-
-    var srcListMessage = new SyncMessage(SyncMessage.REQUEST, SyncMessage.SOURCE_LIST);
-    socketPackage.socket.send(resolveFromJSON(srcListMessage));
-  },
-  checksums: function(socketPackage, data, customAssertions, cb) {
-    if (!cb) {
-      cb = customAssertions;
-      customAssertions = null;
-    }
-
-    socketPackage.socket.removeListener("message", socketPackage.onMessage);
-    socketPackage.socket.once("message", function(message) {
-      // Reattach original listener
-      socketPackage.socket.once("message", socketPackage.onMessage);
-
-
-      if (!customAssertions) {
-        var path = data.path;
-        message = resolveToJSON(message);
-
-        expect(message).to.exist;
-        expect(message.type).to.equal(SyncMessage.RESPONSE);
-        expect(message.name, "[SyncMessage Type error. SyncMessage.content was: " + message.content + "]").to.equal(SyncMessage.ACK);
-        expect(message.content).to.exist;
-        expect(message.content.path).to.exist;
-
-        return cb(data);
-      }
-
-      customAssertions(message, cb);
-    });
-
-    var checksumResponse = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.CHECKSUM);
-    socketPackage.socket.send(resolveFromJSON(checksumResponse));
-  },
+var downstreamSyncSteps = {
   diffs: function(socketPackage, data, fs, customAssertions, cb) {
     if (!cb) {
       cb = customAssertions;
@@ -381,7 +324,7 @@ var syncSteps = {
         message = resolveToJSON(message);
 
         expect(message.type).to.equal(SyncMessage.RESPONSE);
-        expect(message.name).to.equal(SyncMessage.DIFF);
+        expect(message.name).to.equal(SyncMessage.DIFFS);
         expect(message.content).to.exist;
         expect(message.content.diffs).to.exist;
         expect(message.content.path).to.exist;
@@ -396,7 +339,7 @@ var syncSteps = {
     rsync.checksums(fs, path, srcList, rsyncOptions, function( err, checksums ) {
       expect(err).to.be.null;
 
-      var diffRequest = new SyncMessage(SyncMessage.REQUEST, SyncMessage.DIFF);
+      var diffRequest = new SyncMessage(SyncMessage.REQUEST, SyncMessage.DIFFS);
       diffRequest.content = {
         checksums: checksums
       };
@@ -410,32 +353,51 @@ var syncSteps = {
       customAssertions = null;
     }
 
-    socketPackage.socket.removeListener("message", socketPackage.onMessage);
-    socketPackage.socket.once("message", function(message) {
-      socketPackage.socket.once("message", socketPackage.onMessage);
-
-      message = resolveToJSON(message);
-
-      expect(message).to.exist;
-      expect(message.type).to.equal(SyncMessage.RESPONSE);
-      expect(message.name, "[SyncMessage Type error. SyncMessage.content was: " + message.content + "]").to.equal(SyncMessage.ACK);
-
-      cb();
-    });
-
     rsync.patch(fs, data.path, data.diffs, rsyncOptions, function(err) {
       expect(err).not.to.exist;
 
       var patchResponse = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.PATCH);
       socketPackage.socket.send(resolveFromJSON(patchResponse));
+
+      cb();
     });
+
   }
 };
 
-function prepareSync(finalStep, username, socketPackage, cb){
+var upstreamSyncSteps = {
+  requestSync: function(socketPackage, customAssertions, cb) {
+    if (!cb) {
+      cb = customAssertions;
+      customAssertions = null;
+    }
+
+    socketPackage.socket.removeListener("message", socketPackage.onMessage);
+    socketPackage.socket.once("message", function(message) {
+      // Reattach original listener
+      socketPackage.socket.once("message", socketPackage.onMessage);
+
+      message = resolveToJSON(message);
+      if (!customAssertions) {
+        expect(message).to.exist;
+        expect(message.type).to.equal(SyncMessage.REQUEST);
+        expect(message.name, "[SyncMessage Type error. SyncMessage.content was: " + message.content + "]").to.equal(SyncMessage.SYNC);
+
+        return cb();
+      }
+
+      customAssertions(message, cb);
+    });
+
+    var requestSyncMessage = new SyncMessage(SyncMessage.REQUEST, SyncMessage.SYNC);
+    socketPackage.socket.send(resolveFromJSON(requestSyncMessage));
+  }
+};
+
+function prepareDownstreamSync(finalStep, username, token, cb){
   if (typeof cb !== "function") {
-    cb = socketPackage;
-    socketPackage = username;
+    cb = token;
+    token = username;
     username = finalStep;
     finalStep = null;
   }
@@ -452,27 +414,38 @@ function prepareSync(finalStep, username, socketPackage, cb){
       name: username
     });
 
-    // Complete required sync steps
-    if (!finalStep) {
-      return cb(null, fs);
-    }
-    syncSteps.srcList(socketPackage, function(data1) {
-      if (finalStep == "srcList") {
-        return cb(data1, fs);
-      }
-      syncSteps.checksums(socketPackage, data1, function(data2) {
-        if (finalStep == "checksums") {
-          return cb(data2, fs);
+    var socketPackage = openSocket({
+      token: token
+    }, {
+      onMessage: function(message) {
+        message = resolveToJSON(message);
+        expect(message).to.equal(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.AUTHZ));
+
+        expect(message).to.exist;
+        expect(message.type).to.equal(SyncMessage.REQUEST);
+        expect(message.name).to.equal(SyncMessage.CHKSUM);
+        expect(message.content).to.exist;
+        expect(message.content.srcList).to.exist;
+        expect(message.content.path).to.exist;
+
+        var downstreamData = {
+          srcList: message.content.srcList,
+          path: message.content.path
+        };
+
+        // Complete required sync steps
+        if (!finalStep) {
+          return cb(downstreamData, fs, socketPackage);
         }
-        syncSteps.diffs(socketPackage, data2, fs, function(data3) {
+        downstreamSyncSteps.diffs(socketPackage, downstreamData, fs, function(data1) {
           if (finalStep == "diffs") {
-            return cb(data3, fs);
+            return cb(data1, fs, socketPackage);
           }
-          syncSteps.patch(socketPackage, data3, fs, function(data4) {
-            cb(data4, fs);
+          downstreamSyncSteps.patch(socketPackage, data1, fs, function(data2) {
+            cb(data2, fs, socketPackage);
           });
         });
-      });
+      }
     });
   });
 }
@@ -490,7 +463,7 @@ module.exports = {
   cleanupSockets: cleanupSockets,
   resolveToJSON: resolveToJSON,
   resolveFromJSON: resolveFromJSON,
-  prepareSync: prepareSync,
-  syncSteps: syncSteps,
+  prepareDownstreamSync: prepareDownstreamSync,
+  downstreamSyncSteps: downstreamSyncSteps,
   getWebsocketToken: getWebsocketToken
 };
