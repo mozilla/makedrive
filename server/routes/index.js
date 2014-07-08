@@ -1,8 +1,8 @@
 // Expose internals
 var middleware = require( './middleware' ),
-    env = require('../../lib/environment'),
-    version = require('../../../package.json').version,
-    FilerWebServer = require('../../lib/filer-www.js'),
+    env = require('../lib/environment'),
+    version = require('../../package.json').version,
+    FilerWebServer = require('../lib/filer-www.js'),
     Sync = require( '../lib/sync'),
     ws = require('ws'),
     SyncMessage = require('../lib/syncmessage'),
