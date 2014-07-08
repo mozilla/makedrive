@@ -104,6 +104,8 @@ function handleResponse(data, fs, syncObject, syncSession, socket, callback) {
       } else {
         syncSession.step = steps.SYNCED;
         syncObject.state = syncObject.SYNC_CONNECTED;
+        var message = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.PATCH);
+        socket.send(JSON.stringify(message));
         syncObject.emit('completed');
       }
     });
