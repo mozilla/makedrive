@@ -198,7 +198,7 @@ describe('Test util.js', function(){
 
         var socketPackage = util.openSocket(socketData, {
           onMessage: function(message){
-            expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.AUTHZ)));
+            expect(message).to.equal(SyncMessage.response.authz.stringify());
 
             socketPackage.setClose(function() {
               result.done();
@@ -274,7 +274,7 @@ describe('Test util.js', function(){
         var username = util.username();
 
         util.prepareDownstreamSync("diffs", username, result.token, function(syncData, socketPackage, fs) {
-          var startSyncMsg = JSON.stringify(new SyncMessage(SyncMessage.REQUEST, SyncMessage.DIFFS));
+          var startSyncMsg = SyncMessage.request.diffs.stringify();
           util.sendSyncMessage(socketPackage, startSyncMsg, function(msg){
             var msg = util.resolveToJSON(msg);
             expect(msg.content.diffs).to.exist;

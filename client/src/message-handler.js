@@ -31,10 +31,10 @@ function handleRequest(data, fs, syncObject, syncSession, socket, callback) {
         syncObject.emit('syncing');
         syncSession.step = steps.PATCH;
 
-        var message = new SyncMessage(SyncMessage.REQUEST, SyncMessage.DIFFS);
+        var message = SyncMessage.request.diffs;
         message.setContent({checksums: checksums});
 
-        socket.send(JSON.stringify(message));
+        socket.send(message.stringify());
       }
     });
   }
@@ -45,10 +45,10 @@ function handleRequest(data, fs, syncObject, syncSession, socket, callback) {
         callbackError(syncSession, err, callback);
       } else {
         syncSession.step = steps.PATCH;
-        var message = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.DIFFS);
-        diffs = serializeDiff(diffs);
-        message.setContent({diffs: diffs});
-        socket.send(JSON.stringify(message));
+
+        var message = SyncMessage.response.diffs;
+        message.setContent({diffs: serializeDiff(diffs)});
+        socket.send(message.stringify());
       }
     });
   }
@@ -79,9 +79,10 @@ function handleResponse(data, fs, syncObject, syncSession, socket, callback) {
         callbackError(syncSession, err, callback);
       } else {
         syncSession.step = steps.DIFFS;
-        var message = new SyncMessage(SyncMessage.REQUEST, SyncMessage.CHKSUM);
+
+        var message = SyncMessage.request.chksum;
         message.setContent({srcList: srcList, path: syncSession.path});
-        socket.send(JSON.stringify(message));
+        socket.send(message.stringify());
       }
     });
   }
@@ -104,8 +105,9 @@ function handleResponse(data, fs, syncObject, syncSession, socket, callback) {
       } else {
         syncSession.step = steps.SYNCED;
         syncObject.state = syncObject.SYNC_CONNECTED;
-        var message = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.PATCH);
-        socket.send(JSON.stringify(message));
+
+        var message = SyncMessage.response.patch;
+        socket.send(message.stringify());
         syncObject.emit('completed');
       }
     });

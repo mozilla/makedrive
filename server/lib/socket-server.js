@@ -56,19 +56,17 @@ module.exports = function( server ) {
       rsync.sourceList(sync.fs, '/', rsyncOptions, function(err, srcList) {
         var response;
         if(err) {
-          response = new SyncMessage(SyncMessage.ERROR, SyncMessage.SRCLIST);
+          response = SyncMessage.error.srclist;
           response.setContent(err);
         } else {
-          response = new SyncMessage(SyncMessage.REQUEST, SyncMessage.CHKSUM);
+          response = SyncMessage.request.chksum;
           response.setContent({srcList: srcList, path: '/'});
         }
 
-        var sucAuthMessage = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.AUTHZ);
-
         // Is the websocket still open? If not, don't send anything
         if (ws.readyState === 1) {
-          ws.send(JSON.stringify(sucAuthMessage));
-          ws.send(JSON.stringify(response));
+          ws.send(SyncMessage.response.authz.stringify());
+          ws.send(response.stringify());
         }
       });
     });

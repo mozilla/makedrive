@@ -64,8 +64,8 @@ function init(url, token, sync, fs, callback) {
 function sync(path, callback) {
   syncSession.path = path;
   syncCallback = callback;
-  var message = new SyncMessage(SyncMessage.REQUEST, SyncMessage.SYNC);
-  socket.send(JSON.stringify(message));
+
+  socket.send(SyncMessage.request.sync.stringify());
 }
 
 module.exports = {

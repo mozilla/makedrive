@@ -339,7 +339,7 @@ var downstreamSyncSteps = {
     rsync.checksums(fs, path, srcList, rsyncOptions, function( err, checksums ) {
       expect(err).to.be.null;
 
-      var diffRequest = new SyncMessage(SyncMessage.REQUEST, SyncMessage.DIFFS);
+      var diffRequest = SyncMessage.request.diffs;
       diffRequest.content = {
         checksums: checksums
       };
@@ -356,7 +356,7 @@ var downstreamSyncSteps = {
     rsync.patch(fs, data.path, data.diffs, rsyncOptions, function(err) {
       expect(err).not.to.exist;
 
-      var patchResponse = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.PATCH);
+      var patchResponse = SyncMessage.response.patch;
       socketPackage.socket.send(resolveFromJSON(patchResponse));
 
       cb();
@@ -389,7 +389,7 @@ var upstreamSyncSteps = {
       customAssertions(message, cb);
     });
 
-    var requestSyncMessage = new SyncMessage(SyncMessage.REQUEST, SyncMessage.SYNC);
+    var requestSyncMessage = SyncMessage.request.sync;
     socketPackage.socket.send(resolveFromJSON(requestSyncMessage));
   }
 };
@@ -419,7 +419,7 @@ function prepareDownstreamSync(finalStep, username, token, cb){
     }, {
       onMessage: function(message) {
         message = resolveToJSON(message);
-        expect(message).to.equal(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.AUTHZ));
+        expect(message).to.equal(SyncMessage.response.authz);
 
         expect(message).to.exist;
         expect(message.type).to.equal(SyncMessage.REQUEST);

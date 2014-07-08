@@ -34,13 +34,13 @@ function handleRequest(data) {
   function sendSrcList() {
     rsync.sourceList(that.fs, '/', rsyncOptions, function(err, srcList) {
       if(err) {
-        response = new SyncMessage(SyncMessage.ERROR, SyncMessage.SRCLIST);
+        response = SyncMessage.error.srclist;
         response.setContent(err);
       } else {
-        response = new SyncMessage(SyncMessage.REQUEST, SyncMessage.CHKSUM);
+        response = SyncMessage.request.chksum;
         response.setContent({srcList: srcList, path: '/'});
       }
-      that.socket.send(JSON.stringify(response));
+      that.socket.send(response.stringify());
     });
   }
 
@@ -58,25 +58,25 @@ function handleRequest(data) {
 
     rsync.diff(that.fs, that.path, checksums, rsyncOptions, function(err, diffs) {
       if(err) {
-        response = new SyncMessage(SyncMessage.ERROR, SyncMessage.DIFFS);
+        response = SyncMessage.error.diffs;
         response.setContent(err);
       } else {
-        response = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.DIFFS);
+        response = SyncMessage.response.diffs;
         response.setContent({diffs: diffHelper.serialize(diffs), path: that.path});
       }
-      that.socket.send(JSON.stringify(response));
+      that.socket.send(response.stringify());
     });
   }
 
   function handleSyncInitRequest() {
     if(that.canSync()) {
-      response = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.SYNC);
+      response = SyncMessage.response.sync;
       that.state = Sync.CHKSUM;
       that.init();
     } else {
-      response = new SyncMessage(SyncMessage.ERROR, SyncMessage.LOCKED);
+      response = SyncMessage.error.locked;
     }
-    that.socket.send(JSON.stringify(response));
+    that.socket.send(response.stringify());
   }
 
   function handleChecksumRequest() {
@@ -91,14 +91,14 @@ function handleRequest(data) {
       if(err) {
         that.state = Sync.LISTENING;
         that.end();
-        response = new SyncMessage(SyncMessage.ERROR, SyncMessage.CHKSUM);
+        response = SyncMessage.error.chksum;
         response.setContent(err);
       } else {
-        response = new SyncMessage(SyncMessage.REQUEST, SyncMessage.DIFFS);
+        response = SyncMessage.request.diffs;
         response.setContent({checksums: checksums, path: that.path});
         that.state = Sync.PATCH;
       }
-      that.socket.send(JSON.stringify(response));
+      that.socket.send(response.stringify());
     });
   }
 
@@ -133,10 +133,10 @@ function handleResponse(data) {
     rsync.patch(that.fs, path, diffs, rsyncOptions, function(err) {
       if(err) {
         that.end();
-        return(new SyncMessage(SyncMessage.ERROR, SyncMessage.PATCH));
+        return SyncMessage.error.patch;
       }
-      response = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.PATCH);
-      that.socket.send(response);
+      response = SyncMessage.response.patch;
+      that.socket.send(response.stringify());
       that.end();
     });
   }
@@ -162,7 +162,7 @@ function handleResponse(data) {
 function broadcastUpdate(username) {
   var clients = connectedClients[username];
   var currSyncingClient = clients.currentSyncSession;
-  var updateMsg = JSON.stringify(new SyncMessage(SyncMessage.REQUEST, SyncMessage.CHKSUM));
+  var updateMsg = SyncMessage.request.chksum.stringify();
   var outOfDateClient;
   if(clients) {
     for(var sessionId in clients) {
