@@ -164,10 +164,17 @@ Sync.prototype.patch = function( diffs, callback ) {
 };
 
 Sync.prototype.onClose = function( ) {
-  var sync = this;
+  var username = this.username;
+  var id = this.syncId;
+
   return function() {
-    emitter.removeListener( "updateToLatestSync", connectedClients[ sync.username ][ sync.syncId ].onOutOfDate );
-    delete connectedClients[ sync.username ][ sync.syncId ];
+    emitter.removeListener( "updateToLatestSync", connectedClients[ username ][ id ].onOutOfDate );
+    delete connectedClients[ username ][ id ];
+
+    // Also remove the username from the list if there are no more connected clients.
+    if( Object.keys( connectedClients[ username ] ).count === 0 ) {
+      delete connectedClients[ username ];
+    }
   };
 };
 
