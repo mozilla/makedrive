@@ -2,7 +2,7 @@ var expect = require('chai').expect;
 var util = require('../lib/util.js');
 var request = require('request');
 var ws = require('ws');
-var SyncMessage = require('../../server/lib/syncmessage');
+var SyncMessage = require('../../lib/syncmessage');
 var FileSystem = require('filer').FileSystem;
 
 describe('Test util.js', function(){
@@ -287,13 +287,10 @@ describe('Test util.js', function(){
     it('util.prepareDownstreamSync should complete the diffs step automatically when passed \'diffs\' as the finalStep', function(done) {
       util.authenticatedConnection({ done: done }, function(err, result) {
         var username = util.username();
+        util.prepareDownstreamSync("diffs", username, result.token, function(syncData, socketPackage, fs) {
+          expect(syncData.diffs).to.exist;
 
-            util.prepareDownstreamSync("diffs", username, result.token, function(syncData, socketPackage, fs) {
-              expect(syncData.diffs).to.exist;
-
-              util.cleanupSockets(result.done, socketPackage);
-            });
-          }
+          util.cleanupSockets(result.done, socketPackage);
         });
       });
     });
@@ -314,10 +311,8 @@ describe('Test util.js', function(){
       util.authenticatedConnection({ done: done }, function(err, result) {
         var username = util.username();
 
-            util.prepareDownstreamSync("patch", username, result.token, function(syncData, socketPackage, fs) {
-              util.cleanupSockets(result.done, socketPackage);
-            });
-          }
+        util.prepareDownstreamSync("patch", username, result.token, function(syncData, socketPackage, fs) {
+          util.cleanupSockets(result.done, socketPackage);
         });
       });
     });

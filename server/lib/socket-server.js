@@ -53,9 +53,6 @@ module.exports = function( server ) {
         }
       });
 
-      var sucAuthMessage = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.AUTHZ);
-      ws.send(JSON.stringify(sucAuthMessage));
-
       rsync.sourceList(sync.fs, '/', rsyncOptions, function(err, srcList) {
         var response;
         if(err) {
@@ -65,7 +62,14 @@ module.exports = function( server ) {
           response = new SyncMessage(SyncMessage.REQUEST, SyncMessage.CHKSUM);
           response.setContent({srcList: srcList, path: '/'});
         }
-        ws.send(JSON.stringify(response));
+
+        var sucAuthMessage = new SyncMessage(SyncMessage.RESPONSE, SyncMessage.AUTHZ);
+
+        // Is the websocket still open? If not, don't send anything
+        if (ws.readyState === 1) {
+          ws.send(JSON.stringify(sucAuthMessage));
+          ws.send(JSON.stringify(response));
+        }
       });
     });
   });

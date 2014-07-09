@@ -1,6 +1,6 @@
 var expect = require('chai').expect;
 var util = require('../lib/util.js');
-var SyncMessage = require('../../server/lib/syncmessage');
+var SyncMessage = require('../../lib/syncmessage');
 var Sync = require('../../server/lib/sync');
 
 describe('[Downstream Syncing with Websockets]', function(){
@@ -106,7 +106,7 @@ describe('[Downstream Syncing with Websockets]', function(){
             expect(message).to.equal(JSON.stringify(new SyncMessage(SyncMessage.RESPONSE, SyncMessage.AUTHZ)));
             // Listen for SyncMessage error
             socketPackage.socket.on("message", function(message) {
-              expect(message).to.equal(JSON.stringify(Sync.socket.errors.EINVAL));
+              expect(message).to.equal(JSON.stringify({}));
               util.cleanupSockets(result.done, socketPackage);
             });
 
@@ -181,3 +181,5 @@ describe('[Downstream Syncing with Websockets]', function(){
         });
       });
     });
+  });
+});
