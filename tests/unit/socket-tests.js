@@ -55,7 +55,7 @@ describe('[Downstream Syncing with Websockets]', function(){
 
         var socketPackage = util.openSocket(socketData, {
           onMessage: function(message) {
-            expect(message).to.equal(SyncMessage.response.authz);
+            expect(message).to.equal(SyncMessage.response.authz.stringify());
             util.cleanupSockets(result.done, socketPackage);
           }
         });
