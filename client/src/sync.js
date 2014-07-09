@@ -10,8 +10,45 @@ var SyncMessage = require( '../../lib/syncmessage' ),
 var syncSession = {
   state: states.CLOSED,
   step: steps.SYNCED,
-  path: '/'
+  path: '/',
+  is: Object.create(Object.prototype, {
+    // States
+    syncing: {
+      get: function() { return syncSession.state === states.SYNCING; }
+    },
+    ready: {
+      get: function() { return syncSession.state === states.READY; }
+    },
+    error: {
+      get: function() { return syncSession.state === states.ERROR; }
+    },
+    closed: {
+      get: function() { return syncSession.state === states.CLOSED; }
+    },
+
+    // Steps
+    init: {
+      get: function() { return syncSession.step === steps.INIT; }
+    },
+    chksum: {
+      get: function() { return syncSession.step === steps.CHKSUM; }
+    },
+    diffs: {
+      get: function() { return syncSession.step === steps.DIFFS; }
+    },
+    patch: {
+      get: function() { return syncSession.step === steps.PATCH; }
+    },
+    synced: {
+      get: function() { return syncSession.step === steps.SYNCED; }
+    },
+    failed: {
+      get: function() { return syncSession.step === steps.FAILED; }
+    }
+  })
 };
+
+
 
 function init(url, token, sync, fs, callback) {
   _sync = sync;

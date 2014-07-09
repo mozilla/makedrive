@@ -53,11 +53,11 @@ function handleRequest(data, fs, syncObject, syncSession, socket, callback) {
     });
   }
 
-  if (data.is.chksum && syncSession.state === states.READY &&
-      (syncSession.step === steps.SYNCED || syncSession.step === steps.FAILED)) {
+  if (data.is.chksum && syncSession.is.ready &&
+      (syncSession.is.synced || syncSession.is.failed)) {
     // DOWNSTREAM - CHKSUM
     handleChecksumRequest();
-  } else if(data.is.diffs && syncSession.state === states.SYNCING && syncSession.step === steps.DIFFS) {
+  } else if(data.is.diffs && syncSession.is.syncing && syncSession.is.diffs) {
     // UPSTREAM - DIFFS
     handleDiffRequest();
   } else {
@@ -70,7 +70,7 @@ function handleResponse(data, fs, syncObject, syncSession, socket, callback) {
 
   function handleSrcListResponse() {
     syncSession.state = states.SYNCING;
-    syncSession.step = steps.SYNC_INIT;
+    syncSession.step = steps.INIT;
     syncObject.state = syncObject.SYNC_SYNCING;
     syncObject.emit('syncing');
 
@@ -116,10 +116,10 @@ function handleResponse(data, fs, syncObject, syncSession, socket, callback) {
   if(data.is.sync) {
     // UPSTREAM - INIT
     handleSrcListResponse();
-  } else if(data.is.patch && syncSession.state === states.SYNCING && syncSession.step === steps.PATCH) {
+  } else if(data.is.patch && syncSession.is.syncing && syncSession.is.patch) {
     // UPSTREAM - PATCH
     handlePatchAckResponse();
-  } else if(data.is.diffs && syncSession.state === states.READY && syncSession.step === steps.PATCH) {
+  } else if(data.is.diffs && syncSession.is.ready && syncSession.is.patch) {
     // DOWNSTREAM - PATCH
     handlePatchResponse();
   } else {
@@ -130,17 +130,17 @@ function handleResponse(data, fs, syncObject, syncSession, socket, callback) {
 
 function handleError(data, syncObject, syncSession, callback) {
   // DOWNSTREAM - ERROR
-  if(((data.is.srclist && syncSession.step === steps.SYNCED) ||
-      (data.is.diffs && syncSession.step === steps.SYNCED)) &&
-     syncSession.state === states.READY) {
+  if(((data.is.srclist && syncSession.is.synced) ||
+      (data.is.diffs && syncSession.is.synced)) &&
+     syncSession.is.ready) {
     // TODO: handle what to do to reinitiate downstream sync
     emitError(syncSession, syncObject, new Error('Could not sync filesystem from server'));
-  } else if(data.is.locked && syncSession.state === states.READY && syncSession.step === steps.SYNCED) {
+  } else if(data.is.locked && syncSession.is.ready && syncSession.is.synced) {
     // UPSTREAM - LOCK
     callbackError(syncSession, new Error('Current sync in progress! Try again later!'), callback);
-  } else if(((data.is.chksum && syncSession.step === steps.DIFFS) ||
-             (data.is.patch && syncSession.step === steps.PATCH)) &&
-            syncSession.state === states.SYNCING) {
+  } else if(((data.is.chksum && syncSession.is.diffs) ||
+             (data.is.patch && syncSession.is.patch)) &&
+            syncSession.is.syncing) {
     // UPSTREAM - ERROR
     syncSession.step = steps.FAILED;
     callbackError(syncSession, new Error('Fatal error: Failed to sync to server'), callback);

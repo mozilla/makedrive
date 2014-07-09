@@ -1,5 +1,5 @@
 module.exports = {
-  SYNC_INIT: "SYNC INITIALIZED",
+  INIT: "SYNC INITIALIZED",
   CHKSUM: "CHECKSUM",
   DIFFS: "DIFFS",
   PATCH: "PATCH",
