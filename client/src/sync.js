@@ -17,7 +17,7 @@ function init(url, token, sync, fs, callback) {
   _sync = sync;
   _fs = fs;
   socket = new WebSocket(url);
-  
+
   function handleAuth(data, flags) {
     data = data.data;
     try {
@@ -25,7 +25,7 @@ function init(url, token, sync, fs, callback) {
     } catch(e) {
       return callback(e);
     }
-    
+
     if(data.type === SyncMessage.RESPONSE && data.name === SyncMessage.AUTHZ) {
       socket.removeEventListener('message', handleAuth);
       syncSession.state = states.READY;
@@ -46,17 +46,19 @@ function init(url, token, sync, fs, callback) {
       sync.state = sync.SYNC_DISCONNECTED;
       return sync.emit('disconnected');
     }
-    
+
     socket.close();
     var error = new Error(code + ': ' + data);
     sync.emit('error', error);
     sync.state = sync.SYNC_DISCONNECTED;
     return sync.emit('disconnected');
   }
-  
+
   socket.onmessage = handleAuth;
   socket.onclose = handleClose;
-  socket.send(JSON.stringify({token: token}));
+  socket.onopen = function() {
+    socket.send(JSON.stringify({token: token}));
+  }
 }
 
 function sync(path, callback) {

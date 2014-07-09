@@ -130,7 +130,6 @@ function handleResponse(data) {
     var diffs = diffHelper.deserialize(data.content.diffs);
     var path = data.content.path;
     that.state = Sync.LISTENING;
-
     rsync.patch(that.fs, path, diffs, rsyncOptions, function(err) {
       if(err) {
         that.end();
@@ -204,24 +203,6 @@ Sync.prototype.init = function() {
   if(!(connectedClients[this.username].currentSyncSession)) {
     connectedClients[this.username].currentSyncSession = this.sessionId;
   }
-  // Fail loudly if the server allows this method to be called
-  // without passing diffs
-  // TODO: Add diffs validation to the Sync object
-  //       https://github.com/mozilla/makedrive/issues/18
-  if ( !diffs ) {
-    callback( "Diffs must be passed" );
-  }
-  var i, j, k;
-
-  rsync.patch( that.fs, that.path, diffs, rsyncOptions, function ( err, data ) {
-    if ( err ) {
-      return callback( err );
-    }
-
-    that.state = Sync.DIFFS;
-
-    callback();
-  });
 };
 
 Sync.prototype.onClose = function( ) {
