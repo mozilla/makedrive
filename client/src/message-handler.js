@@ -20,7 +20,7 @@ function callbackError(syncSession, err, callback) {
 function handleRequest(data, fs, syncObject, syncSession, socket, callback) {
 
   function handleChecksumRequest() {
-    syncObject.state = sync.SYNC_SYNCING;
+    syncObject.state = syncObject.SYNC_SYNCING;
     var srcList = data.content.srcList;
     syncSession.path = data.content.path;
 

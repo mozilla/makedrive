@@ -124,7 +124,7 @@ function createFS() {
   // Try to connect to the server.
   sync.connect = function(url, token) {
     // Bail if we're already connected
-    if(sync.state !== sync.SYNC_DISCONNECTED ||
+    if(sync.state !== sync.SYNC_DISCONNECTED &&
        sync.state !== sync.ERROR) {
       // TODO: should we throw/warn as well?
       //       https://github.com/mozilla/makedrive/issues/20
@@ -150,7 +150,7 @@ function createFS() {
       // TODO: provide more options to control what/when we auto-sync
       //       https://github.com/mozilla/makedrive/issues/20
       var needsSync = false;
-      watcher = fs.watch('/', function(event, filename) {
+      watcher = _fs.watch('/', function(event, filename) {
         // Mark the fs as dirty, and we'll sync on next interval
         needsSync = true;
       });
