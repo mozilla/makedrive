@@ -14,10 +14,8 @@ module.exports = {
       return next( generateError( 401, "Webmaker Authentication Required." ) );
     }
 
-    if ( !req.session.sessionId ) {
-      req.session.sessionId = websocketAuth.createSessionTracker(username);
-    }
-    
+    req.session.sessionId = websocketAuth.createSessionTracker(username, req.session.sessionId);
+
     req.params.username = username;
     req.params.sessionId = req.session.sessionId;
     next();

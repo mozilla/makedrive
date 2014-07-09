@@ -29,12 +29,14 @@ var env = require('./environment');
 var authTable = {};
 var TOKEN_TIMEOUT_MS = env.get("TOKEN_TIMEOUT_MS") || 60000; // Default to 60 sec
 
-function createSessionTracker(username) {
-  var sessionId = uuid.v4();
+function createSessionTracker(username, sessionId) {
   if (!authTable[username]) {
     authTable[username] = {};
   }
 
+  if(!sessionId) {
+    sessionId = uuid.v4();
+  }
   authTable[username][sessionId] = [];
   return sessionId;
 }
