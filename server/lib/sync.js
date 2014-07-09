@@ -288,7 +288,7 @@ Sync.error = {
     message.content = {error: 'The resource sent as a response cannot be processed'};
     return message;
   }
-});
+};
 
 // Create a new sync object for the client
 Sync.create = function(username, sessionId){
