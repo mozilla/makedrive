@@ -198,7 +198,12 @@ describe('Test util.js', function(){
 
         var socketPackage = util.openSocket(socketData, {
           onMessage: function(message){
-            expect(message).to.equal(SyncMessage.response.authz.stringify());
+            // First, confirm server acknowledgment
+            message = util.resolveToJSON(message);
+            expect(message).to.exist;
+            expect(message.type).to.equal(SyncMessage.REQUEST);
+            expect(message.name).to.equal(SyncMessage.CHKSUM);
+            expect(message.content).to.be.an('object');
 
             socketPackage.setClose(function() {
               result.done();
@@ -263,22 +268,28 @@ describe('Test util.js', function(){
       util.authenticatedConnection({done: done}, function(err, result) {
         var username = util.username();
 
-        util.prepareDownstreamSync(username, result.token, function(syncData, socketPackage, fs) {
+        util.prepareDownstreamSync(username, result.token, function(syncData, fs, socketPackage) {
           expect(fs instanceof FileSystem).to.equal.true;
           util.cleanupSockets(result.done, socketPackage);
         });
       });
     });
-    it('util.syncSteps.diffs should return the checksums to the client', function(done) {
+    it('util.downstreamSyncSteps.diffs should return the checksums to the client', function(done) {
       util.authenticatedConnection({ done: done }, function(err, result) {
         var username = util.username();
 
-        util.prepareDownstreamSync("diffs", username, result.token, function(syncData, socketPackage, fs) {
-          var startSyncMsg = SyncMessage.request.diffs.stringify();
-          util.sendSyncMessage(socketPackage, startSyncMsg, function(msg){
-            var msg = util.resolveToJSON(msg);
-            expect(msg.content.diffs).to.exist;
+        util.prepareDownstreamSync(username, result.token, function(syncData, fs, socketPackage) {
+          util.downstreamSyncSteps.diffs(socketPackage, syncData, fs, function(message, cb) {
+            message = util.resolveToJSON(message);
 
+            expect(message.type).to.equal(SyncMessage.RESPONSE);
+            expect(message.name).to.equal(SyncMessage.DIFFS);
+            expect(message.content).to.exist;
+            expect(message.content.diffs).to.exist;
+            expect(message.content.path).to.exist;
+
+            cb();
+          }, function(msg) {
             util.cleanupSockets(result.done, socketPackage);
           });
         });
@@ -287,7 +298,7 @@ describe('Test util.js', function(){
     it('util.prepareDownstreamSync should complete the diffs step automatically when passed \'diffs\' as the finalStep', function(done) {
       util.authenticatedConnection({ done: done }, function(err, result) {
         var username = util.username();
-        util.prepareDownstreamSync("diffs", username, result.token, function(syncData, socketPackage, fs) {
+        util.prepareDownstreamSync("diffs", username, result.token, function(syncData, fs, socketPackage) {
           expect(syncData.diffs).to.exist;
 
           util.cleanupSockets(result.done, socketPackage);
@@ -298,9 +309,9 @@ describe('Test util.js', function(){
       util.authenticatedConnection({ done: done }, function(err, result) {
         var username = util.username();
 
-        util.prepareDownstreamSync("diffs", username, result.token, function(syncData, socketPackage, fs) {
-          util.syncSteps.patch(socketPackage, syncData, fs, function(err) {
-            expect(err).not.to.exist;
+        util.prepareDownstreamSync("diffs", username, result.token, function(syncData, fs, socketPackage) {
+          util.downstreamSyncSteps.patch(socketPackage, syncData, fs, function(err) {
+            expect(err, "[Patch error:] " + err).not.to.exist;
 
             util.cleanupSockets(result.done, socketPackage);
           });
@@ -311,7 +322,7 @@ describe('Test util.js', function(){
       util.authenticatedConnection({ done: done }, function(err, result) {
         var username = util.username();
 
-        util.prepareDownstreamSync("patch", username, result.token, function(syncData, socketPackage, fs) {
+        util.prepareDownstreamSync("patch", username, result.token, function(syncData, fs, socketPackage) {
           util.cleanupSockets(result.done, socketPackage);
         });
       });

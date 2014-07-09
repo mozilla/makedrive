@@ -59,7 +59,7 @@ if(!uploadFound) {
         name: username
       });
 
-      fs.writeFile(path, fileData, function(err, data) {
+      fs.writeFile(path, fileData, function(err) {
         if(err) {
           res.send(500, {error: err});
           return;
@@ -233,10 +233,17 @@ function openSocket(socketData, options) {
   }
 
   if (socketData) {
+    var customMessageHandler = options.onMessage;
     options.onOpen = function() {
       socket.send(JSON.stringify({
         token: socketData.token
       }));
+    };
+    options.onMessage = function(message) {
+      expect(message).to.equal(SyncMessage.response.authz.stringify());
+      if (customMessageHandler) {
+        socket.once("message", customMessageHandler);
+      }
     };
   }
 
@@ -323,7 +330,7 @@ var downstreamSyncSteps = {
       if (!customAssertions) {
         message = resolveToJSON(message);
 
-        expect(message.type).to.equal(SyncMessage.RESPONSE);
+        expect(message.type, "[Diffs error: \"" + (message.content && message.content.error) + "\"]").to.equal(SyncMessage.RESPONSE);
         expect(message.name).to.equal(SyncMessage.DIFFS);
         expect(message.content).to.exist;
         expect(message.content.diffs).to.exist;
@@ -344,7 +351,7 @@ var downstreamSyncSteps = {
         checksums: checksums
       };
 
-      socketPackage.socket.send(resolveFromJSON(diffRequest));
+      socketPackage.socket.send(diffRequest.stringify());
     });
   },
   patch: function(socketPackage, data, fs, customAssertions, cb) {
@@ -354,14 +361,13 @@ var downstreamSyncSteps = {
     }
 
     rsync.patch(fs, data.path, data.diffs, rsyncOptions, function(err) {
-      expect(err).not.to.exist;
+      expect(err, "[Rsync patch error: \"" + err + "\"]").not.to.exist;
 
       var patchResponse = SyncMessage.response.patch;
       socketPackage.socket.send(resolveFromJSON(patchResponse));
 
       cb();
     });
-
   }
 };
 
@@ -410,41 +416,51 @@ function prepareDownstreamSync(finalStep, username, token, cb){
   upload(username, '/test.txt', content, function() {
     // Set up client filesystem
     var fs = filesystem.create({
-      keyPrefix: username,
-      name: username
+      keyPrefix: username + "client",
+      name: username + "client"
     });
 
     var socketPackage = openSocket({
-      token: token
-    }, {
       onMessage: function(message) {
         message = resolveToJSON(message);
-        expect(message).to.equal(SyncMessage.response.authz);
 
         expect(message).to.exist;
-        expect(message.type).to.equal(SyncMessage.REQUEST);
-        expect(message.name).to.equal(SyncMessage.CHKSUM);
-        expect(message.content).to.exist;
-        expect(message.content.srcList).to.exist;
-        expect(message.content.path).to.exist;
+        expect(message.type).to.equal(SyncMessage.RESPONSE);
+        expect(message.name).to.equal(SyncMessage.AUTHZ);
+        expect(message.content).to.be.null;
 
-        var downstreamData = {
-          srcList: message.content.srcList,
-          path: message.content.path
-        };
+        socketPackage.socket.once("message", function(message) {
+          message = resolveToJSON(message);
+          expect(message).to.exist;
+          expect(message.type).to.equal(SyncMessage.REQUEST);
+          expect(message.name).to.equal(SyncMessage.CHKSUM);
+          expect(message.content).to.exist;
+          expect(message.content.srcList).to.exist;
+          expect(message.content.path).to.exist;
 
-        // Complete required sync steps
-        if (!finalStep) {
-          return cb(downstreamData, fs, socketPackage);
-        }
-        downstreamSyncSteps.diffs(socketPackage, downstreamData, fs, function(data1) {
-          if (finalStep == "diffs") {
-            return cb(data1, fs, socketPackage);
+          var downstreamData = {
+            srcList: message.content.srcList,
+            path: message.content.path
+          };
+
+          // Complete required sync steps
+          if (!finalStep) {
+            return cb(downstreamData, fs, socketPackage);
           }
-          downstreamSyncSteps.patch(socketPackage, data1, fs, function(data2) {
-            cb(data2, fs, socketPackage);
+          downstreamSyncSteps.diffs(socketPackage, downstreamData, fs, function(data1) {
+            if (finalStep == "diffs") {
+              return cb(data1, fs, socketPackage);
+            }
+            downstreamSyncSteps.patch(socketPackage, data1, fs, function(data2) {
+              cb(data2, fs, socketPackage);
+            });
           });
         });
+      },
+      onOpen: function() {
+        socketPackage.socket.send(JSON.stringify({
+          token: token
+        }));
       }
     });
   });
@@ -465,5 +481,6 @@ module.exports = {
   resolveFromJSON: resolveFromJSON,
   prepareDownstreamSync: prepareDownstreamSync,
   downstreamSyncSteps: downstreamSyncSteps,
-  getWebsocketToken: getWebsocketToken
+  getWebsocketToken: getWebsocketToken,
+  sendSyncMessage: sendSyncMessage
 };
