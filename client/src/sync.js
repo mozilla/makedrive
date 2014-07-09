@@ -96,7 +96,7 @@ function init(url, token, sync, fs, callback) {
   socket.onclose = handleClose;
   socket.onopen = function() {
     socket.send(JSON.stringify({token: token}));
-  }
+  };
 }
 
 function sync(path, callback) {
