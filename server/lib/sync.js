@@ -272,27 +272,21 @@ Sync.prototype.onClose = function() {
 /**
  * Public static objects/methods
  */
-Sync.error = Object.create(Object.prototype, {
-  type: {
-    get: function() {
-      var message = SyncMessage.error.impl;
-      message.content = {error: 'The Sync message cannot be handled by the server'};
-      return message;
-    }
+Sync.error = {
+  get type() {
+    var message = SyncMessage.error.impl;
+    message.content = {error: 'The Sync message cannot be handled by the server'};
+    return message;
   },
-  request: {
-    get: function() {
-      var message = SyncMessage.error.impl;
-      message.content = {error: 'Request cannot be processed'};
-      return message;
-    }
+  get request() {
+    var message = SyncMessage.error.impl;
+    message.content = {error: 'Request cannot be processed'};
+    return message;
   },
-  response: {
-    get: function() {
-      var message = SyncMessage.error.impl;
-      message.content = {error: 'The resource sent as a response cannot be processed'};
-      return message;
-    }
+  get response() {
+    var message = SyncMessage.error.impl;
+    message.content = {error: 'The resource sent as a response cannot be processed'};
+    return message;
   }
 });
 
