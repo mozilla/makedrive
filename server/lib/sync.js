@@ -103,15 +103,15 @@ function handleRequest(data) {
     });
   }
 
-  if(data.name === SyncMessage.RESET && that.state === Sync.OUT_OF_DATE) {
+  if(data.is.reset && that.state === Sync.OUT_OF_DATE) {
     sendSrcList();
-  } else if(data.name === SyncMessage.RESET && that.state !== Sync.OUT_OF_DATE) {
+  } else if(data.is.reset && that.state !== Sync.OUT_OF_DATE) {
     resetUpstream();
-  } else if(data.name === SyncMessage.DIFFS && that.state === Sync.OUT_OF_DATE) {
+  } else if(data.is.diffs && that.state === Sync.OUT_OF_DATE) {
     handleDiffRequest();
-  } else if(data.name === SyncMessage.SYNC && that.state === Sync.LISTENING) {
+  } else if(data.is.sync && that.state === Sync.LISTENING) {
     handleSyncInitRequest();
-  } else if(data.name === SyncMessage.CHKSUM && that.state === Sync.CHKSUM) {
+  } else if(data.is.chksum && that.state === Sync.CHKSUM) {
     handleChecksumRequest();
   } else {
     that.socket.send(Sync.error.request.stringify());
@@ -149,9 +149,9 @@ function handleResponse(data) {
     that.state = Sync.LISTENING;
   }
 
-  if(data.name === SyncMessage.DIFFS && that.state === Sync.PATCH) {
+  if(data.is.diffs && that.state === Sync.PATCH) {
     handleDiffResponse();
-  } else if(data.name === SyncMessage.PATCH && that.state === Sync.OUT_OF_DATE) {
+  } else if(data.is.patch && that.state === Sync.OUT_OF_DATE) {
     handlePatchResponse();
   } else {
     that.socket.send(Sync.error.response.stringify());
