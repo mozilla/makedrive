@@ -58,8 +58,7 @@ function generateTokenForSession(username, sessionId) {
 }
 
 function authorizeToken(token) {
-  var id,
-      username = getUsernameByToken(token),
+  var username = getUsernameByToken(token),
       session,
       index;
 
@@ -70,7 +69,7 @@ function authorizeToken(token) {
 
   // Token is valid, find and delete it,
   // returning username & sessionId
-  for (id in authTable[username]) {
+  for (var id in authTable[username]) {
     session = authTable[username][id];
     index = session.indexOf(token);
 
@@ -99,8 +98,8 @@ function logoutHandler(req, res, next) {
 }
 
 function getUsernameByToken(token) {
-  for (username in authTable) {
-    for (id in authTable[username]) {
+  for (var username in authTable) {
+    for (var id in authTable[username]) {
       if (authTable[username][id].indexOf(token) >= 0) {
         return username;
       }
