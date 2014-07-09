@@ -70,7 +70,7 @@ describe('[Downstream Syncing with Websockets]', function(){
 
         var socketPackage = util.openSocket(socketData, {
           onMessage: function(message) {
-            expect(message).to.equal(SyncMessage.response.authz);
+            expect(message).to.equal(SyncMessage.response.authz.stringify());
             util.authenticatedConnection(function(err, result2) {
               expect(err).not.to.exist;
               socketData = {
@@ -103,7 +103,7 @@ describe('[Downstream Syncing with Websockets]', function(){
         var socketPackage = util.openSocket(socketData, {
           onMessage: function(message) {
             // First, confirm server acknowledgment
-            expect(message).to.equal(SyncMessage.response.authz);
+            expect(message).to.equal(SyncMessage.response.authz.stringify());
             // Listen for SyncMessage error
             socketPackage.socket.on("message", function(message) {
               expect(message).to.equal(JSON.stringify({}));
