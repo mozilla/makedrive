@@ -4,8 +4,6 @@
  */
 var filesystem = require( "./filesystem" ),
     SyncMessage = require('../../lib/syncmessage'),
-    MsgErrors = SyncMessage.errors,
-    InternalError = SyncMessage.generateError,
     rsync = require('../../lib/rsync'),
     diffHelper = require('../../lib/diff'),
     rsyncOptions = require('../../lib/constants').rsyncDefaults;
@@ -35,10 +33,10 @@ function handleRequest(data) {
     rsync.sourceList(that.fs, '/', rsyncOptions, function(err, srcList) {
       if(err) {
         response = SyncMessage.error.srclist;
-        response.setContent(err);
+        response.content = {error: err};
       } else {
         response = SyncMessage.request.chksum;
-        response.setContent({srcList: srcList, path: '/'});
+        response.content = {srcList: srcList, path: '/'};
       }
       that.socket.send(response.stringify());
     });
@@ -51,7 +49,7 @@ function handleRequest(data) {
 
   function handleDiffRequest() {
     if(!data.content.checksums) {
-      return that.socket.send(JSON.stringify(MsgErrors.INCONT));
+      return that.socket.send(SyncMessage.error.content.stringify());
     }
 
     var checksums = data.content.checksums;
@@ -59,10 +57,13 @@ function handleRequest(data) {
     rsync.diff(that.fs, that.path, checksums, rsyncOptions, function(err, diffs) {
       if(err) {
         response = SyncMessage.error.diffs;
-        response.setContent(err);
+        response.content = {error: err};
       } else {
         response = SyncMessage.response.diffs;
-        response.setContent({diffs: diffHelper.serialize(diffs), path: that.path});
+        response.content = {
+          diffs: diffHelper.serialize(diffs),
+          path: that.path
+        };
       }
       that.socket.send(response.stringify());
     });
@@ -81,7 +82,7 @@ function handleRequest(data) {
 
   function handleChecksumRequest() {
     if(!data.content.srcList || !data.content.path) {
-      return that.socket.send(JSON.stringify(MsgErrors.INCONT));
+      return that.socket.send(SyncMessage.error.content.stringify());
     }
 
     var srcList = data.content.srcList;
@@ -92,10 +93,10 @@ function handleRequest(data) {
         that.state = Sync.LISTENING;
         that.end();
         response = SyncMessage.error.chksum;
-        response.setContent(err);
+        response.content = {error: err};
       } else {
         response = SyncMessage.request.diffs;
-        response.setContent({checksums: checksums, path: that.path});
+        response.content = {checksums: checksums, path: that.path};
         that.state = Sync.PATCH;
       }
       that.socket.send(response.stringify());
@@ -113,7 +114,7 @@ function handleRequest(data) {
   } else if(data.name === SyncMessage.CHKSUM && that.state === Sync.CHKSUM) {
     handleChecksumRequest();
   } else {
-    that.socket.send(JSON.stringify(Sync.errors.ERQRSC));
+    that.socket.send(Sync.error.request.stringify());
   }
 }
 
@@ -124,7 +125,7 @@ function handleResponse(data) {
 
   function handleDiffResponse() {
     if(!data.content.diffs) {
-      return that.socket.send(JSON.stringify(MsgErrors.INCONT));
+      return that.socket.send(SyncMessage.error.content.stringify());
     }
 
     var diffs = diffHelper.deserialize(data.content.diffs);
@@ -135,8 +136,8 @@ function handleResponse(data) {
         that.end();
         return SyncMessage.error.patch;
       }
-      response = SyncMessage.response.patch;
-      that.socket.send(response.stringify());
+
+      that.socket.send(SyncMessage.response.patch.stringify());
       that.end();
     });
   }
@@ -153,7 +154,7 @@ function handleResponse(data) {
   } else if(data.name === SyncMessage.PATCH && that.state === Sync.OUT_OF_DATE) {
     handlePatchResponse();
   } else {
-    that.socket.send(JSON.stringify(Sync.errors.ERSRSC));
+    that.socket.send(Sync.error.response.stringify());
   }
 }
 
@@ -237,16 +238,14 @@ Sync.prototype.canSync = function() {
 
 // Handle a message sent by the client
 Sync.prototype.messageHandler = function(data) {
-  if (typeof data !== "object" || !data.content || !data.type || !data.name) {
-    return this.socket.send(JSON.stringify(MsgErrors.INFRMT));
-  }
+  data = SyncMessage.parse(data);
 
   if(data.type === SyncMessage.REQUEST) {
     handleRequest.call(this, data);
   } else if(data.type === SyncMessage.RESPONSE) {
     handleResponse.call(this, data);
   } else {
-    this.socket.send(JSON.stringify(Sync.errors.ETYPHN));
+    this.socket.send(Sync.error.type.stringify());
   }
 };
 
@@ -273,11 +272,29 @@ Sync.prototype.onClose = function() {
 /**
  * Public static objects/methods
  */
-Sync.errors = {
-  ETYPHN: InternalError('The Sync message cannot be handled by the server'),
-  ERQRSC: InternalError('Request cannot be processed'),
-  ERSRSC: InternalError('Resource provided cannot be processed'),
-};
+Sync.error = Object.create(Object.prototype, {
+  type: {
+    get: function() {
+      var message = SyncMessage.error.impl;
+      message.content = {error: 'The Sync message cannot be handled by the server'};
+      return message;
+    }
+  },
+  request: {
+    get: function() {
+      var message = SyncMessage.error.impl;
+      message.content = {error: 'Request cannot be processed'};
+      return message;
+    }
+  },
+  response: {
+    get: function() {
+      var message = SyncMessage.error.impl;
+      message.content = {error: 'The resource sent as a response cannot be processed'};
+      return message;
+    }
+  }
+});
 
 // Create a new sync object for the client
 Sync.create = function(username, sessionId){

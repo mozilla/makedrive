@@ -32,7 +32,7 @@ function handleRequest(data, fs, syncObject, syncSession, socket, callback) {
         syncSession.step = steps.PATCH;
 
         var message = SyncMessage.request.diffs;
-        message.setContent({checksums: checksums});
+        message.content = {checksums: checksums};
 
         socket.send(message.stringify());
       }
@@ -47,7 +47,7 @@ function handleRequest(data, fs, syncObject, syncSession, socket, callback) {
         syncSession.step = steps.PATCH;
 
         var message = SyncMessage.response.diffs;
-        message.setContent({diffs: serializeDiff(diffs)});
+        message.content = {diffs: serializeDiff(diffs)};
         socket.send(message.stringify());
       }
     });
@@ -81,7 +81,7 @@ function handleResponse(data, fs, syncObject, syncSession, socket, callback) {
         syncSession.step = steps.DIFFS;
 
         var message = SyncMessage.request.chksum;
-        message.setContent({srcList: srcList, path: syncSession.path});
+        message.content = {srcList: srcList, path: syncSession.path};
         socket.send(message.stringify());
       }
     });

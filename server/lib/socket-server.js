@@ -46,9 +46,9 @@ module.exports = function( server ) {
             data = JSON.parse(data);
             sync.messageHandler(data);
           } catch(error) {
-            var errorMessage = SyncMessage.errors.INFRMT;
-            errorMessage.setContent(error);
-            ws.send(JSON.stringify(errorMessage));
+            var errorMessage = SyncMessage.error.format;
+            errorMessage.content = {error: error};
+            ws.send(errorMessage.stringify());
           }
         }
       });
@@ -57,10 +57,10 @@ module.exports = function( server ) {
         var response;
         if(err) {
           response = SyncMessage.error.srclist;
-          response.setContent(err);
+          response.content = {error: err};
         } else {
           response = SyncMessage.request.chksum;
-          response.setContent({srcList: srcList, path: '/'});
+          response.content = {srcList: srcList, path: '/'};
         }
 
         // Is the websocket still open? If not, don't send anything
