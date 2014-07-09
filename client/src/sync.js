@@ -22,11 +22,12 @@ function init(url, token, sync, fs, callback) {
     data = data.data;
     try {
       data = JSON.parse(data);
+      data = SyncMessage.parse(data);
     } catch(e) {
       return callback(e);
     }
 
-    if(data.type === SyncMessage.RESPONSE && data.name === SyncMessage.AUTHZ) {
+    if(data.is.resposne && data.is.authz) {
       socket.removeEventListener('message', handleAuth);
       syncSession.state = states.READY;
       syncSession.step = steps.SYNCED;

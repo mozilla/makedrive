@@ -240,9 +240,9 @@ Sync.prototype.canSync = function() {
 Sync.prototype.messageHandler = function(data) {
   data = SyncMessage.parse(data);
 
-  if(data.type === SyncMessage.REQUEST) {
+  if(data.is.request) {
     handleRequest.call(this, data);
-  } else if(data.type === SyncMessage.RESPONSE) {
+  } else if(data.is.response) {
     handleResponse.call(this, data);
   } else {
     this.socket.send(Sync.error.type.stringify());
