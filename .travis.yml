@@ -1,8 +1,7 @@
----
-before_script:
-- "npm install -g grunt-cli"
 env:
-- "PORT=3000 NODE_ENV=\"development\" ENABLE_GELF_LOGS=false SESSION_SECRET=\"secret value\" FORCE_SSL=false LOGIN_SERVER_URL_WITH_AUTH=\"http://localhost:3000\""
+ - "PORT=3000 NODE_ENV=\"development\" ENABLE_GELF_LOGS=false SESSION_SECRET=\"secret value\" FORCE_SSL=false LOGIN_SERVER_URL_WITH_AUTH=\"http://localhost:3000\""
 language: node_js
 node_js:
-- "0.10"
+ - "0.10"
+before_script:
+ - npm install -g grunt-cli

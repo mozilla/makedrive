@@ -30,7 +30,7 @@ module.exports = function createRoutes( app, webmakerAuth  ) {
     server.handle(path, res);
   });
 
-  app.get( "/api/sync", middleware.authenticationHandler, function( req, res ) {
+  app.get( "/api/sync", middleware.crossOriginHandler, middleware.authenticationHandler, function( req, res ) {
     var username = req.params.username;
     var id = req.params.sessionId;
 
