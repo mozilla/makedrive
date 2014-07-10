@@ -8,7 +8,7 @@ var steps = require('./sync-steps');
 
 function emitError(syncSession, syncObject, err) {
   syncSession.step = steps.FAILED;
-  syncObject.state = _sync.SYNC_ERROR;
+  syncObject.state = syncObject.SYNC_ERROR;
   return syncObject.emit('error', err);
 }
 
