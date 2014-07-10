@@ -64,12 +64,12 @@ function init(url, token, sync, fs, callback) {
       return callback(e);
     }
 
-    if(data.is.resposne && data.is.authz) {
+    if(data.is.response && data.is.authz) {
       socket.removeEventListener('message', handleAuth);
       syncSession.state = states.READY;
       syncSession.step = steps.SYNCED;
       socket.onmessage = function(data, flags) {
-        messageHandler(_fs, _sync, syncSession, socket, data, flags, callback);
+        messageHandler(_fs, _sync, syncSession, socket, data, flags, syncCallback);
       };
       return callback();
     }
