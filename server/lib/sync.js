@@ -131,7 +131,7 @@ function handleResponse(data) {
     var diffs = diffHelper.deserialize(data.content.diffs);
     var path = data.content.path;
     that.state = Sync.LISTENING;
-    rsync.patch(that.fs, path, diffs, rsyncOptions, function(err) {
+    rsync.patch(that.fs, that.path, diffs, rsyncOptions, function(err) {
       if(err) {
         that.end();
         return SyncMessage.error.patch;
@@ -160,19 +160,19 @@ function handleResponse(data) {
 
 // Broadcast an out-of-date message to the clients
 // after an upstream sync process has completed
-function broadcastUpdate(username) {
+function broadcastUpdate(username, response) {
   var clients = connectedClients[username];
   var currSyncingClient = clients.currentSyncSession;
-  var updateMsg = SyncMessage.request.chksum.stringify();
   var outOfDateClient;
   if(clients) {
-    for(var sessionId in clients) {
-      if(currSyncingClient !== sessionId) {
+    Object.keys(clients).forEach(function(sessionId) {
+      // TODO -- Fix this dirty hack
+      if(currSyncingClient !== sessionId && sessionId !== "currentSyncSession") {
         outOfDateClient = clients[sessionId].sync;
         outOfDateClient.state = Sync.OUT_OF_DATE;
-        outOfDateClient.socket.send(updateMsg);
+        outOfDateClient.socket.send(response.stringify());
       }
-    }
+    });
   }
 }
 
@@ -224,8 +224,19 @@ Sync.prototype.onClose = function( ) {
 // Terminate a sync for a client
 Sync.prototype.end = function() {
   if(connectedClients[this.username].currentSyncSession) {
-    broadcastUpdate(this.username);
-    delete connectedClients[this.username].currentSyncSession;
+    var that = this;
+    rsync.sourceList(this.fs, this.path, rsyncOptions, function(err, srcList) {
+      var response;
+      if(err) {
+        response = SyncMessage.error.srclist;
+        response.content = {error: err};
+      } else {
+        response = SyncMessage.request.chksum;
+        response.content = {srcList: srcList, path: that.path};
+      }
+      broadcastUpdate(that.username, response);
+      delete connectedClients[that.username].currentSyncSession;
+    });
   }
 };
 
