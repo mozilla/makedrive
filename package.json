@@ -29,7 +29,7 @@
     "crypto-js": "^3.1.2-3",
     "events": "^1.0.1",
     "express": "3.4.5",
-    "filer": "0.0.14",
+    "filer": "0.0.15",
     "filer-fs": "git://github.com/humphd/filer-fs.git#master",
     "filer-s3": "0.0.2",
     "habitat": "1.1.0",
