@@ -1,7 +1,7 @@
 var OPTION_SIZE = { size: 5 };
 var OPTION_REC_SIZE = { recursive: true, size: 5 };
 
-var Filer = require('filer'),
+var Filer = require('../../lib/filer.js'),
     Buffer = Filer.Buffer,
     rsync = require('../../lib/rsync'),
     expect = require('chai').expect,

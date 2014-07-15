@@ -3,7 +3,7 @@ var util = require('../lib/util.js');
 var request = require('request');
 var ws = require('ws');
 var SyncMessage = require('../../lib/syncmessage');
-var FileSystem = require('filer').FileSystem;
+var FileSystem = require('../../lib/filer.js').FileSystem;
 
 describe('Test util.js', function(){
   describe('[Connection Helpers]', function() {

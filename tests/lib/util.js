@@ -6,7 +6,7 @@ var filesystem = require('../../server/lib/filesystem.js');
 var SyncMessage = require('../../lib/syncmessage');
 var rsync = require('../../lib/rsync');
 var rsyncOptions = require('../../lib/constants').rsyncDefaults;
-var Buffer = require('filer').Buffer;
+var Buffer = require('../../lib/filer.js').Buffer;
 var uuid = require( "node-uuid" );
 
 var serverURL = 'http://0.0.0.0:9090',

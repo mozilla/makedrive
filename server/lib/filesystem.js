@@ -1,4 +1,4 @@
-var Filer = require( "filer" ),
+var Filer = require( "../../lib/filer.js" ),
     env = require( "./environment" ),
     providerType = env.get( "FILER_PROVIDER" ) || "filer-fs" ,
     Provider = require( providerType );

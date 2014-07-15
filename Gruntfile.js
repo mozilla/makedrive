@@ -36,14 +36,29 @@ module.exports = function(grunt) {
       }
     },
 
+    exec: {
+      update_submodule: {
+        command: 'git submodule update --init',
+        stdout: false,
+        stderr: true
+      },
+      npm_install_submodule: {
+        command: 'cd ' + __dirname + '/client/thirdparty/filer; npm install; rm -rf client',
+        stdout: false,
+        stderr: true
+      }
+    }
+
   });
 
   grunt.loadNpmTasks( "grunt-contrib-jshint" );
   grunt.loadNpmTasks( "grunt-contrib-clean" );
   grunt.loadNpmTasks( "grunt-contrib-uglify" );
   grunt.loadNpmTasks( "grunt-browserify" );
+  grunt.loadNpmTasks( "grunt-exec" );
 
   grunt.registerTask( "test", [ "jshint" ] );
   grunt.registerTask( "default", [ "test" ] );
+  grunt.registerTask( "init", [ "exec" ] );
   grunt.registerTask( "build", [ "clean", "browserify:makedriveClient", "uglify" ] );
 };

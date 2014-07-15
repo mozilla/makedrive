@@ -65,7 +65,7 @@
  */
 
 var MakeDriveSync = require('./sync');
-var Filer = require('filer');
+var Filer = require('../../lib/filer.js');
 var EventEmitter = require('events').EventEmitter;
 
 var MakeDrive = {};

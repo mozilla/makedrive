@@ -2,7 +2,7 @@
  * A static web server on top of a Filer file system.
  */
 var mime = require('mime');
-var Path = require('filer').Path;
+var Path = require('../../lib/filer.js').Path;
 var filesystem = require('./filesystem.js');
 var version = require('../../package.json').version;
 
