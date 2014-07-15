@@ -5,7 +5,8 @@ var SyncMessage = require( '../../lib/syncmessage' ),
     _fs,
     syncCallback,
     states = require('./sync-states'),
-    steps = require('./sync-steps');
+    steps = require('./sync-steps'),
+    WebSocket = require('ws');
 
 var syncSession = {
   state: states.CLOSED,
@@ -48,8 +49,6 @@ var syncSession = {
   })
 };
 
-
-
 function init(url, token, sync, fs, callback) {
   _sync = sync;
   _fs = fs;
@@ -65,7 +64,7 @@ function init(url, token, sync, fs, callback) {
     }
 
     if(data.is.response && data.is.authz) {
-      socket.removeEventListener('message', handleAuth);
+      socket.removeListener('message', handleAuth);
       syncSession.state = states.READY;
       syncSession.step = steps.SYNCED;
       socket.onmessage = function(data, flags) {

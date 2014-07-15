@@ -6,15 +6,14 @@ var deserializeDiff = require('../../lib/diff').deserialize;
 var states = require('./sync-states');
 var steps = require('./sync-steps');
 
-function emitError(syncSession, syncObject, err) {
+function onError(syncSession, syncObject, err) {
   syncSession.step = steps.FAILED;
-  syncObject.state = syncObject.SYNC_ERROR;
-  return syncObject.emit('error', err);
+  syncObject.onError(err);
 }
 
 function callbackError(syncSession, err, callback) {
   syncSession.state = states.ERROR;
-  return callback(err);
+  callback(err);
 }
 
 function handleRequest(data, fs, syncObject, syncSession, socket, callback) {
@@ -26,9 +25,9 @@ function handleRequest(data, fs, syncObject, syncSession, socket, callback) {
 
     rsync.checksums(fs, syncSession.path, srcList, rsyncOptions, function(err, checksums) {
       if (err) {
-        emitError(syncSession, syncObject, err);
+        onError(syncSession, syncObject, err);
       } else {
-        syncObject.emit('syncing');
+        syncObject.onSyncing();
         syncSession.step = steps.PATCH;
 
         var message = SyncMessage.request.diffs;
@@ -61,8 +60,7 @@ function handleRequest(data, fs, syncObject, syncSession, socket, callback) {
     // UPSTREAM - DIFFS
     handleDiffRequest();
   } else {
-    syncObject.state = syncObject.SYNC_ERROR;
-    syncObject.emit('error', data.content);
+    syncObject.onError(new Error(data.conent));
   }
 }
 
@@ -71,8 +69,7 @@ function handleResponse(data, fs, syncObject, syncSession, socket, callback) {
   function handleSrcListResponse() {
     syncSession.state = states.SYNCING;
     syncSession.step = steps.INIT;
-    syncObject.state = syncObject.SYNC_SYNCING;
-    syncObject.emit('syncing');
+    syncObject.onSyncing();
 
     rsync.sourceList(fs, syncSession.path, rsyncOptions, function(err, srcList) {
       if(err){
@@ -101,14 +98,15 @@ function handleResponse(data, fs, syncObject, syncSession, socket, callback) {
     diffs = deserializeDiff(diffs);
     rsync.patch(fs, syncSession.path, diffs, rsyncOptions, function(err) {
       if (err) {
-        emitError(syncSession, syncObject, err);
+        onError(syncSession, syncObject, err);
       } else {
         syncSession.step = steps.SYNCED;
         syncObject.state = syncObject.SYNC_CONNECTED;
 
         var message = SyncMessage.response.patch;
         socket.send(message.stringify());
-        syncObject.emit('completed');
+
+        syncObject.onCompleted();
       }
     });
   }
@@ -123,8 +121,7 @@ function handleResponse(data, fs, syncObject, syncSession, socket, callback) {
     // DOWNSTREAM - PATCH
     handlePatchResponse();
   } else {
-    syncObject.state = syncObject.SYNC_ERROR;
-    return syncObject.emit('error', new Error(data.content));
+    syncObject.onError(new Error(data.content));
   }
 }
 
@@ -134,7 +131,7 @@ function handleError(data, syncObject, syncSession, callback) {
       (data.is.diffs && syncSession.is.synced)) &&
      syncSession.is.ready) {
     // TODO: handle what to do to reinitiate downstream sync
-    emitError(syncSession, syncObject, new Error('Could not sync filesystem from server'));
+    onError(syncSession, syncObject, new Error('Could not sync filesystem from server'));
   } else if(data.is.locked && syncSession.is.ready && syncSession.is.synced) {
     // UPSTREAM - LOCK
     callbackError(syncSession, new Error('Current sync in progress! Try again later!'), callback);
@@ -145,7 +142,7 @@ function handleError(data, syncObject, syncSession, callback) {
     syncSession.step = steps.FAILED;
     callbackError(syncSession, new Error('Fatal error: Failed to sync to server'), callback);
   } else {
-    syncObject.emit('error', data.content.error);
+    syncObject.onError(new Error(data.content));
   }
 }
 
@@ -155,8 +152,7 @@ function handleMessage(fs, syncObject, syncSession, socket, data, flags, callbac
     data = JSON.parse(data);
     data = SyncMessage.parse(data);
   } catch(e) {
-    syncObject.state = syncObject.SYNC_ERROR;
-    return syncObject.emit('error', e);
+    syncObject.onError(e);
   }
 
   if (data.is.request) {
@@ -166,8 +162,7 @@ function handleMessage(fs, syncObject, syncSession, socket, data, flags, callbac
   } else if(data.is.error){
     handleError(data, syncObject, syncSession, callback);
   } else {
-    syncObject.state = syncObject.SYNC_ERROR;
-    syncObject.emit('error', new Error('Cannot handle message'));
+    syncObject.onError(new Error('Cannot handle message'));
   }
 }
 

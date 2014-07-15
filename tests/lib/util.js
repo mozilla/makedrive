@@ -93,6 +93,22 @@ function upload(username, path, contents, callback) {
   });
 }
 
+// Ensure that the file is downloadable via /p/ route
+// and has the proper contents
+function ensureFile(path, contents, jar, callback) {
+  request.get({
+    url: serverURL + '/p' + path,
+    jar: jar
+  }, function(err, res, body) {
+    expect(err).not.to.exist;
+    expect(res.statusCode).to.equal(200);
+    expect(body).to.equal(contents);
+
+    callback();
+  });
+}
+
+
 function resolveToJSON(string) {
   try {
     string = JSON.parse(string);
@@ -139,21 +155,12 @@ function authenticate(options, callback){
     callback = options;
     options = {};
   }
-
   options.jar = options.jar || jar();
   options.username = options.username || uniqueUsername();
   options.logoutUser = function (cb) {
-    request({
-      url: serverURL + '/logout',
-      jar: options.jar,
-      json: true,
-      method: "POST"
-    }, function(err, res, body){
-      expect(err, "[Automatic logout of user failed: " + err + "]").to.not.exist;
-      expect(res.statusCode, "[Automatic logout of user failed]").to.equal(200);
-      expect(body, "[Automatic logout of user failed").to.deep.equal({ status: "okay" });
-      cb();
-    });
+    // Reset the jar to kill existing auth cookie
+    options.jar = jar();
+    cb();
   };
 
   request.post({
@@ -476,6 +483,7 @@ module.exports = {
   authenticatedConnection: authenticateAndConnect,
   openSocket: openSocket,
   upload: upload,
+  ensureFile: ensureFile,
   cleanupSockets: cleanupSockets,
   resolveToJSON: resolveToJSON,
   resolveFromJSON: resolveFromJSON,

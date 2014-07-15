@@ -58,6 +58,7 @@
   "main": "./server/index.js",
   "browser": {
     "filer": "./node_modules/filer/dist/filer.js",
-    "request": "browser-request"
+    "request": "browser-request",
+    "ws": "./client/src/client-ws.js"
   }
 }

@@ -6,6 +6,18 @@
  * var fs = MakeDrive.fs();
  *
  * Multiple calls to MakeDrive.fs() will return the same instance.
+ *
+ * A number of configuration options can be passed to the fs() function.
+ * These include:
+ *
+ * - manual=true - by default the filesystem syncs automatically in
+ * the background. This disables it.
+ * - memory=true - by default we use a persistent store (indexeddb
+ * or websql). This overrides and uses a temporary ram disk.
+ * - provider=<Object> - a Filer data provider to use instead of the
+ * default provider normally used. The provider given should already
+ * be instantiated (i.e., don't pass a constructor function).
+ *
  * Various bits of Filer are available on MakeDrive, including:
  *
  * - MakeDrive.Buffer
@@ -64,12 +76,21 @@ module.exports = MakeDrive;
 // is shared at the provider level).
 var _fs;
 
-function createFS() {
-  _fs = new Filer.FileSystem({
-    name: 'makedrive',
-    provider: new Filer.FileSystem.providers.Fallback('makedrive')
-  });
+function createFS(options) {
+  options.manual = options.manual === true;
+  options.memory = options.memory === true;
 
+  // Use a supplied provider, in memory RAM disk, or Fallback provider (default).
+  var provider;
+  if(options.provider) {
+    provider = options.provider;
+  } else if(options.memory) {
+    provider = new Filer.FileSystem.providers.Memory('makedrive');
+  } else {
+    provider = new Filer.FileSystem.providers.Fallback('makedrive');
+  }
+
+  _fs = new Filer.FileSystem({provider: provider});
   var sync = _fs.sync = new EventEmitter();
 
   // Auto-sync handles
@@ -87,6 +108,16 @@ function createFS() {
   // Intitially we are not connected
   sync.state = sync.SYNC_DISCONNECTED;
 
+  sync.onError = function(err) {
+    sync.state = sync.SYNC_ERROR;
+    sync.emit('error', err);
+  };
+
+  sync.onDisconnected = function() {
+    sync.state = sync.SYNC_DISCONNECTED;
+    sync.emit('disconnected');
+  };
+
   // Request that a sync begin for the specified path (optional).
   sync.request = function(path) {
     // If we're not connected (or are already syncing), ignore this request
@@ -100,24 +131,14 @@ function createFS() {
     _fs.exists(path, function(exists) {
       path = exists ? path : '/';
 
-      // Try to sync path
-      sync.state = sync.SYNC_SYNCING;
-      sync.emit('syncing');
-
       MakeDriveSync.sync(path, function(err) {
-        // If nothing else has touched the state since we started,
-        // downgrade connection state back to just `connected`
-        if(sync.state === sync.SYNC_SYNCING) {
-          sync.state = sync.SYNC_CONNECTED;
-        }
-
         if(err) {
-          sync.emit('error', err);
+          sync.onError(err);
         } else {
           needsSync = false;
           // TODO: can we send the paths/files that were sync'ed too?
           //       https://github.com/mozilla/makedrive/issues/20
-          sync.emit('completed');
+          sync.onCompleted();
         }
       });
     });
@@ -136,17 +157,26 @@ function createFS() {
     // Upgrade connection state to `connecting`
     sync.state = sync.SYNC_CONNECTING;
 
-    // Try to connect to provided server URL
-    MakeDriveSync.init(url, token, sync, _fs, function(err) {
-      if(err) {
-        sync.state = sync.SYNC_ERROR;
-        sync.emit('error', err);
-        return;
-      }
+    function downstreamSyncCompleted() {
+      // Re-wire message handler functions for regular syncing
+      // now that initial downstream sync is completed.
+      sync.onSyncing = function() {
+        sync.state = sync.SYNC_SYNCING;
+        sync.emit('syncing');
+      };
+      sync.onCompleted = function() {
+        sync.state = sync.SYNC_CONNECTED;
+        sync.emit('completed');
+      };
 
       // Upgrade connection state to 'connected'
       sync.state = sync.SYNC_CONNECTED;
       sync.emit('connected');
+
+      // If we're in manual mode, bail before starting auto-sync
+      if(options.manual) {
+        return;
+      }
 
       // Start auto-sync'ing fs based on changes every 1 min.
       // TODO: provide more options to control what/when we auto-sync
@@ -165,6 +195,23 @@ function createFS() {
           needsSync = false;
         }
       }, 60 * 1000);
+    }
+
+    // Try to connect to provided server URL
+    MakeDriveSync.init(url, token, sync, _fs, function(err) {
+      if(err) {
+        sync.onError(err);
+        return;
+      }
+
+      // Wait on initial downstream sync events to complete
+      sync.onSyncing = function() {
+        // do nothing, wait for onCompleted()
+      };
+      sync.onCompleted = function() {
+        // Downstream sync is done, finish connect() setup
+        downstreamSyncCompleted();
+      };
     });
   };
 
@@ -188,15 +235,14 @@ function createFS() {
       syncInterval = null;
     }
 
-    sync.state = sync.SYNC_DISCONNECTED;
-    sync.emit('disconnected');
+    sync.onDisconnected();
   };
 }
 
 // Manage single instance of a Filer filesystem with auto-sync'ing
-MakeDrive.fs = function() {
+MakeDrive.fs = function(options) {
   if(!_fs) {
-    createFS();
+    createFS(options || {});
   }
 
   return _fs;
