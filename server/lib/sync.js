@@ -6,7 +6,10 @@ var filesystem = require( "./filesystem" ),
     SyncMessage = require('../../lib/syncmessage'),
     rsync = require('../../lib/rsync'),
     diffHelper = require('../../lib/diff'),
-    rsyncOptions = require('../../lib/constants').rsyncDefaults;
+    rsyncOptions = require('../../lib/constants').rsyncDefaults,
+    env = require('../../server/lib/environment');
+
+var CLIENT_TIMEOUT_MS = env.get('CLIENT_TIMEOUT_MS') || 5000;
 
 /**
  * Static public variables
@@ -30,6 +33,7 @@ function handleRequest(data) {
   var response;
 
   function sendSrcList() {
+    var that = this;
     rsync.sourceList(that.fs, '/', rsyncOptions, function(err, srcList) {
       if(err) {
         response = SyncMessage.error.srclist;
@@ -38,6 +42,7 @@ function handleRequest(data) {
         response = SyncMessage.request.chksum;
         response.content = {srcList: srcList, path: '/'};
       }
+      that.updateLastContact();
       that.socket.send(response.stringify());
     });
   }
@@ -49,6 +54,7 @@ function handleRequest(data) {
 
   function handleDiffRequest() {
     if(!data.content.checksums) {
+      that.updateLastContact();
       return that.socket.send(SyncMessage.error.content.stringify());
     }
 
@@ -65,6 +71,7 @@ function handleRequest(data) {
           path: that.path
         };
       }
+      that.updateLastContact();
       that.socket.send(response.stringify());
     });
   }
@@ -74,6 +81,7 @@ function handleRequest(data) {
       response = SyncMessage.response.sync;
       that.state = Sync.CHKSUM;
       that.init();
+      that.updateLastContact();
     } else {
       response = SyncMessage.error.locked;
       response.content = { error: "Current sync in progress! Try again later!" };
@@ -83,6 +91,7 @@ function handleRequest(data) {
 
   function handleChecksumRequest() {
     if(!data.content.srcList || !data.content.path) {
+      that.updateLastContact();
       return that.socket.send(SyncMessage.error.content.stringify());
     }
 
@@ -100,9 +109,13 @@ function handleRequest(data) {
         response.content = {checksums: checksums, path: that.path};
         that.state = Sync.PATCH;
       }
+      that.updateLastContact();
       that.socket.send(response.stringify());
     });
   }
+
+  // Check if a sync is in progress, removing the lock if necessary
+  that.clearUpstreamSync();
 
   if(data.is.reset && that.state === Sync.OUT_OF_DATE) {
     sendSrcList();
@@ -115,6 +128,7 @@ function handleRequest(data) {
   } else if(data.is.chksum && that.state === Sync.CHKSUM) {
     handleChecksumRequest();
   } else {
+    that.updateLastContact();
     that.socket.send(Sync.error.request.stringify());
   }
 }
@@ -207,7 +221,7 @@ Sync.prototype.init = function() {
   }
 };
 
-// Terminate a sync for a client
+// Terminate a completed sync for a client
 Sync.prototype.end = function() {
   if(connectedClients[this.username].currentSyncSession) {
     var that = this;
@@ -220,9 +234,20 @@ Sync.prototype.end = function() {
         response = SyncMessage.request.chksum;
         response.content = {srcList: srcList, path: that.path};
       }
+      that.lastContact = null;
       broadcastUpdate(that.username, response);
       delete connectedClients[that.username].currentSyncSession;
     });
+  }
+};
+
+// Terminate an incomplete sync for a client
+Sync.prototype.kill = function() {
+  var currentSync = connectedClients[this.username].currentSyncSession;
+  if(currentSync === this.sessionId) {
+    this.lastContact = null;
+    this.state = Sync.LISTENING;
+    delete connectedClients[this.username].currentSyncSession;
   }
 };
 
@@ -264,6 +289,28 @@ Sync.prototype.onClose = function() {
       filesystem.clearCache( username );
     }
   };
+};
+
+// Check in with the client to validate syncs
+Sync.prototype.clearUpstreamSync = function() {
+  var user = connectedClients[this.username];
+  var syncingClientId = user && user.currentSyncSession;
+
+  if (user && syncingClientId) {
+    var syncingClient = user[syncingClientId].sync;
+
+    var now = Date.now();
+    if (now - syncingClient.lastContact > CLIENT_TIMEOUT_MS) {
+      syncingClient.kill();
+    }
+  }
+};
+
+// Used to keep track of the last time a message was received from
+// the client during an upstream sync. By comparing Date.now() to
+// lastContact, we can determine if a sync should be unlocked.
+Sync.prototype.updateLastContact = function() {
+  this.lastContact = Date.now();
 };
 
 /**
