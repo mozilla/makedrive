@@ -75,6 +75,7 @@ function createFS() {
   // Auto-sync handles
   var watcher;
   var syncInterval;
+  var needsSync = false;
 
   // State of the sync connection
   sync.SYNC_DISCONNECTED = 0;
@@ -113,6 +114,7 @@ function createFS() {
         if(err) {
           sync.emit('error', err);
         } else {
+          needsSync = false;
           // TODO: can we send the paths/files that were sync'ed too?
           //       https://github.com/mozilla/makedrive/issues/20
           sync.emit('completed');
@@ -149,10 +151,12 @@ function createFS() {
       // Start auto-sync'ing fs based on changes every 1 min.
       // TODO: provide more options to control what/when we auto-sync
       //       https://github.com/mozilla/makedrive/issues/20
-      var needsSync = false;
-      watcher = _fs.watch('/', function(event, filename) {
+      watcher = _fs.watch('/', {recursive: true}, function(event, filename) {
         // Mark the fs as dirty, and we'll sync on next interval
         needsSync = true;
+
+        // Also try to start a sync now, which might fail if we're already syncing.
+        sync.request('/');
       });
 
       syncInterval = setInterval(function() {
