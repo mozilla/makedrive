@@ -77,12 +77,16 @@ function init(url, token, sync, fs, callback) {
   }
 
   function handleClose(code, data) {
-    try {
-      data = JSON.parse(data);
-    } catch(e) {
-      sync.emit('error', e);
-      sync.state = sync.SYNC_DISCONNECTED;
-      return sync.emit('disconnected');
+    if(data) {
+      try {
+        data = JSON.parse(data);
+      } catch(e) {
+        sync.emit('error', e);
+        sync.state = sync.SYNC_DISCONNECTED;
+        return sync.emit('disconnected');
+      }
+    } else {
+      data = 'Websocket unexpectedly closed.';
     }
 
     socket.close();

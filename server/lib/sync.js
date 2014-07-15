@@ -76,6 +76,7 @@ function handleRequest(data) {
       that.init();
     } else {
       response = SyncMessage.error.locked;
+      response.content = { error: "Current sync in progress! Try again later!" };
     }
     that.socket.send(response.stringify());
   }

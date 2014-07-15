@@ -61,8 +61,8 @@ function handleRequest(data, fs, syncObject, syncSession, socket, callback) {
     // UPSTREAM - DIFFS
     handleDiffRequest();
   } else {
-    syncObject.state = sync.SYNC_ERROR;
-    syncObject.emit('error', new Error(data.content));
+    syncObject.state = syncObject.SYNC_ERROR;
+    syncObject.emit('error', data.content);
   }
 }
 

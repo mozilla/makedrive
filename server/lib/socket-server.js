@@ -38,7 +38,7 @@ module.exports = function( server ) {
       var sync = Sync.create( authData.username, authData.sessionId );
       sync.setSocket( ws );
 
-      ws.on('close', sync.onClose);
+      ws.on('close', sync.onClose());
 
       ws.on('message', function(data, flags) {
         if(!flags || (flags && !flags.binary)) {
