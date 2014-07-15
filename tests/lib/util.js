@@ -1,6 +1,5 @@
 var request = require('request');
 var expect = require('chai').expect;
-var app = require('../../server/index.js');
 var ws = require('ws');
 var filesystem = require('../../server/lib/filesystem.js');
 var SyncMessage = require('../../lib/syncmessage');
@@ -11,6 +10,11 @@ var Buffer = Filer.Buffer;
 var Path = Filer.Path;
 var uuid = require( "node-uuid" );
 var async = require('async');
+
+var env = require('../../server/lib/environment');
+env.set('CLIENT_TIMEOUT_MS', 1000);
+
+var app = require('../../server/index.js');
 
 var serverURL = 'http://0.0.0.0:9090',
     socketURL = serverURL.replace( 'http', 'ws' );
@@ -755,14 +759,28 @@ function ensureRemoteFilesystem(layout, jar, callback) {
   });
 }
 
+function completeDownstreamSync(username, token, cb) {
+  prepareDownstreamSync("patch", username, token, function(data, fs, socketPackage) {
+    cb(data, fs, socketPackage);
+  });
+}
+
 module.exports = {
+  // Misc helpers
   app: app,
   serverURL: serverURL,
   socketURL: socketURL,
   username: uniqueUsername,
   createJar: jar,
+  resolveToJSON: resolveToJSON,
+  resolveFromJSON: resolveFromJSON,
+
+  // Connection helpers
   authenticate: authenticate,
   authenticatedConnection: authenticateAndConnect,
+  getWebsocketToken: getWebsocketToken,
+
+  // Socket helpers
   openSocket: openSocket,
   upload: upload,
   ensureFile: ensureFile,
@@ -775,10 +793,12 @@ module.exports = {
   ensureFilesystem: ensureFilesystem,
   ensureRemoteFilesystem: ensureRemoteFilesystem,
   cleanupSockets: cleanupSockets,
-  resolveToJSON: resolveToJSON,
-  resolveFromJSON: resolveFromJSON,
+
+  // Sync helpers
+  upload: upload,
   prepareDownstreamSync: prepareDownstreamSync,
   downstreamSyncSteps: downstreamSyncSteps,
-  getWebsocketToken: getWebsocketToken,
-  sendSyncMessage: sendSyncMessage
+  upstreamSyncSteps: upstreamSyncSteps,
+  sendSyncMessage: sendSyncMessage,
+  completeDownstreamSync: completeDownstreamSync
 };
