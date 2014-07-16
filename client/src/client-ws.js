@@ -7,15 +7,15 @@
  * This module gets used by browserify, see package.json
  */
 
-global.WebSocket.on = global.WebSocket.on || function(event, listener) {
+global.WebSocket.prototype.on = global.WebSocket.prototype.on || function(event, listener) {
   this.addEventListener(event, listener);
 };
 
-global.WebSocket.removeListener = global.WebSocket.removeListener || function(event, listener) {
+global.WebSocket.prototype.removeListener = global.WebSocket.prototype.removeListener || function(event, listener) {
   this.removeEventListener(event, listener);
 };
 
-global.WebSocket.once = global.WebSocket.once || function(event, listener) {
+global.WebSocket.prototype.once = global.WebSocket.prototype.once || function(event, listener) {
   var ws = this;
   this.addEventListener(event, function onEvent() {
     ws.removeEventListener(event, onEvent);
