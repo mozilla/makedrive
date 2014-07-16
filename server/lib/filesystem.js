@@ -16,17 +16,20 @@ if ( providerType === "filer-s3" ) {
 }
 
 module.exports = {
+  clearCache: function( name ) {
+    delete cachedFS[name];
+  },
   create: function( options ) {
     Object.keys( defaults ).forEach(function( defaultOption ) {
       options[ defaultOption ] = options[ defaultOption ] || defaults[ defaultOption ];
     });
 
     // Reuse filesystems whenever possible
-    if (!cachedFS[options.keyPrefix]) {
-      cachedFS[options.keyPrefix] = new Filer.FileSystem({
+    if (!cachedFS[options.name]) {
+      cachedFS[options.name] = new Filer.FileSystem({
         provider: new Provider(options)
       });
     }
-    return cachedFS[options.keyPrefix];
+    return cachedFS[options.name];
   }
 };

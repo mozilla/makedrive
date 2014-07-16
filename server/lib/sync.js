@@ -207,21 +207,6 @@ Sync.prototype.init = function() {
   }
 };
 
-Sync.prototype.onClose = function( ) {
-  var username = this.username;
-  var id = this.syncId;
-
-  return function() {
-    emitter.removeListener( "updateToLatestSync", connectedClients[ username ][ id ].onOutOfDate );
-    delete connectedClients[ username ][ id ];
-
-    // Also remove the username from the list if there are no more connected clients.
-    if( Object.keys( connectedClients[ username ] ).count === 0 ) {
-      delete connectedClients[ username ];
-    }
-  };
-};
-
 // Terminate a sync for a client
 Sync.prototype.end = function() {
   if(connectedClients[this.username].currentSyncSession) {
@@ -269,14 +254,14 @@ Sync.prototype.setSocket = function(ws) {
 // Close event for a sync
 Sync.prototype.onClose = function() {
   var username = this.username;
-  var id = this.syncId;
-
+  var id = this.sessionId;
   return function() {
     delete connectedClients[username][id];
 
     // Also remove the username from the list if there are no more connected clients.
-    if(Object.keys(connectedClients[username]).count === 0) {
+    if(Object.keys(connectedClients[username]).length === 0) {
       delete connectedClients[username];
+      filesystem.clearCache( username );
     }
   };
 };

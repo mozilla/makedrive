@@ -204,6 +204,11 @@ function createFS(options) {
         return;
       }
 
+      if("onbeforeunload" in global) {
+        global.addEventListener('beforeunload', function() {
+          MakeDriveSync.close();
+        });
+      }
       // Wait on initial downstream sync events to complete
       sync.onSyncing = function() {
         // do nothing, wait for onCompleted()
@@ -217,6 +222,9 @@ function createFS(options) {
 
   // Disconnect from the server
   sync.disconnect = function() {
+    // Close socket connection first
+    MakeDriveSync.close();
+
     // Bail if we're not already connected
     if(sync.state === sync.SYNC_DISCONNECTED ||
        sync.state === sync.ERROR) {

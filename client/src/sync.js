@@ -109,7 +109,14 @@ function sync(path, callback) {
   socket.send(SyncMessage.request.sync.stringify());
 }
 
+function close() {
+  if(socket && socket.readyState === 1) {
+    socket.close();
+  }
+}
+
 module.exports = {
   init: init,
-  sync: sync
+  sync: sync,
+  close: close
 };
