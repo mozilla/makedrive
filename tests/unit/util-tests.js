@@ -3,7 +3,8 @@ var util = require('../lib/util.js');
 var request = require('request');
 var ws = require('ws');
 var SyncMessage = require('../../lib/syncmessage');
-var FileSystem = require('../../lib/filer.js').FileSystem;
+var Filer = require('../../lib/filer.js');
+var FileSystem = Filer.FileSystem;
 
 describe('Test util.js', function(){
   describe('[Connection Helpers]', function() {
@@ -123,6 +124,33 @@ describe('Test util.js', function(){
             });
           });
         });
+      });
+    });
+  });
+
+  describe('[Filesystem Helpers]', function() {
+    var provider;
+
+    beforeEach(function() {
+      provider = new FileSystem.providers.Memory(util.username());
+    });
+    afterEach(function() {
+      provider = null;
+    });
+
+    it('should createFilesystemLayout and ensureFilesystem afterward', function(done) {
+      var fs = new FileSystem({provider: provider});
+      var layout = {
+        "/file1": "contents file1",
+        "/dir1/file1": new Buffer([1,2,3]),
+        "/dir1/file2": "contents file2",
+        "/dir2": null
+      };
+
+      util.createFilesystemLayout(fs, layout, function(err) {
+        expect(err).not.to.exist;
+
+        util.ensureFilesystem(fs, layout, done);
       });
     });
   });

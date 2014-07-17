@@ -6,8 +6,11 @@ var filesystem = require('../../server/lib/filesystem.js');
 var SyncMessage = require('../../lib/syncmessage');
 var rsync = require('../../lib/rsync');
 var rsyncOptions = require('../../lib/constants').rsyncDefaults;
-var Buffer = require('../../lib/filer.js').Buffer;
+var Filer = require('../../lib/filer.js');
+var Buffer = Filer.Buffer;
+var Path = Filer.Path;
 var uuid = require( "node-uuid" );
+var async = require('async');
 
 var serverURL = 'http://0.0.0.0:9090',
     socketURL = serverURL.replace( 'http', 'ws' );
@@ -110,21 +113,11 @@ function ensureFile(path, contents, jar, callback) {
 
 
 function resolveToJSON(string) {
-  try {
-    string = JSON.parse(string);
-  } catch(e) {
-    expect("Parsing of a SyncMessage").to.be.fine;
-  }
-  return string;
+  return SyncMessage.parse(JSON.parse(string));
 }
 
 function resolveFromJSON(obj) {
-  try {
-    obj = JSON.stringify(obj);
-  } catch(e) {
-    expect("Parsing of a SyncMessage").to.be.fine;
-  }
-  return obj;
+  return obj.stringify();
 }
 
 /**
@@ -473,6 +466,184 @@ function prepareDownstreamSync(finalStep, username, token, cb){
   });
 }
 
+/**
+ * Takes an fs instance and creates all the files and dirs
+ * in layout.  A layout is a flat representation of files/dirs
+ * and looks like this:
+ *
+ * {
+ *   "/path/to/file": "contents of file",
+ *   "/path/to/dir": null,
+ *   "/path/to/dir/file": <Buffer>
+ * }
+ *
+ * Files are paths with contents (non-null), and empty dirs are
+ * marked with null.
+ */
+function createFilesystemLayout(fs, layout, callback) {
+  var paths = Object.keys(layout);
+  var sh = fs.Shell();
+
+  function createPath(path, callback) {
+    var contents = layout[path];
+    // Path is either a file (string/Buffer) or empty dir (null)
+    if(contents) {
+      sh.mkdirp(Path.dirname(path), function(err) {
+        if(err) {
+          return callback(err);
+        }
+
+        fs.writeFile(path, contents, callback);
+      });
+    } else {
+      sh.mkdirp(path, callback);
+    }
+  }
+
+  async.eachSeries(paths, createPath, callback);
+}
+
+/**
+ * Deletes all paths specified in paths array, or everything
+ * if no paths are given.
+ */
+function deleteFilesystemLayout(fs, paths, callback) {
+  if(!paths) {
+    fs.readdir('/', function(err, entries) {
+      if(err) {
+        return callback(err);
+      }
+
+      entries = entries.map(function(path) {
+        return Path.join('/', path);
+      });
+
+      deleteFilesystemLayout(fs, entries, callback);
+    });
+  } else {
+    var sh = fs.Shell();
+    function rm(path, callback) {
+      sh.rm(path, {recursive: true}, callback);
+    }
+    async.eachSeries(paths, rm, callback);
+  }
+}
+
+/**
+ * Makes sure that the layout given matches what's actually
+ * in the current fs.  Use ensureFilesystemContents if you
+ * want to ensure file/dir contents vs. paths.
+ */
+function ensureFilesystemLayout(fs, layout, callback) {
+  // Start by creating the layout, then compare a deep ls()
+  var fs2 = new Filer.FileSystem({provider: new Filer.FileSystem.providers.Memory(uniqueUsername())});
+  createFilesystemLayout(fs2, layout, function(err) {
+    expect(err).not.to.exist;
+    if(err) {
+      return callback(err);
+    }
+
+    var sh = fs.Shell();
+    sh.ls('/', {recursive: true}, function(err, fsListing) {
+      expect(err).not.to.exist;
+      if(err) {
+        return callback(err);
+      }
+
+      var sh2 = fs2.Shell();
+      sh2.ls('/', {recursive: true}, function(err, fs2Listing) {
+        expect(err).not.to.exist;
+        if(err) {
+          return callback(err);
+        }
+
+        function stripModified(listing) {
+          // Strip .modified times from ever element in the array, or its .contents
+          return listing.map(function(item) {
+            delete item.modified;
+            if(item.contents) {
+              item.contents = stripModified(item.contents);
+            }
+            return item;
+          });
+        }
+
+        // Remove modified
+        fsListing = stripModified(fsListing);
+        fs2Listing = stripModified(fs2Listing);
+
+        expect(fsListing).to.deep.equal(fs2Listing);
+        callback();
+      });
+    });
+  });
+}
+
+/**
+ * Ensure that the files and dirs at filename match the layout's contents.
+ * Use ensureFilesystemLayout if you want to ensure file/dir paths vs. contents.
+ */
+function ensureFilesystemContents(fs, layout, callback) {
+  function ensureFileContents(filename, expectedContents, callback) {
+    var encoding = Buffer.isBuffer(expectedContents) ? null : 'utf8';
+    fs.readFile(filename, encoding, function(err, actualContents) {
+      expect(err).not.to.exist;
+      if(err) {
+        return callback(err);
+      }
+
+      expect(actualContents).to.deep.equal(expectedContents);
+      callback();
+    });
+  }
+
+  function ensureEmptyDir(dirname, callback) {
+    fs.stat(dirname, function(err, stats) {
+      expect(err).not.to.exist;
+      if(err) {
+        return callback(err);
+      }
+
+      expect(stats.isDirectory()).to.be.true;
+
+      // Also make sure it's empty
+      fs.readdir(dirname, function(err, entries) {
+        expect(err).not.to.exist;
+        if(err) {
+          return callback(err);
+        }
+
+        expect(entries.length).to.equal(0);
+        callback();
+      });
+    });
+  }
+
+  function processPath(path, callback) {
+    var contents = layout[path];
+    if(contents) {
+      ensureFileContents(path, contents, callback);
+    } else {
+      ensureEmptyDir(path, callback);
+    }
+  }
+
+  async.eachSeries(Object.keys(layout), processPath, callback);
+}
+
+/**
+ * Runs ensureFilesystemLayout and ensureFilesystemContents on fs
+ * for given layout, making sure all paths and files/dirs match expected.
+ */
+function ensureFilesystem(fs, layout, callback) {
+  ensureFilesystemLayout(fs, layout, function(err) {
+    if(err) {
+      return callback(err);
+    }
+    ensureFilesystemContents(fs, layout, callback);
+  });
+}
+
 module.exports = {
   app: app,
   serverURL: serverURL,
@@ -484,6 +655,11 @@ module.exports = {
   openSocket: openSocket,
   upload: upload,
   ensureFile: ensureFile,
+  createFilesystemLayout: createFilesystemLayout,
+  deleteFilesystemLayout: deleteFilesystemLayout,
+  ensureFilesystemContents: ensureFilesystemContents,
+  ensureFilesystemLayout: ensureFilesystemLayout,
+  ensureFilesystem: ensureFilesystem,
   cleanupSockets: cleanupSockets,
   resolveToJSON: resolveToJSON,
   resolveFromJSON: resolveFromJSON,

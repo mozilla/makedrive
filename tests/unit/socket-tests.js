@@ -2,6 +2,7 @@ var expect = require('chai').expect;
 var util = require('../lib/util.js');
 var SyncMessage = require('../../lib/syncmessage');
 var Sync = require('../../server/lib/sync');
+var deserialize = require('../../lib/diff').deserialize;
 
 describe('[Downstream Syncing with Websockets]', function(){
   describe('The server', function(){
@@ -63,7 +64,7 @@ describe('[Downstream Syncing with Websockets]', function(){
             util.cleanupSockets(result.done, socketPackage);
           },
           onOpen: function() {
-            socketPackage.socket.send(util.resolveFromJSON(socketData));
+            socketPackage.socket.send(JSON.stringify(socketData));
           }
         });
       });
@@ -162,7 +163,7 @@ describe('[Downstream Syncing with Websockets]', function(){
     });
   });
   describe('PATCH', function() {
-    it('should make the server respond with a RESPONSE SYNC SyncMessage after ending a downstream sync, and initiating an upstream sync', function(done) {
+    it.skip('should make the server respond with a RESPONSE SYNC SyncMessage after ending a downstream sync, and initiating an upstream sync', function(done) {
       util.authenticatedConnection({ done: done }, function( err, result ) {
         expect(err).not.to.exist;
 

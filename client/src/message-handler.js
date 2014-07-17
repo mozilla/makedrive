@@ -6,163 +6,164 @@ var deserializeDiff = require('../../lib/diff').deserialize;
 var states = require('./sync-states');
 var steps = require('./sync-steps');
 
-function onError(syncSession, syncObject, err) {
-  syncSession.step = steps.FAILED;
-  syncObject.onError(err);
+function onError(syncManager, err) {
+  syncManager.session.step = steps.FAILED;
+  syncManager.sync.onError(err);
 }
 
-function callbackError(syncSession, err, callback) {
-  syncSession.state = states.ERROR;
-  callback(err);
-}
-
-function handleRequest(data, fs, syncObject, syncSession, socket, callback) {
+function handleRequest(syncManager, data) {
+  var fs = syncManager.fs;
+  var sync = syncManager.sync;
+  var session = syncManager.session;
+  var socket = syncManager.socket;
 
   function handleChecksumRequest() {
-    syncObject.state = syncObject.SYNC_SYNCING;
     var srcList = data.content.srcList;
-    syncSession.path = data.content.path;
+    session.path = data.content.path;
+    sync.onSyncing();
 
-    rsync.checksums(fs, syncSession.path, srcList, rsyncOptions, function(err, checksums) {
+    rsync.checksums(fs, session.path, srcList, rsyncOptions, function(err, checksums) {
       if (err) {
-        onError(syncSession, syncObject, err);
-      } else {
-        syncObject.onSyncing();
-        syncSession.step = steps.PATCH;
-
-        var message = SyncMessage.request.diffs;
-        message.content = {checksums: checksums};
-
-        socket.send(message.stringify());
+        return onError(syncManager, err);
       }
+
+      session.step = steps.PATCH;
+
+      var message = SyncMessage.request.diffs;
+      message.content = {checksums: checksums};
+      socket.send(message.stringify());
     });
   }
 
   function handleDiffRequest() {
-    rsync.diff(fs, syncSession.path, data.content.checksums, rsyncOptions, function(err, diffs) {
+    rsync.diff(fs, session.path, data.content.checksums, rsyncOptions, function(err, diffs) {
       if(err){
-        callbackError(syncSession, err, callback);
-      } else {
-        syncSession.step = steps.PATCH;
-
-        var message = SyncMessage.response.diffs;
-        message.content = {diffs: serializeDiff(diffs)};
-        socket.send(message.stringify());
+        return onError(syncManager, err);
       }
+
+      session.step = steps.PATCH;
+
+      var message = SyncMessage.response.diffs;
+      message.content = {diffs: serializeDiff(diffs)};
+      socket.send(message.stringify());
     });
   }
 
-  if (data.is.chksum && syncSession.is.ready &&
-      (syncSession.is.synced || syncSession.is.failed)) {
+
+  if(data.is.chksum && session.is.ready &&
+     (session.is.synced || session.is.failed)) {
     // DOWNSTREAM - CHKSUM
     handleChecksumRequest();
-  } else if(data.is.diffs && syncSession.is.syncing && syncSession.is.diffs) {
+  } else if(data.is.diffs && session.is.syncing && session.is.diffs) {
     // UPSTREAM - DIFFS
     handleDiffRequest();
   } else {
-    syncObject.onError(new Error(data.conent));
+    onError(syncManager, new Error(data.content));
   }
 }
 
-function handleResponse(data, fs, syncObject, syncSession, socket, callback) {
+function handleResponse(syncManager, data) {
+  var fs = syncManager.fs;
+  var sync = syncManager.sync;
+  var session = syncManager.session;
+  var socket = syncManager.socket;
 
   function handleSrcListResponse() {
-    syncSession.state = states.SYNCING;
-    syncSession.step = steps.INIT;
-    syncObject.onSyncing();
+    session.state = states.SYNCING;
+    session.step = steps.INIT;
+    sync.onSyncing();
 
-    rsync.sourceList(fs, syncSession.path, rsyncOptions, function(err, srcList) {
+    rsync.sourceList(fs, session.path, rsyncOptions, function(err, srcList) {
       if(err){
-        callbackError(syncSession, err, callback);
-      } else {
-        syncSession.step = steps.DIFFS;
-
-        var message = SyncMessage.request.chksum;
-        message.content = {srcList: srcList, path: syncSession.path};
-        socket.send(message.stringify());
+        return onError(syncManager, err);
       }
+
+      session.step = steps.DIFFS;
+
+      var message = SyncMessage.request.chksum;
+      message.content = {srcList: srcList, path: session.path};
+      socket.send(message.stringify());
     });
   }
 
   function handlePatchAckResponse() {
-    syncSession.state = states.READY;
-    syncSession.step = steps.SYNCED;
-    syncObject.state = syncObject.SYNC_CONNECTED;
-    callback();
+    session.state = states.READY;
+    session.step = steps.SYNCED;
+    sync.onCompleted();
   }
 
   function handlePatchResponse() {
     var diffs = data.content.diffs;
-    syncSession.path = data.content.path;
-
     diffs = deserializeDiff(diffs);
-    rsync.patch(fs, syncSession.path, diffs, rsyncOptions, function(err) {
+    session.path = data.content.path;
+
+    rsync.patch(fs, session.path, diffs, rsyncOptions, function(err) {
       if (err) {
-        onError(syncSession, syncObject, err);
-      } else {
-        syncSession.step = steps.SYNCED;
-        syncObject.state = syncObject.SYNC_CONNECTED;
-
-        var message = SyncMessage.response.patch;
-        socket.send(message.stringify());
-
-        syncObject.onCompleted();
+        return onError(syncManager, err);
       }
+
+      session.step = steps.SYNCED;
+
+      var message = SyncMessage.response.patch;
+      socket.send(message.stringify());
+      sync.onCompleted();
     });
   }
 
   if(data.is.sync) {
     // UPSTREAM - INIT
     handleSrcListResponse();
-  } else if(data.is.patch && syncSession.is.syncing && syncSession.is.patch) {
+  } else if(data.is.patch && session.is.syncing && session.is.patch) {
     // UPSTREAM - PATCH
     handlePatchAckResponse();
-  } else if(data.is.diffs && syncSession.is.ready && syncSession.is.patch) {
+  } else if(data.is.diffs && session.is.ready && session.is.patch) {
     // DOWNSTREAM - PATCH
     handlePatchResponse();
   } else {
-    syncObject.onError(new Error(data.content));
+    onError(syncManager, new Error(data.content));
   }
 }
 
-function handleError(data, syncObject, syncSession, callback) {
+function handleError(syncManager, data) {
+  var sync = syncManager.sync;
+  var session = syncManager.session;
+
   // DOWNSTREAM - ERROR
-  if(((data.is.srclist && syncSession.is.synced) ||
-      (data.is.diffs && syncSession.is.synced)) &&
-     syncSession.is.ready) {
+  if(((data.is.srclist && session.is.synced) ||
+      (data.is.diffs && session.is.synced)) &&
+     session.is.ready) {
     // TODO: handle what to do to reinitiate downstream sync
-    onError(syncSession, syncObject, new Error('Could not sync filesystem from server'));
-  } else if(data.is.locked && syncSession.is.ready && syncSession.is.synced) {
+    // https://github.com/mozilla/makedrive/issues/107
+    onError(syncManager, new Error('Could not sync filesystem from server'));
+  } else if(data.is.locked && session.is.ready && session.is.synced) {
     // UPSTREAM - LOCK
-    callbackError(syncSession, new Error('Current sync in progress! Try again later!'), callback);
-  } else if(((data.is.chksum && syncSession.is.diffs) ||
-             (data.is.patch && syncSession.is.patch)) &&
-            syncSession.is.syncing) {
+    onError(syncManager, new Error('Current sync in progress! Try again later!'));
+  } else if(((data.is.chksum && session.is.diffs) ||
+             (data.is.patch && session.is.patch)) &&
+            session.is.syncing) {
     // UPSTREAM - ERROR
-    syncSession.step = steps.FAILED;
-    callbackError(syncSession, new Error('Fatal error: Failed to sync to server'), callback);
+    onError(syncManager, new Error('Fatal error: Failed to sync to server'));
   } else {
-    syncObject.onError(new Error(data.content));
+    onError(syncManager, new Error(data.content));
   }
 }
 
-function handleMessage(fs, syncObject, syncSession, socket, data, flags, callback) {
-  data = data.data;
+function handleMessage(syncManager, data) {
   try {
     data = JSON.parse(data);
     data = SyncMessage.parse(data);
   } catch(e) {
-    syncObject.onError(e);
+    return onError(syncManager, e);
   }
 
   if (data.is.request) {
-    handleRequest(data, fs, syncObject, syncSession, socket, callback);
+    handleRequest(syncManager, data);
   } else if(data.is.response){
-    handleResponse(data, fs, syncObject, syncSession, socket, callback);
+    handleResponse(syncManager, data);
   } else if(data.is.error){
-    handleError(data, syncObject, syncSession, callback);
+    handleError(syncManager, data);
   } else {
-    syncObject.onError(new Error('Cannot handle message'));
+    onError(syncManager, new Error('Cannot handle message'));
   }
 }
 

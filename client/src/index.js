@@ -64,7 +64,7 @@
  * sync.SYNC_ERROR = 4
  */
 
-var MakeDriveSync = require('./sync');
+var SyncManager = require('./sync-manager.js');
 var Filer = require('../../lib/filer.js');
 var EventEmitter = require('events').EventEmitter;
 
@@ -130,17 +130,7 @@ function createFS(options) {
     // Make sure the path exists, otherwise use root dir
     _fs.exists(path, function(exists) {
       path = exists ? path : '/';
-
-      MakeDriveSync.sync(path, function(err) {
-        if(err) {
-          sync.onError(err);
-        } else {
-          needsSync = false;
-          // TODO: can we send the paths/files that were sync'ed too?
-          //       https://github.com/mozilla/makedrive/issues/20
-          sync.onCompleted();
-        }
-      });
+      sync.manager.syncPath(path);
     });
   };
 
@@ -151,6 +141,11 @@ function createFS(options) {
        sync.state !== sync.ERROR) {
       // TODO: should we throw/warn as well?
       //       https://github.com/mozilla/makedrive/issues/20
+      return;
+    }
+
+    // Also bail if we already have a SyncManager
+    if(sync.manager) {
       return;
     }
 
@@ -165,6 +160,7 @@ function createFS(options) {
         sync.emit('syncing');
       };
       sync.onCompleted = function() {
+        needsSync = false;
         sync.state = sync.SYNC_CONNECTED;
         sync.emit('completed');
       };
@@ -198,17 +194,23 @@ function createFS(options) {
     }
 
     // Try to connect to provided server URL
-    MakeDriveSync.init(url, token, sync, _fs, function(err) {
+    sync.manager = new SyncManager(sync, _fs);
+    sync.manager.init(url, token, function(err) {
       if(err) {
         sync.onError(err);
         return;
       }
 
+      // In a browser, try to clean-up after ourselves when window goes away
       if("onbeforeunload" in global) {
-        global.addEventListener('beforeunload', function() {
-          MakeDriveSync.close();
-        });
+        sync.cleanupFn = function() {
+          if(sync && sync.manager) {
+            sync.manager.close();
+          }
+        };
+        global.addEventListener('beforeunload', sync.cleanupFn);
       }
+
       // Wait on initial downstream sync events to complete
       sync.onSyncing = function() {
         // do nothing, wait for onCompleted()
@@ -222,8 +224,15 @@ function createFS(options) {
 
   // Disconnect from the server
   sync.disconnect = function() {
-    // Close socket connection first
-    MakeDriveSync.close();
+    // Remove our browser cleanup
+    if("onbeforeunload" in global && sync.cleanupFn) {
+      global.removeEventListener('beforeunload', sync.cleanupFn);
+      sync.cleanupFn = null;
+    }
+
+    // Do a proper shutdown
+    sync.manager.close();
+    sync.manager = null;
 
     // Bail if we're not already connected
     if(sync.state === sync.SYNC_DISCONNECTED ||

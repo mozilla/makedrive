@@ -1,9 +1,9 @@
 var expect = require('chai').expect;
-var util = require('../lib/util.js');
-var MakeDrive = require('../../client/src');
-var Filer = require('../../lib/filer.js');
+var util = require('../../lib/util.js');
+var MakeDrive = require('../../../client/src');
+var Filer = require('../../../lib/filer.js');
 
-describe('MakeDrive Client Tests', function(){
+describe('MakeDrive Client API', function(){
   var provider;
 
   beforeEach(function() {
@@ -71,7 +71,6 @@ describe('MakeDrive Client Tests', function(){
         // Write a file and try to sync
         fs.writeFile(filename, fileData, function(err) {
           expect(err).not.to.exist;
-
           sync.request('/');
         });
       });
