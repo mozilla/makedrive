@@ -92,9 +92,9 @@ function handleRequest(data) {
     rsync.checksums(that.fs, path, srcList, rsyncOptions, function(err, checksums) {
       if(err) {
         that.state = Sync.LISTENING;
-        that.end();
         response = SyncMessage.error.chksum;
         response.content = {error: err};
+        delete connectedClients[that.username].currentSyncSession;
       } else {
         response = SyncMessage.request.diffs;
         response.content = {checksums: checksums, path: that.path};
@@ -134,7 +134,7 @@ function handleResponse(data) {
     that.state = Sync.LISTENING;
     rsync.patch(that.fs, that.path, diffs, rsyncOptions, function(err) {
       if(err) {
-        that.end();
+        delete connectedClients[that.username].currentSyncSession;
         return SyncMessage.error.patch;
       }
 
