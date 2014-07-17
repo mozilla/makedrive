@@ -28,6 +28,7 @@ describe('[Downstream Syncing with Websockets]', function(){
        });
      });
    });
+
    it('shouldn\'t allow the same token to be used twice', function(done) {
      util.authenticatedConnection({ done: done }, function( err, result ) {
        expect(err).not.to.exist;
@@ -53,6 +54,7 @@ describe('[Downstream Syncing with Websockets]', function(){
        });
      });
    });
+
    it(', after receiving a valid token and syncId, should send a RESPONSE named "AUTHZ"', function(done) {
      util.authenticatedConnection({ done: done }, function( err, result ) {
        expect(err).not.to.exist;
@@ -66,11 +68,12 @@ describe('[Downstream Syncing with Websockets]', function(){
            util.cleanupSockets(result.done, socketPackage);
          },
          onOpen: function() {
-           socketPackage.socket.send(util.resolveFromJSON(socketData));
+           socketPackage.socket.send(JSON.stringify(socketData));
          }
        });
      });
    });
+
    it('should allow two socket connections for the same username from different clients', function(done) {
      util.authenticatedConnection(function( err, result ) {
        expect(err).not.to.exist;
@@ -107,6 +110,7 @@ describe('[Downstream Syncing with Websockets]', function(){
        });
      });
    });
+
    it('should send an "implementation" SyncMessage error object when a non-syncmessage object is sent', function(done) {
      util.authenticatedConnection({ done: done }, function(err, result) {
        expect(err).not.to.exist;
@@ -143,13 +147,14 @@ describe('[Downstream Syncing with Websockets]', function(){
      });
    });
  });
- describe('DIFFS responses', function() {
+
+ describe('Generate Diffs', function() {
    it('should return an RESPONSE message with the diffs', function(done) {
      util.authenticatedConnection({ done: done }, function( err, result ) {
        expect(err).not.to.exist;
 
        util.prepareDownstreamSync(result.username, result.token, function(syncData, fs, socketPackage) {
-         util.downstreamSyncSteps.diffs(socketPackage, syncData, fs, function(msg, cb) {
+         util.downstreamSyncSteps.generateDiffs(socketPackage, syncData, fs, function(msg, cb) {
            msg = util.resolveToJSON(msg);
 
            expect(msg.type, "[Message type error: \"" + (msg.content && msg.content.error) +"\"]" ).to.equal(SyncMessage.RESPONSE);
@@ -164,13 +169,14 @@ describe('[Downstream Syncing with Websockets]', function(){
      });
    });
  });
- describe('PATCH', function() {
+
+ describe('Patch the client filesystem', function() {
    it('should make the server respond with a RESPONSE SYNC SyncMessage after ending a downstream sync, and initiating an upstream sync', function(done) {
      util.authenticatedConnection({ done: done }, function( err, result ) {
        expect(err).not.to.exist;
 
-       util.prepareDownstreamSync('diffs', result.username, result.token, function(syncData, fs, socketPackage) {
-         util.downstreamSyncSteps.patch(socketPackage, syncData, fs, function(msg, cb) {
+       util.prepareDownstreamSync('generateDiffs', result.username, result.token, function(syncData, fs, socketPackage) {
+         util.downstreamSyncSteps.patchClientFilesystem(socketPackage, syncData, fs, function(msg, cb) {
            msg = util.resolveToJSON(msg);
            var startSyncMsg = SyncMessage.request.sync;
            util.sendSyncMessage(socketPackage, startSyncMsg, function(message){
@@ -188,11 +194,12 @@ describe('[Downstream Syncing with Websockets]', function(){
        });
      });
    });
+
    it('should return an IMPLEMENTATION ERROR SyncMessage when sent out of turn', function(done) {
      util.authenticatedConnection({ done: done }, function( err, result ) {
        expect(err).not.to.exist;
 
-       util.prepareDownstreamSync('diffs', result.username, result.token, function(data, fs, socketPackage) {
+       util.prepareDownstreamSync(result.username, result.token, function(data, fs, socketPackage) {
          var startSyncMsg = SyncMessage.request.sync;
          util.sendSyncMessage(socketPackage, startSyncMsg, function(msg){
            var msg = util.resolveToJSON(msg);
@@ -212,116 +219,119 @@ describe('[Downstream Syncing with Websockets]', function(){
 });
 
 describe('[Upstream Syncing with Websockets]', function(){
-  it('(same client) should unlock a sync after ' + env.get('CLIENT_TIMEOUT_MS') + ' MS of inactivity after a client begins an upstream sync', function(done) {
-    // Authorize a user, open a socket, authorize and complete a downstream sync    
-    util.authenticatedConnection({ done: done }, function( err, result ) {
-      expect(err).not.to.exist;
+  describe('[The server]', function() {
+    it('(same client) should unlock a sync after ' + env.get('CLIENT_TIMEOUT_MS') + ' MS of inactivity after a client begins an upstream sync', function(done) {
+      // Authorize a user, open a socket, authorize and complete a downstream sync
+      util.authenticatedConnection({ done: done }, function( err, result ) {
+        expect(err).not.to.exist;
 
-      util.completeDownstreamSync(result.username, result.token, function(syncData, fs, socketPackage) {
-        // Authorize a user, open a socket, authorize and complete a downstream sync
-        util.upstreamSyncSteps.requestSync(socketPackage, function(message, cb) {
-          message = util.resolveToJSON(message);
+        util.completeDownstreamSync(result.username, result.token, function(syncData, fs, socketPackage) {
+          // Authorize a user, open a socket, authorize and complete a downstream sync
+          util.upstreamSyncSteps.requestSync(socketPackage, function(message, cb) {
+            message = util.resolveToJSON(message);
 
-          expect(message).to.exist;
-          expect(message.type, "[Error: \"" + (message && message.name) + "\"]" ).to.equal(SyncMessage.RESPONSE);
-          expect(message.name).to.equal(SyncMessage.SYNC);
+            expect(message).to.exist;
+            expect(message.type, "[Error: \"" + (message && message.name) + "\"]" ).to.equal(SyncMessage.RESPONSE);
+            expect(message.name).to.equal(SyncMessage.SYNC);
 
-          setTimeout(function() {
-            util.upstreamSyncSteps.requestSync(socketPackage, function(message2, cb2) {
-              message2 = util.resolveToJSON(message2);
-
-              expect(message2).to.exist;
-              expect(message2.type, "[Error: \"" + (message2 && message2.name) + "\"]" ).to.equal(SyncMessage.RESPONSE);
-              expect(message2.name).to.equal(SyncMessage.SYNC);
-
-              cb2();
-            }, function() {
-              cb();
-            });
-          }, env.get('CLIENT_TIMEOUT_MS') + 50);
-        }, function() {
-          util.cleanupSockets(result.done, socketPackage);
-        });
-      });
-    });
-  });
-
-  it('(second client) should unlock a sync after ' + env.get('CLIENT_TIMEOUT_MS') + ' MS of inactivity after a client begins an upstream sync', function(done) {
-    // Authorize a user, open a socket, authorize and complete a downstream sync
-    util.authenticatedConnection({ done: done }, function( err, result ) {
-      expect(err).not.to.exist;
-
-      util.completeDownstreamSync(result.username, result.token, function(syncData, fs, socketPackage) {
-        // Authorize a second client for the same user, open a socket, authorize and complete a downstream sync
-        util.authenticatedConnection({ username: result.username }, function(err2, result2) {
-          expect(err2).not.to.exist;
-
-          util.completeDownstreamSync(result2.username, result2.token, function(syncData2, fs2, socketPackage2) {
-            // Start an upstream sync with the first client of the user
-            util.upstreamSyncSteps.requestSync(socketPackage, function(message, cb) {
-              message = util.resolveToJSON(message);
-
-              expect(message).to.exist;
-              expect(message.type, "[Error: \"" + (message && message.name) + "\"]" ).to.equal(SyncMessage.RESPONSE);
-              expect(message.name).to.equal(SyncMessage.SYNC);
-
-              // After it's confirmed to be started, wait half the time before the lock should be broken and 
-              // get the second client of the same user to initiate an upstream sync
-              setTimeout(function() {
-                util.upstreamSyncSteps.requestSync(socketPackage2, function(message2, cb2) {
-                  message2 = util.resolveToJSON(message2);
-
-                  expect(message2).to.exist;
-                  expect(message2.type, "[Error: \"" + (message2 && message2.name) + "\"]" ).to.equal(SyncMessage.RESPONSE);
-                  expect(message2.name).to.equal(SyncMessage.SYNC);
-
-                  cb2();
-                }, function() {
-                  cb();
-                });
-              }, env.get('CLIENT_TIMEOUT_MS') + 50);
-            }, function() {
-              util.cleanupSockets(result.done, socketPackage, socketPackage2);
-            });
-          });
-        });
-      });
-    });
-  });
-  it('should block a sync from a new client before ' + env.get('CLIENT_TIMEOUT_MS') + ' MS of inactivity from a freshly syncing client.', function(done){
-    // Authorize a user, open a socket, authorize and complete a downstream sync
-    util.authenticatedConnection({ done: done }, function( err, result ) {
-      expect(err).not.to.exist;
-
-      util.completeDownstreamSync(result.username, result.token, function(syncData, fs, socketPackage) {
-        // Authorize a second client for the same user, open a socket, authorize and complete a downstream sync
-        util.authenticatedConnection({ username: result.username }, function(err2, result2) {
-          expect(err2).not.to.exist;
-
-          util.completeDownstreamSync(result2.username, result2.token, function(syncData2, fs2, socketPackage2) {
-            // Start an upstream sync with the first client of the user
-            util.upstreamSyncSteps.requestSync(socketPackage, function(message, cb) {
-              message = util.resolveToJSON(message);
-
-              expect(message).to.exist;
-              expect(message.type, "[Error: \"" + (message && message.name) + "\"]" ).to.equal(SyncMessage.RESPONSE);
-              expect(message.name).to.equal(SyncMessage.SYNC);
-
-              // After it's confirmed to be started, wait half the time before the lock should be broken and 
-              // get the second client of the same user to initiate an upstream sync
-              util.upstreamSyncSteps.requestSync(socketPackage2, function(message2, cb2) {
+            setTimeout(function() {
+              util.upstreamSyncSteps.requestSync(socketPackage, function(message2, cb2) {
                 message2 = util.resolveToJSON(message2);
 
                 expect(message2).to.exist;
-                expect(message2.type, "[Error: \"" + (message2 && message2.name) + "\"]" ).to.equal(SyncMessage.ERROR);
-                expect(message2.name).to.equal(SyncMessage.LOCKED);
+                expect(message2.type, "[Error: \"" + (message2 && message2.name) + "\"]" ).to.equal(SyncMessage.RESPONSE);
+                expect(message2.name).to.equal(SyncMessage.SYNC);
 
                 cb2();
               }, function() {
                 cb();
               });
-            }, function() {
-              util.cleanupSockets(result.done, socketPackage, socketPackage2);
+            }, env.get('CLIENT_TIMEOUT_MS') + 50);
+          }, function() {
+            util.cleanupSockets(result.done, socketPackage);
+          });
+        });
+      });
+    });
+
+    it('(second client) should unlock a sync after ' + env.get('CLIENT_TIMEOUT_MS') + ' MS of inactivity after a client begins an upstream sync', function(done) {
+      // Authorize a user, open a socket, authorize and complete a downstream sync
+      util.authenticatedConnection({ done: done }, function( err, result ) {
+        expect(err).not.to.exist;
+
+        util.completeDownstreamSync(result.username, result.token, function(syncData, fs, socketPackage) {
+          // Authorize a second client for the same user, open a socket, authorize and complete a downstream sync
+          util.authenticatedConnection({ username: result.username }, function(err2, result2) {
+            expect(err2).not.to.exist;
+
+            util.completeDownstreamSync(result2.username, result2.token, function(syncData2, fs2, socketPackage2) {
+              // Start an upstream sync with the first client of the user
+              util.upstreamSyncSteps.requestSync(socketPackage, function(message, cb) {
+                message = util.resolveToJSON(message);
+
+                expect(message).to.exist;
+                expect(message.type, "[Error: \"" + (message && message.name) + "\"]" ).to.equal(SyncMessage.RESPONSE);
+                expect(message.name).to.equal(SyncMessage.SYNC);
+
+                // After it's confirmed to be started, wait half the time before the lock should be broken and
+                // get the second client of the same user to initiate an upstream sync
+                setTimeout(function() {
+                  util.upstreamSyncSteps.requestSync(socketPackage2, function(message2, cb2) {
+                    message2 = util.resolveToJSON(message2);
+
+                    expect(message2).to.exist;
+                    expect(message2.type, "[Error: \"" + (message2 && message2.name) + "\"]" ).to.equal(SyncMessage.RESPONSE);
+                    expect(message2.name).to.equal(SyncMessage.SYNC);
+
+                    cb2();
+                  }, function() {
+                    cb();
+                  });
+                }, env.get('CLIENT_TIMEOUT_MS') + 50);
+              }, function() {
+                util.cleanupSockets(result.done, socketPackage, socketPackage2);
+              });
+            });
+          });
+        });
+      });
+    });
+
+    it('should block a sync from a new client before ' + env.get('CLIENT_TIMEOUT_MS') + ' MS of inactivity from a freshly syncing client.', function(done){
+      // Authorize a user, open a socket, authorize and complete a downstream sync
+      util.authenticatedConnection({ done: done }, function( err, result ) {
+        expect(err).not.to.exist;
+
+        util.completeDownstreamSync(result.username, result.token, function(syncData, fs, socketPackage) {
+          // Authorize a second client for the same user, open a socket, authorize and complete a downstream sync
+          util.authenticatedConnection({ username: result.username }, function(err2, result2) {
+            expect(err2).not.to.exist;
+
+            util.completeDownstreamSync(result2.username, result2.token, function(syncData2, fs2, socketPackage2) {
+              // Start an upstream sync with the first client of the user
+              util.upstreamSyncSteps.requestSync(socketPackage, function(message, cb) {
+                message = util.resolveToJSON(message);
+
+                expect(message).to.exist;
+                expect(message.type, "[Error: \"" + (message && message.name) + "\"]" ).to.equal(SyncMessage.RESPONSE);
+                expect(message.name).to.equal(SyncMessage.SYNC);
+
+                // After it's confirmed to be started, wait half the time before the lock should be broken and
+                // get the second client of the same user to initiate an upstream sync
+                util.upstreamSyncSteps.requestSync(socketPackage2, function(message2, cb2) {
+                  message2 = util.resolveToJSON(message2);
+
+                  expect(message2).to.exist;
+                  expect(message2.type, "[Error: \"" + (message2 && message2.name) + "\"]" ).to.equal(SyncMessage.ERROR);
+                  expect(message2.name).to.equal(SyncMessage.LOCKED);
+
+                  cb2();
+                }, function() {
+                  cb();
+                });
+              }, function() {
+                util.cleanupSockets(result.done, socketPackage, socketPackage2);
+              });
             });
           });
         });

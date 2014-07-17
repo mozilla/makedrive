@@ -10,7 +10,9 @@ var Buffer = Filer.Buffer;
 var Path = Filer.Path;
 var uuid = require( "node-uuid" );
 var async = require('async');
+var diffHelper = require("../../lib/diff");
 
+// Ensure the client timeout restricts tests to a reasonable length
 var env = require('../../server/lib/environment');
 env.set('CLIENT_TIMEOUT_MS', 1000);
 
@@ -317,7 +319,7 @@ function sendSyncMessage(socketPackage, syncMessage, callback) {
  * Sync Helpers
  */
 var downstreamSyncSteps = {
-  diffs: function(socketPackage, data, fs, customAssertions, cb) {
+  generateDiffs: function(socketPackage, data, fs, customAssertions, cb) {
     if (!cb) {
       cb = customAssertions;
       customAssertions = null;
@@ -339,7 +341,7 @@ var downstreamSyncSteps = {
         expect(message.content).to.exist;
         expect(message.content.diffs).to.exist;
         expect(message.content.path).to.exist;
-        data.diffs = message.content.diffs;
+        data.diffs = diffHelper.deserialize(message.content.diffs);
 
         return cb(data);
       }
@@ -358,7 +360,7 @@ var downstreamSyncSteps = {
       socketPackage.socket.send(diffRequest.stringify());
     });
   },
-  patch: function(socketPackage, data, fs, customAssertions, cb) {
+  patchClientFilesystem: function(socketPackage, data, fs, customAssertions, cb) {
     if (!cb) {
       cb = customAssertions;
       customAssertions = null;
@@ -387,10 +389,11 @@ var upstreamSyncSteps = {
       // Reattach original listener
       socketPackage.socket.once("message", socketPackage.onMessage);
 
-      message = resolveToJSON(message);
       if (!customAssertions) {
+        message = resolveToJSON(message);
+
         expect(message).to.exist;
-        expect(message.type).to.equal(SyncMessage.REQUEST);
+        expect(message.type).to.equal(SyncMessage.RESPONSE);
         expect(message.name, "[SyncMessage Type error. SyncMessage.content was: " + message.content + "]").to.equal(SyncMessage.SYNC);
 
         return cb();
@@ -401,6 +404,76 @@ var upstreamSyncSteps = {
 
     var requestSyncMessage = SyncMessage.request.sync;
     socketPackage.socket.send(resolveFromJSON(requestSyncMessage));
+  },
+  generateChecksums: function(socketPackage, data, customAssertions, cb) {
+    if (!cb) {
+      cb = customAssertions;
+      customAssertions = null;
+    }
+
+    socketPackage.socket.removeListener("message", socketPackage.onMessage);
+    socketPackage.socket.once("message", function(message) {
+      // Reattach original listener
+      socketPackage.socket.once("message", socketPackage.onMessage);
+
+      message = resolveToJSON(message);
+      if (!customAssertions) {
+        expect(message).to.exist;
+        expect(message.type).to.equal(SyncMessage.REQUEST);
+        expect(message.name, "[SyncMessage Type error. SyncMessage.content was: " + message.content + "]").to.equal(SyncMessage.DIFFS);
+        expect(message.content).to.exist;
+        expect(message.content.checksums).to.exist;
+        expect(message.content.path).to.exist;
+
+        return cb();
+      }
+
+      customAssertions(message, cb);
+    });
+
+    var requestChksumMsg = SyncMessage.request.chksum;
+    requestChksumMsg.content = {
+      path: data.path,
+      srcList: data.srcList
+    };
+    socketPackage.socket.send(resolveFromJSON(requestChksumMsg));
+  },
+  patchServerFilesystem: function(socketPackage, data, fs, customAssertions, cb) {
+    if (!cb) {
+      cb = customAssertions;
+      customAssertions = null;
+    }
+
+    var path = data.path;
+    var checksums = data.checksums;
+
+    socketPackage.socket.removeListener("message", socketPackage.onMessage);
+    socketPackage.socket.once("message", function(message) {
+      // Reattach original listener
+      socketPackage.socket.once("message", socketPackage.onMessage);
+
+      if (!customAssertions) {
+        message = resolveToJSON(message);
+
+        expect(message.type, "[Diffs error: \"" + (message.content && message.content.error) + "\"]").to.equal(SyncMessage.RESPONSE);
+        expect(message.name).to.equal(SyncMessage.PATCH);
+
+        return cb();
+      }
+
+      customAssertions(message, cb);
+    });
+
+    rsync.diff(fs, path, checksums, rsyncOptions, function( err, diffs ) {
+      expect(err).to.be.null;
+
+      var patchResponse = SyncMessage.response.patch;
+      patchResponse.content = {
+        diffs: diffHelper.serialize(diffs)
+      };
+
+      socketPackage.socket.send(patchResponse.stringify());
+    });
   }
 };
 
@@ -412,12 +485,13 @@ function prepareDownstreamSync(finalStep, username, token, cb){
     finalStep = null;
   }
 
-  var node_fs = require('fs');
-  var Path = require('path');
-  var content = node_fs.readFileSync(Path.resolve(__dirname, '../test-files/test.txt'), {encoding: null});
+  var testFile = {
+    name: "test.txt",
+    content: "Hello world!"
+  };
 
   // Set up server filesystem
-  upload(username, '/test.txt', content, function() {
+  upload(username, '/' + testFile.name, testFile.content, function() {
     // Set up client filesystem
     var fs = filesystem.create({
       keyPrefix: username + "client",
@@ -451,11 +525,11 @@ function prepareDownstreamSync(finalStep, username, token, cb){
           if (!finalStep) {
             return cb(downstreamData, fs, socketPackage);
           }
-          downstreamSyncSteps.diffs(socketPackage, downstreamData, fs, function(data1) {
-            if (finalStep == "diffs") {
+          downstreamSyncSteps.generateDiffs(socketPackage, downstreamData, fs, function(data1) {
+            if (finalStep == "generateDiffs") {
               return cb(data1, fs, socketPackage);
             }
-            downstreamSyncSteps.patch(socketPackage, data1, fs, function(data2) {
+            downstreamSyncSteps.patchClientFilesystem(socketPackage, data1, fs, function(data2) {
               cb(data2, fs, socketPackage);
             });
           });
@@ -759,6 +833,35 @@ function ensureRemoteFilesystem(layout, jar, callback) {
   });
 }
 
+function prepareUpstreamSync(finalStep, username, token, cb){
+  if (typeof cb !== "function") {
+    cb = token;
+    token = username;
+    username = finalStep;
+    finalStep = null;
+  }
+
+  completeDownstreamSync(username, token, function(data, fs, socketPackage) {
+    // Complete required sync steps
+    if (!finalStep) {
+      return cb(data, fs, socketPackage);
+    }
+    upstreamSyncSteps.requestSync(socketPackage, fs, function(data1) {
+      if (finalStep == "requestSync") {
+        return cb(data1, fs, socketPackage);
+      }
+      upstreamSyncSteps.generateChecksums(socketPackage, data1, fs, function(data2) {
+        if (finalStep == "generateChecksums") {
+          return cb(data2, fs, socketPackage);
+        }
+        upstreamSyncSteps.patchServerFilesystem(socketPackage, data2, fs, function(data3) {
+          cb(data3, fs, socketPackage);
+        });
+      });
+    });
+  });
+}
+
 function completeDownstreamSync(username, token, cb) {
   prepareDownstreamSync("patch", username, token, function(data, fs, socketPackage) {
     cb(data, fs, socketPackage);
@@ -783,6 +886,9 @@ module.exports = {
   // Socket helpers
   openSocket: openSocket,
   upload: upload,
+  cleanupSockets: cleanupSockets,
+
+  // Filesystem helpers
   ensureFile: ensureFile,
   createFilesystemLayout: createFilesystemLayout,
   deleteFilesystemLayout: deleteFilesystemLayout,
@@ -792,11 +898,11 @@ module.exports = {
   ensureRemoteFilesystemLayout: ensureRemoteFilesystemLayout,
   ensureFilesystem: ensureFilesystem,
   ensureRemoteFilesystem: ensureRemoteFilesystem,
-  cleanupSockets: cleanupSockets,
 
   // Sync helpers
   upload: upload,
   prepareDownstreamSync: prepareDownstreamSync,
+  prepareUpstreamSync: prepareUpstreamSync,
   downstreamSyncSteps: downstreamSyncSteps,
   upstreamSyncSteps: upstreamSyncSteps,
   sendSyncMessage: sendSyncMessage,
