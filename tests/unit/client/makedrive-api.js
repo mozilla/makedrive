@@ -47,7 +47,7 @@ describe('MakeDrive Client API', function(){
    * This test goes through the complete process of syncing with the server.
    * It starts by connecting, then writes a file and tries to sync. The
    * various sync events are observed, then it disconnects, and finally
-   * checks that the file was uploaded, and is available via the /p/ route.
+   * checks that the file was uploaded.
    */
   it('should go through proper steps with connect(), request(), disconnect()', function(done) {
     util.authenticatedConnection(function( err, result ) {
@@ -55,8 +55,7 @@ describe('MakeDrive Client API', function(){
 
       var token = result.token;
 
-      var filename = '/file';
-      var fileData = 'data';
+      var layout = {'/file': 'data'};
 
       var fs = MakeDrive.fs({provider: provider, manual: true});
       var sync = fs.sync;
@@ -69,7 +68,7 @@ describe('MakeDrive Client API', function(){
         expect(sync.state).to.equal(sync.SYNC_CONNECTED);
 
         // Write a file and try to sync
-        fs.writeFile(filename, fileData, function(err) {
+        util.createFilesystemLayout(fs, layout, function(err) {
           expect(err).not.to.exist;
           sync.request('/');
         });
@@ -81,7 +80,11 @@ describe('MakeDrive Client API', function(){
 
       sync.once('completed', function onUpstreamCompleted() {
         everSeenCompleted = sync.state;
-        sync.disconnect();
+
+        // Confirm file was really uploaded and remote fs matches what we expect
+        util.ensureRemoteFilesystem(layout, result.jar, function() {
+          sync.disconnect();
+        });
       });
 
       sync.on('error', function onError(err) {
@@ -99,8 +102,8 @@ describe('MakeDrive Client API', function(){
         expect(everSeenSyncing).to.equal(sync.SYNC_SYNCING);
         expect(everSeenCompleted).to.equal(sync.SYNC_CONNECTED);
 
-        // Confirm file was really uploaded using /p route
-        util.ensureFile(filename, fileData, result.jar, done);
+        // Make sure client fs is in the same state we left it
+        util.ensureFilesystem(fs, layout, done);
       });
 
       expect(sync.state).to.equal(sync.SYNC_DISCONNECTED);

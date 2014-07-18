@@ -529,6 +529,23 @@ function deleteFilesystemLayout(fs, paths, callback) {
   }
 }
 
+// Strip .modified times from ever element in the array, or its .contents
+function stripModified(listing) {
+  function strip(item) {
+    delete item.modified;
+    if(item.contents) {
+      item.contents = stripModified(item.contents);
+    }
+    return item;
+  }
+
+  if(Array.isArray(listing)) {
+    return listing.map(strip);
+  } else {
+    return strip(listing);
+  }
+}
+
 /**
  * Makes sure that the layout given matches what's actually
  * in the current fs.  Use ensureFilesystemContents if you
@@ -557,17 +574,6 @@ function ensureFilesystemLayout(fs, layout, callback) {
           return callback(err);
         }
 
-        function stripModified(listing) {
-          // Strip .modified times from ever element in the array, or its .contents
-          return listing.map(function(item) {
-            delete item.modified;
-            if(item.contents) {
-              item.contents = stripModified(item.contents);
-            }
-            return item;
-          });
-        }
-
         // Remove modified
         fsListing = stripModified(fsListing);
         fs2Listing = stripModified(fs2Listing);
@@ -580,7 +586,48 @@ function ensureFilesystemLayout(fs, layout, callback) {
 }
 
 /**
- * Ensure that the files and dirs at filename match the layout's contents.
+ * Makes sure that the layout given matches what's actually
+ * in the remote fs.  Use ensureFilesystemContents if you
+ * want to ensure file/dir contents vs. paths.
+ */
+function ensureRemoteFilesystemLayout(layout, jar, callback) {
+  // Start by creating the layout, then compare a deep ls()
+  var layoutFS = new Filer.FileSystem({provider: new Filer.FileSystem.providers.Memory(uniqueUsername())});
+  createFilesystemLayout(layoutFS, layout, function(err) {
+    expect(err).not.to.exist;
+    if(err) {
+      return callback(err);
+    }
+
+    var sh = layoutFS.Shell();
+    sh.ls('/', {recursive: true}, function(err, layoutFSListing) {
+      expect(err).not.to.exist;
+      if(err) {
+        return callback(err);
+      }
+
+      // Now grab the remote server listing using the /j/* route
+      request.get({
+        url: serverURL + '/j/',
+        jar: jar,
+        json: true
+      }, function(err, res, remoteFSListing) {
+        expect(err).not.to.exist;
+        expect(res.statusCode).to.equal(200);
+
+        // Remove modified
+        layoutFSListing = stripModified(layoutFSListing);
+        remoteFSListing = stripModified(remoteFSListing);
+
+        expect(remoteFSListing).to.deep.equal(layoutFSListing);
+        callback(err);
+      });
+    });
+  });
+}
+
+/**
+ * Ensure that the files and dirs match the layout's contents.
  * Use ensureFilesystemLayout if you want to ensure file/dir paths vs. contents.
  */
 function ensureFilesystemContents(fs, layout, callback) {
@@ -632,6 +679,57 @@ function ensureFilesystemContents(fs, layout, callback) {
 }
 
 /**
+ * Ensure that the remote files and dirs match the layout's contents.
+ * Use ensureRemoteFilesystemLayout if you want to ensure file/dir paths vs. contents.
+ */
+function ensureRemoteFilesystemContents(layout, jar, callback) {
+  function ensureRemoteFileContents(filename, expectedContents, callback) {
+    request.get({
+      url: serverURL + '/j' + filename,
+      jar: jar,
+      json: true
+    }, function(err, res, actualContents) {
+      expect(err).not.to.exist;
+      expect(res.statusCode).to.equal(200);
+
+      if(!Buffer.isBuffer(expectedContents)) {
+        expectedContents = new Buffer(expectedContents).toJSON();
+
+      }
+      expect(actualContents).to.deep.equal(expectedContents);
+      callback(err);
+    });
+  }
+
+  function ensureRemoteEmptyDir(dirname, callback) {
+    request.get({
+      url: serverURL + '/j' + dirname,
+      jar: jar,
+      json: true
+    }, function(err, res, listing) {
+      expect(err).not.to.exist;
+      expect(res.statusCode).to.equal(200);
+
+      expect(Array.isArray(listing)).to.be.true;
+      expect(listing.length).to.equal(0);
+
+      callback(err);
+    });
+  }
+
+  function processPath(path, callback) {
+    var contents = layout[path];
+    if(contents) {
+      ensureRemoteFileContents(path, contents, callback);
+    } else {
+      ensureRemoteEmptyDir(path, callback);
+    }
+  }
+
+  async.eachSeries(Object.keys(layout), processPath, callback);
+}
+
+/**
  * Runs ensureFilesystemLayout and ensureFilesystemContents on fs
  * for given layout, making sure all paths and files/dirs match expected.
  */
@@ -641,6 +739,19 @@ function ensureFilesystem(fs, layout, callback) {
       return callback(err);
     }
     ensureFilesystemContents(fs, layout, callback);
+  });
+}
+
+/**
+ * Runs ensureRemoteFilesystemLayout and ensureRemoteFilesystemContents
+ * for given layout, making sure all paths and files/dirs match expected.
+ */
+function ensureRemoteFilesystem(layout, jar, callback) {
+  ensureRemoteFilesystemLayout(layout, jar, function(err) {
+    if(err) {
+      return callback(err);
+    }
+    ensureRemoteFilesystemContents(layout, jar, callback);
   });
 }
 
@@ -659,7 +770,10 @@ module.exports = {
   deleteFilesystemLayout: deleteFilesystemLayout,
   ensureFilesystemContents: ensureFilesystemContents,
   ensureFilesystemLayout: ensureFilesystemLayout,
+  ensureRemoteFilesystemContents: ensureRemoteFilesystemContents,
+  ensureRemoteFilesystemLayout: ensureRemoteFilesystemLayout,
   ensureFilesystem: ensureFilesystem,
+  ensureRemoteFilesystem: ensureRemoteFilesystem,
   cleanupSockets: cleanupSockets,
   resolveToJSON: resolveToJSON,
   resolveFromJSON: resolveFromJSON,

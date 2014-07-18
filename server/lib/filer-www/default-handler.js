@@ -1,14 +1,16 @@
 /**
- * A static web server on top of a Filer file system.
+ * A Default Handler for file content. Does what you expect
+ * a web server to do: serves web content for browsers (e.g., as HTML).
  */
 var mime = require('mime');
-var Path = require('../../lib/filer.js').Path;
-var filesystem = require('./filesystem.js');
-var version = require('../../package.json').version;
+var Path = require('../../../lib/filer.js').Path;
+var version = require('../../../package.json').version;
+var util = require('./util.js');
 
-function write(content, contentType, res) {
+function write(content, contentType, res, status) {
+  status = status || 200;
   res.header({'Content-Type': contentType});
-  res.send(200, content);
+  res.send(status, content);
 }
 
 /**
@@ -24,7 +26,7 @@ function handle404(url, res) {
         '<hr>' +
         '<address>MakeDrive/' + version + ' (Web) Server</address>' +
         '</body></html>';
-  write(html, 'text/html', res);
+  write(html, 'text/html', res, 404);
 }
 
 /**
@@ -66,59 +68,16 @@ function handleDir(fs, path, res) {
         '</table><address>MakeDrive/' + version + ' (Web)</address>' +
         '</body></html>';
 
-  function formatDate(d) {
-    // 20-Apr-2004 17:14
-    return d.getDay() + '-' +
-      d.getMonth() + '-' +
-      d.getFullYear() + ' ' +
-      d.getHours() + ':' +
-      d.getMinutes();
-  }
-
-  function formatSize(s) {
-    var units = ['', 'K', 'M'];
-    if(!s) {
-      return '-';
-    }
-    var i = (Math.floor(Math.log(s) / Math.log(1024)))|0;
-    return Math.round(s / Math.pow(1024, i), 2) + units[i];
-  }
-
   function row(icon, alt, href, name, modified, size) {
     icon = icon || '/icons/unknown.png';
     alt = alt || '[ ]';
-    modified = formatDate(new Date(modified));
-    size = formatSize(size);
+    modified = util.formatDate(new Date(modified));
+    size = util.formatSize(size);
 
     return '<tr><td valign="top"><img src="' + icon + '" alt="' + alt + '"></td><td>' +
       '<a href="' + href + '">' + name + '</a> </td>' +
       '<td align="right">' + modified + ' </td>' +
       '<td align="right">' + size + '</td><td>&nbsp;</td></tr>';
-  }
-
-  function isMedia(ext) {
-    return ext === '.avi' ||
-      ext === '.mpeg' ||
-      ext === '.mp4' ||
-      ext === '.ogg' ||
-      ext === '.webm' ||
-      ext === '.mov' ||
-      ext === '.qt' ||
-      ext === '.divx' ||
-      ext === '.wmv' ||
-      ext === '.mp3' ||
-      ext === '.wav';
-  }
-
-  function isImage(ext) {
-    return ext === '.png' ||
-      ext === '.jpg' ||
-      ext === '.jpe' ||
-      ext === '.pjpg' ||
-      ext === '.jpeg'||
-      ext === '.gif' ||
-      ext === '.bmp' ||
-      ext === '.ico';
   }
 
   function processEntries(entries) {
@@ -134,10 +93,10 @@ function handleDir(fs, path, res) {
         icon = '/icons/folder.png';
         alt = '[DIR]';
       } else { // file
-        if(isImage(ext)) {
+        if(util.isImage(ext)) {
           icon = '/icons/image2.png';
           alt = '[IMG]';
-        } else if(isMedia(ext)) {
+        } else if(util.isMedia(ext)) {
           icon = '/icons/movie.png';
           alt = '[MOV]';
         } else {
@@ -161,37 +120,21 @@ function handleDir(fs, path, res) {
   });
 }
 
-
-function FilerWebServer(username) {
-  this.fs = filesystem.create({
-    keyPrefix: username,
-    name: username
-  });
+function DefaultHandler(fs, res) {
+  this.fs = fs;
+  this.res = res;
 }
 
-/**
- * Main entry-point for handling a path request.
- * Each call should use a separate res object, since
- * it will write headers + body.
- */
-FilerWebServer.prototype.handle = function(path, res) {
-  var that = this;
-  var fs = that.fs;
-
-  fs.stat(path, function(err, stats) {
-    if(err) {
-      handle404(path, res);
-      return;
-    }
-
-    // If this is a dir, show a dir listing
-    if(stats.isDirectory()) {
-      handleDir(fs, path, res);
-      return;
-    }
-
-    handleFile(fs, path, res);
-  });
+DefaultHandler.prototype.handle404 = function(path) {
+  handle404(path, this.res);
 };
 
-module.exports = FilerWebServer;
+DefaultHandler.prototype.handleDir = function(path) {
+  handleDir(this.fs, path, this.res);
+};
+
+DefaultHandler.prototype.handleFile = function(path) {
+  handleFile(this.fs, path, this.res);
+};
+
+module.exports = DefaultHandler;

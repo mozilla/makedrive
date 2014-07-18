@@ -166,7 +166,7 @@ describe('Test util.js', function(){
           jar: result.jar
         }, function(err, res, body) {
           expect(err).not.to.exist;
-          expect(res.statusCode).to.equal(200);
+          expect(res.statusCode).to.equal(404);
           expect(body).to.match(/<title>404 Not Found<\/title>/);
           expect(body).to.match(/The requested URL \/no\/file\/here.html was not found on this server./);
           done();
