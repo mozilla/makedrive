@@ -21,65 +21,52 @@ var app = require('../../server/index.js');
 var serverURL = 'http://0.0.0.0:9090',
     socketURL = serverURL.replace( 'http', 'ws' );
 
-var mockAuthFound = false;
-var uploadFound = false;
-app.routes.post.forEach(function(route) {
-  if(route.path === '/mocklogin:username') {
-    mockAuthFound = true;
-  } else if (route.path === '/upload/*') {
-    uploadFound = true;
+// Mock Webmaker auth
+app.post('/mocklogin/:username', function(req, res) {
+  var username = req.param('username');
+  if(!username){
+    // Expected username.
+    res.send(500);
+  } else if( req.session && req.session.user && req.session.user.username === username) {
+    // Already logged in.
+    res.send(401);
+  } else{
+    // Login worked.
+    req.session.user = {username: username};
+    res.send(200);
   }
 });
 
-// Mock Webmaker auth
-if(!mockAuthFound) {
-  app.post('/mocklogin/:username', function(req, res) {
-    var username = req.param('username');
-    if(!username){
-      // Expected username.
-      res.send(500);
-    } else if( req.session && req.session.user && req.session.user.username === username) {
-      // Already logged in.
-      res.send(401);
-    } else{
-      // Login worked.
-      req.session.user = {username: username};
-      res.send(200);
-    }
-  });
-}
 // Mock File Upload into Filer FileSystem.  URLs will look like this:
 // /upload/:username/:path (where :path will contain /s)
-if(!uploadFound) {
-  app.post('/upload/*', function(req, res) {
-    var parts = req.path.split('/');
-    var username = parts[2];
-    var path = '/' + parts.slice(3).join('/');
+app.post('/upload/*', function(req, res) {
+  var parts = req.path.split('/');
+  var username = parts[2];
+  var path = '/' + parts.slice(3).join('/');
 
-    var fileData = [];
-    req.on('data', function(chunk) {
-      fileData.push(new Buffer(chunk));
-    });
-    req.on('end', function() {
-      fileData = Buffer.concat(fileData);
-
-      var fs = filesystem.create({
-        keyPrefix: username,
-        name: username
-      });
-
-      fs.writeFile(path, fileData, function(err) {
-        if(err) {
-          res.send(500, {error: err});
-          return;
-        }
-
-        res.send(200);
-      });
-
-    });
+  var fileData = [];
+  req.on('data', function(chunk) {
+    fileData.push(new Buffer(chunk));
   });
-}
+  req.on('end', function() {
+    fileData = Buffer.concat(fileData);
+
+    var fs = filesystem.create({
+      keyPrefix: username,
+      name: username
+    });
+
+    fs.writeFile(path, fileData, function(err) {
+      if(err) {
+        res.send(500, {error: err});
+        return;
+      }
+
+      res.send(200);
+    });
+
+  });
+});
 
 /**
  * Misc Helpers

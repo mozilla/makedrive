@@ -8,13 +8,7 @@ var middleware = require( './middleware' ),
     WebSocketServer = require('ws').Server,
     websocketAuth = require('../lib/websocket-auth');
 
-module.exports = function createRoutes( app, webmakerAuth  ) {
-  // Client-side Webmaker Auth support
-  app.post('/verify', webmakerAuth.handlers.verify);
-  app.post('/authenticate', webmakerAuth.handlers.authenticate);
-  app.post('/logout', middleware.authenticationHandler, websocketAuth.logoutHandler, webmakerAuth.handlers.logout);
-  app.post('/create', webmakerAuth.handlers.create);
-  app.post('/check-username', webmakerAuth.handlers.exists);
+module.exports = function createRoutes( app ) {
 
   app.get( "/", function( req, res ) {
     res.send( "MakeDrive: https://wiki.mozilla.org/Webmaker/MakeDrive" );
