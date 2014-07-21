@@ -4,10 +4,8 @@ var middleware = require( './middleware' ),
     version = require('../../package.json').version,
     FilerWebServer = require('../lib/filer-www'),
     Sync = require( '../lib/sync'),
-    ws = require('ws'),
     SyncMessage = require('../../lib/syncmessage'),
-    WebSocket = require('ws'),
-    WebSocketServer = WebSocket.Server,
+    WebSocketServer = require('ws').Server,
     websocketAuth = require('../lib/websocket-auth');
 
 module.exports = function createRoutes( app, webmakerAuth  ) {
