@@ -758,9 +758,13 @@ function ensureRemoteFilesystemContents(layout, jar, callback) {
       expect(res.statusCode).to.equal(200);
 
       if(!Buffer.isBuffer(expectedContents)) {
-        expectedContents = new Buffer(expectedContents).toJSON();
-
+        expectedContents = new Buffer(expectedContents);
       }
+
+      if(!Buffer.isBuffer(actualContents)) {
+        actualContents = new Buffer(actualContents);
+      }
+
       expect(actualContents).to.deep.equal(expectedContents);
       callback(err);
     });

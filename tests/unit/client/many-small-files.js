@@ -3,7 +3,7 @@ var util = require('../../lib/util.js');
 var MakeDrive = require('../../../client/src');
 var Filer = require('../../../lib/filer.js');
 
-describe('MakeDrive Client - sync multiple files', function(){
+describe('MakeDrive Client - sync many small files', function(){
   var provider;
 
   beforeEach(function() {
@@ -13,23 +13,35 @@ describe('MakeDrive Client - sync multiple files', function(){
     provider = null;
   });
 
+  function smallFile(number) {
+    return '<!doctype html> \
+           <head> \
+             <meta charset="utf-8"> \
+             <title> Small File ' + number + ' </title> \
+           </head> \
+           <body> \
+             <p>This is small file ' + number + '.</p> \
+           </body> \
+           </html>';
+  }
+
   /**
-   * This test creates multiple files, syncs, and checks that they exist
-   * on the server. It then removes them, and makes sure a downstream sync
-   * brings them back.
+   * This test creates 100 small files in a dir, syncs, and checks that
+   * they exist on the server. It then removes them, and makes sure a
+   * downstream sync brings them back.
    */
-  it('should sync multiple files', function(done) {
+  it('should sync many small files', function(done) {
     util.authenticatedConnection(function( err, result ) {
       expect(err).not.to.exist;
 
       var fs = MakeDrive.fs({provider: provider, manual: true});
       var sync = fs.sync;
 
-      var layout = {
-        '/file1': 'contents of file1',
-        '/file2': 'contents of file2',
-        '/file3': 'contents of file3'
-      };
+      // Make a layout with /project and 100 small html files inside
+      var layout = {};
+      for(var i=0; i<100; i++) {
+        layout['/project/small-file' + i + '.html'] = smallFile(i);
+      }
 
       sync.once('connected', function onConnected() {
         util.createFilesystemLayout(fs, layout, function(err) {
@@ -40,8 +52,7 @@ describe('MakeDrive Client - sync multiple files', function(){
       });
 
       sync.once('completed', function onUpstreamCompleted() {
-        // Make sure all 3 files made it to the server
-        util.ensureRemoteFilesystem(layout, result.jar, function() {
+        util.ensureRemoteFilesystem(layout, result.jar, function(err) {
           sync.disconnect();
         });
       });
@@ -50,7 +61,7 @@ describe('MakeDrive Client - sync multiple files', function(){
         util.deleteFilesystemLayout(fs, null, function(err) {
           expect(err).not.to.exist;
 
-          // Re-sync with server and make sure we get our files back
+          // Re-sync with server and make sure we get our deep dir back
           sync.once('connected', function onSecondDownstreamSync() {
 
             sync.once('disconnected', function onSecondDisconnected() {

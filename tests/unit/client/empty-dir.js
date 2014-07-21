@@ -3,7 +3,7 @@ var util = require('../../lib/util.js');
 var MakeDrive = require('../../../client/src');
 var Filer = require('../../../lib/filer.js');
 
-describe('MakeDrive Client - sync multiple files', function(){
+describe('MakeDrive Client - sync empty dir', function(){
   var provider;
 
   beforeEach(function() {
@@ -14,22 +14,18 @@ describe('MakeDrive Client - sync multiple files', function(){
   });
 
   /**
-   * This test creates multiple files, syncs, and checks that they exist
-   * on the server. It then removes them, and makes sure a downstream sync
-   * brings them back.
+   * This test creates an empty dir, syncs, and checks that it exists
+   * on the server. It then removes it, and makes sure a downstream sync
+   * brings it back.
    */
-  it('should sync multiple files', function(done) {
+  it('should sync an empty dir', function(done) {
     util.authenticatedConnection(function( err, result ) {
       expect(err).not.to.exist;
 
       var fs = MakeDrive.fs({provider: provider, manual: true});
       var sync = fs.sync;
 
-      var layout = {
-        '/file1': 'contents of file1',
-        '/file2': 'contents of file2',
-        '/file3': 'contents of file3'
-      };
+      var layout = {'/empty': null};
 
       sync.once('connected', function onConnected() {
         util.createFilesystemLayout(fs, layout, function(err) {
@@ -40,7 +36,6 @@ describe('MakeDrive Client - sync multiple files', function(){
       });
 
       sync.once('completed', function onUpstreamCompleted() {
-        // Make sure all 3 files made it to the server
         util.ensureRemoteFilesystem(layout, result.jar, function() {
           sync.disconnect();
         });
@@ -50,7 +45,7 @@ describe('MakeDrive Client - sync multiple files', function(){
         util.deleteFilesystemLayout(fs, null, function(err) {
           expect(err).not.to.exist;
 
-          // Re-sync with server and make sure we get our files back
+          // Re-sync with server and make sure we get our empty dir back
           sync.once('connected', function onSecondDownstreamSync() {
 
             sync.once('disconnected', function onSecondDisconnected() {

@@ -3,7 +3,7 @@ var util = require('../../lib/util.js');
 var MakeDrive = require('../../../client/src');
 var Filer = require('../../../lib/filer.js');
 
-describe('MakeDrive Client - sync multiple files', function(){
+describe('MakeDrive Client - sync deep tree structure', function(){
   var provider;
 
   beforeEach(function() {
@@ -14,21 +14,20 @@ describe('MakeDrive Client - sync multiple files', function(){
   });
 
   /**
-   * This test creates multiple files, syncs, and checks that they exist
-   * on the server. It then removes them, and makes sure a downstream sync
-   * brings them back.
+   * This test creates series of deep dir trees, syncs, and checks that
+   * they exist on the server. It then removes them, and makes sure a
+   * downstream sync brings them back.
    */
-  it('should sync multiple files', function(done) {
+  it('should sync an deep dir structure', function(done) {
     util.authenticatedConnection(function( err, result ) {
       expect(err).not.to.exist;
 
       var fs = MakeDrive.fs({provider: provider, manual: true});
       var sync = fs.sync;
 
+      // Make a directory 20 levels deep with one file inside.
       var layout = {
-        '/file1': 'contents of file1',
-        '/file2': 'contents of file2',
-        '/file3': 'contents of file3'
+        '/1/2/3/4/5/6/7/8/9/10/11/12/13/14/15/16/17/18/19/20/file': 'This is a file'
       };
 
       sync.once('connected', function onConnected() {
@@ -40,8 +39,7 @@ describe('MakeDrive Client - sync multiple files', function(){
       });
 
       sync.once('completed', function onUpstreamCompleted() {
-        // Make sure all 3 files made it to the server
-        util.ensureRemoteFilesystem(layout, result.jar, function() {
+        util.ensureRemoteFilesystem(layout, result.jar, function(err) {
           sync.disconnect();
         });
       });
@@ -50,7 +48,7 @@ describe('MakeDrive Client - sync multiple files', function(){
         util.deleteFilesystemLayout(fs, null, function(err) {
           expect(err).not.to.exist;
 
-          // Re-sync with server and make sure we get our files back
+          // Re-sync with server and make sure we get our deep dir back
           sync.once('connected', function onSecondDownstreamSync() {
 
             sync.once('disconnected', function onSecondDisconnected() {
