@@ -53,9 +53,11 @@ describe('Rsync', function() {
   });
 
   it('should fail patching if filesystem is null', function (done) {
-    rsync.patch(null, '/', [], function (err) {
+    rsync.patch(null, '/', [], function (err, paths) {
       expect(err).to.exist;
       expect(err.code).to.equal('EINVAL');
+      expect(paths).to.exist;
+      expect(paths.synced).to.have.length(0);
       done();
     });
   });
@@ -85,9 +87,11 @@ describe('Rsync', function() {
   });
 
   it('should fail patching if source path is null', function (done) {
-    rsync.patch(fs, null, [], function (err) {
+    rsync.patch(fs, null, [], function (err, paths) {
       expect(err).to.exist;
       expect(err.code).to.equal('EINVAL');
+      expect(paths).to.exist;
+      expect(paths.synced).to.have.length(0);
       done();
     });
   });
@@ -113,8 +117,12 @@ describe('Rsync', function() {
               expect(err).to.not.exist;
               rsync.diff(fs, '/1.txt', data, OPTION_SIZE, function (err, data) {
                 expect(err).to.not.exist;
-                rsync.patch(fs, '/test/1.txt', data, OPTION_SIZE, function (err) {
+                rsync.patch(fs, '/test/1.txt', data, OPTION_SIZE, function (err, paths) {
                   expect(err).to.not.exist;
+                  expect(paths).to.exist;
+                  expect(paths.synced).to.have.length(1);
+                  expect(paths.synced).to.have.members(['/test/1.txt']);
+                  expect(paths.failed).to.have.length(0);
                   fs.readFile('/test/1.txt', 'utf8', function (err, data) {
                     expect(err).to.not.exist;
                     expect(data).to.exist;
@@ -143,8 +151,12 @@ describe('Rsync', function() {
               expect(err).to.not.exist;
               rsync.diff(fs, '/1.txt', data, OPTION_REC_SIZE, function (err, data) {
                 expect(err).to.not.exist;
-                rsync.patch(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err) {
+                rsync.patch(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err, paths) {
                   expect(err).to.not.exist;
+                  expect(paths).to.exist;
+                  expect(paths.synced).to.have.length(1);
+                  expect(paths.synced).to.have.members(['/test/1.txt']);
+                  expect(paths.failed).to.have.length(0);
                   fs.readFile('/test/1.txt', 'utf8', function (err, data) {
                     expect(err).to.not.exist;
                     expect(data).to.exist;
@@ -173,8 +185,12 @@ describe('Rsync', function() {
               expect(err).to.not.exist;
               rsync.diff(fs, '/1.txt', data, OPTION_REC_SIZE, function (err, data) {
                 expect(err).to.not.exist;
-                rsync.patch(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err) {
+                rsync.patch(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err, paths) {
                   expect(err).to.not.exist;
+                  expect(paths).to.exist;
+                  expect(paths.synced).to.have.length(1);
+                  expect(paths.synced).to.have.members(['/test/1.txt']);
+                  expect(paths.failed).to.have.length(0);
                   fs.readFile('/test/1.txt', 'utf8', function (err, data) {
                     expect(err).to.not.exist;
                     expect(data).to.exist;
@@ -201,8 +217,12 @@ describe('Rsync', function() {
             expect(err).to.not.exist;
             rsync.diff(fs, '/1.txt', data, OPTION_REC_SIZE, function (err, data) {
               expect(err).to.not.exist;
-              rsync.patch(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err) {
+              rsync.patch(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err, paths) {
                 expect(err).to.not.exist;
+                expect(paths).to.exist;
+                expect(paths.synced).to.have.length(1);
+                expect(paths.synced).to.have.members(['/test/1.txt']);
+                expect(paths.failed).to.have.length(0);
                 fs.readFile('/test/1.txt', 'utf8', function (err, data) {
                   expect(err).to.not.exist;
                   expect(data).to.exist;
@@ -228,8 +248,12 @@ describe('Rsync', function() {
             expect(err).to.not.exist;
             rsync.diff(fs, '/1.txt', data, OPTION_REC_SIZE, function (err, data) {
               expect(err).to.not.exist;
-              rsync.patch(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err) {
+              rsync.patch(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err, paths) {
                 expect(err).to.not.exist;
+                expect(paths).to.exist;
+                expect(paths.synced).to.have.length(1);
+                expect(paths.synced).to.have.members(['/test/1.txt']);
+                expect(paths.failed).to.have.length(0);
                 fs.readFile('/test/1.txt', 'utf8', function (err, data) {
                   expect(err).to.not.exist;
                   expect(data).to.exist;
@@ -263,8 +287,11 @@ describe('Rsync', function() {
                   expect(err).to.not.exist;
                   rsync.diff(fs, '/1.txt', data, OPTION_REC_SIZE, function (err, data) {
                     expect(err).to.not.exist;
-                    rsync.patch(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err) {
+                    rsync.patch(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err, paths) {
                       expect(err).to.not.exist;
+                      expect(paths).to.exist;
+                      expect(paths.synced).to.have.length(0);
+                      expect(paths.failed).to.have.length(0);
                       fs.readFile('/test/1.txt', 'utf8', function (err, data) {
                         expect(err).to.not.exist;
                         expect(data).to.exist;
@@ -302,8 +329,12 @@ describe('Rsync', function() {
                   expect(err).to.not.exist;
                   rsync.diff(fs, '/1.txt', data, OPTION_SIZE, function (err, data) {
                     expect(err).to.not.exist;
-                    rsync.patch(fs, '/test/1.txt', data, OPTION_SIZE, function (err) {
+                    rsync.patch(fs, '/test/1.txt', data, OPTION_SIZE, function (err, paths) {
                       expect(err).to.not.exist;
+                      expect(paths).to.exist;
+                      expect(paths.synced).to.have.length(1);
+                      expect(paths.synced).to.have.members(['/test/1.txt']);
+                      expect(paths.failed).to.have.length(0);
                       fs.readFile('/test/1.txt', 'utf8', function (err, data) {
                         expect(err).to.not.exist;
                         expect(data).to.exist;
@@ -340,8 +371,12 @@ describe('Rsync', function() {
               expect(err).to.not.exist;
               rsync.diff(fs, '/1.txt', data, OPTION_REC_SIZE, function (err, data) {
                 expect(err).to.not.exist;
-                rsync.patch(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err) {
+                rsync.patch(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err, paths) {
                   expect(err).to.not.exist;
+                  expect(paths).to.exist;
+                  expect(paths.synced).to.have.length(1);
+                  expect(paths.synced).to.have.members(['/test/1.txt']);
+                  expect(paths.failed).to.have.length(0);
                   fs.readFile('/test/1.txt', 'utf8', function (err, data) {
                     expect(err).to.not.exist;
                     expect(data).to.exist;
@@ -376,8 +411,12 @@ describe('Rsync', function() {
               expect(err).to.not.exist;
               rsync.diff(fs, '/2', data, OPTION_REC_SIZE, function (err, data) {
                 expect(err).to.not.exist;
-                rsync.patch(fs, '/test/2', data, OPTION_REC_SIZE, function (err) {
+                rsync.patch(fs, '/test/2', data, OPTION_REC_SIZE, function (err, paths) {
                   expect(err).to.not.exist;
+                  expect(paths).to.exist;
+                  expect(paths.synced).to.have.length(1);
+                  expect(paths.synced).to.have.members(['/test/2']);
+                  expect(paths.failed).to.have.length(0);
                   fs.unlink('/1.txt', function (err) {
                     expect(err).to.not.exist;
                     fs.lstat('/test/2', function (err, stats) {
@@ -415,8 +454,12 @@ describe('Rsync', function() {
               expect(err).to.not.exist;
               rsync.diff(fs, '/apple', data, OPTION_REC_SIZE, function (err, data) {
                 expect(err).to.not.exist;
-                rsync.patch(fs, '/test/apple', data, OPTION_REC_SIZE, function (err) {
+                rsync.patch(fs, '/test/apple', data, OPTION_REC_SIZE, function (err, paths) {
                   expect(err).to.not.exist;
+                  expect(paths).to.exist;
+                  expect(paths.synced).to.have.length(1);
+                  expect(paths.synced).to.have.members(['/test/apple']);
+                  expect(paths.failed).to.have.length(0);
                   fs.lstat('/test/apple', function (err, stats) {
                     expect(err).to.not.exist;
                     expect(stats).to.exist;
@@ -458,8 +501,12 @@ describe('Rsync', function() {
                 expect(err).to.not.exist;
                 rsync.diff(fs, '/2', data, OPTION_REC_SIZE, function (err, data) {
                   expect(err).to.not.exist;
-                  rsync.patch(fs, '/test/2', data, OPTION_REC_SIZE, function (err) {
+                  rsync.patch(fs, '/test/2', data, OPTION_REC_SIZE, function (err, paths) {
                     expect(err).to.not.exist;
+                    expect(paths).to.exist;
+                    expect(paths.synced).to.have.length(1);
+                    expect(paths.synced).to.have.members(['/test/2']);
+                    expect(paths.failed).to.have.length(0);
                     fs.unlink('/1.txt', function (err) {
                       expect(err).to.not.exist;
                       fs.lstat('/test/2', function (err, stats) {
@@ -495,8 +542,12 @@ describe('Rsync', function() {
           expect(err).to.not.exist;
           rsync.diff(fs, '/1.txt', data, OPTION_REC_SIZE, function (err, data) {
             expect(err).to.not.exist;
-            rsync.patch(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err) {
+            rsync.patch(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err, paths) {
               expect(err).to.not.exist;
+              expect(paths).to.exist;
+              expect(paths.synced).to.have.length(1);
+              expect(paths.synced).to.have.members(['/test/1.txt']);
+              expect(paths.failed).to.have.length(0);
               fs.readFile('/test/1.txt', 'utf8', function (err, data) {
                 expect(err).to.not.exist;
                 expect(data).to.exist;
@@ -525,8 +576,12 @@ describe('Rsync', function() {
                 expect(err).to.not.exist;
                 rsync.diff(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
                   expect(err).to.not.exist;
-                  rsync.patch(fs, '/test2', data, OPTION_REC_SIZE, function (err) {
+                  rsync.patch(fs, '/test2', data, OPTION_REC_SIZE, function (err, paths) {
                     expect(err).to.not.exist;
+                    expect(paths).to.exist;
+                    expect(paths.synced).to.have.length(2);
+                    expect(paths.synced).to.have.members(['/test2/1.txt', '/test2/2.txt']);
+                    expect(paths.failed).to.have.length(0);
                     fs.readFile('/test2/1.txt', 'utf8', function (err, data) {
                       expect(err).to.not.exist;
                       expect(data).to.exist;
@@ -568,8 +623,12 @@ describe('Rsync', function() {
                   expect(err).to.not.exist;
                   rsync.diff(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
                     expect(err).to.not.exist;
-                    rsync.patch(fs, '/test2', data, OPTION_REC_SIZE, function (err) {
+                    rsync.patch(fs, '/test2', data, OPTION_REC_SIZE, function (err, paths) {
                       expect(err).to.not.exist;
+                      expect(paths).to.exist;
+                      expect(paths.synced).to.have.length(3);
+                      expect(paths.synced).to.have.members(['/test2/folder', '/test2/folder/1.txt', '/test2/folder/2.txt']);
+                      expect(paths.failed).to.have.length(0);
                       fs.stat('/test2/folder', function (err, stats) {
                         expect(err).to.not.exist;
                         expect(stats).to.exist;
@@ -627,8 +686,12 @@ describe('Rsync', function() {
                             expect(err).to.not.exist;
                             rsync.diff(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
                               expect(err).to.not.exist;
-                              rsync.patch(fs, '/test2', data, OPTION_REC_SIZE, function (err) {
+                              rsync.patch(fs, '/test2', data, OPTION_REC_SIZE, function (err, paths) {
                                 expect(err).to.not.exist;
+                                expect(paths).to.exist;
+                                expect(paths.synced).to.have.length(3);
+                                expect(paths.synced).to.have.members(['/test2/1.txt', '/test2/sync', '/test2/sync/2.txt']);
+                                expect(paths.failed).to.have.length(0);
                                 fs.readFile('/test2/1.txt', 'utf8', function (err, data) {
                                   expect(err).to.not.exist;
                                   expect(data).to.exist;
@@ -683,8 +746,12 @@ describe('Rsync', function() {
                       expect(err).to.not.exist;
                       rsync.diff(fs, '/projects', data, OPTION_REC_SIZE, function (err, data) {
                         expect(err).to.not.exist;
-                        rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err) {
+                        rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
                           expect(err).to.not.exist;
+                          expect(paths).to.exist;
+                          expect(paths.synced).to.have.length(6);
+                          expect(paths.synced).to.have.members(['/proj_1', '/proj_2', '/proj_1/index.html', '/proj_1/styles.css', '/proj_2/styles2.css', '/proj_2/inside_proj_2']);
+                          expect(paths.failed).to.have.length(0);
                           fs2.readFile('/proj_1/index.html', 'utf8', function (err, data) {
                             expect(err).to.not.exist;
                             expect(data).to.exist;
@@ -732,8 +799,12 @@ describe('Rsync', function() {
                 expect(err).to.not.exist;
                 rsync.diff(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
                   expect(err).to.not.exist;
-                  rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err) {
+                  rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
                     expect(err).to.not.exist;
+                    expect(paths).to.exist;
+                    expect(paths.synced).to.have.length(3);
+                    expect(paths.synced).to.have.members(['/dir', '/dir/dirdir', '/dir/dirdir/1.txt']);
+                    expect(paths.failed).to.have.length(0);
                     fs2.readFile('/dir/dirdir/1.txt', 'utf8', function (err, data) {
                       expect(err).to.not.exist;
                       expect(data).to.exist;
@@ -767,8 +838,12 @@ describe('Rsync', function() {
                   expect(err).to.not.exist;
                   rsync.diff(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
                     expect(err).to.not.exist;
-                    rsync.patch(fs, '/test2', data, OPTION_REC_SIZE, function (err) {
+                    rsync.patch(fs, '/test2', data, OPTION_REC_SIZE, function (err, paths) {
                       expect(err).to.not.exist;
+                      expect(paths).to.exist;
+                      expect(paths.synced).to.have.length(3);
+                      expect(paths.synced).to.have.members(['/test2/dir1', '/test2/dir2', '/test2/dir1/dir12']);
+                      expect(paths.failed).to.have.length(0);
                       fs.stat('/test2', function (err, stats) {
                         expect(err).to.not.exist;
                         expect(stats).to.exist;
@@ -812,8 +887,12 @@ describe('Rsync', function() {
             expect(err).to.not.exist;
             rsync.diff(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
               expect(err).to.not.exist;
-              rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err) {
+              rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
                 expect(err).to.not.exist;
+                expect(paths).to.exist;
+                expect(paths.synced).to.have.length(1);
+                expect(paths.synced).to.have.members(['/file1.txt']);
+                expect(paths.failed).to.have.length(0);
                 fs2.readFile('/file1.txt', 'utf8', function (err, data) {
                   expect(err).to.not.exist;
                   expect(data).to.exist;
@@ -829,8 +908,12 @@ describe('Rsync', function() {
                           expect(err).to.not.exist;
                           rsync.diff(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
                             expect(err).to.not.exist;
-                            rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err) {
+                            rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
                               expect(err).to.not.exist;
+                              expect(paths).to.exist;
+                              expect(paths.synced).to.have.length(2);
+                              expect(paths.synced).to.have.members(['/myfile.txt', '/file1.txt']);
+                              expect(paths.failed).to.have.length(0);
                               fs2.readFile('/myfile.txt', 'utf8', function (err, data) {
                                 expect(err).to.not.exist;
                                 expect(data).to.exist;
@@ -871,8 +954,12 @@ describe('Rsync', function() {
                 expect(err).to.not.exist;
                 rsync.diff(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
                   expect(err).to.not.exist;
-                  rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err) {
+                  rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
                     expect(err).to.not.exist;
+                    expect(paths).to.exist;
+                    expect(paths.synced).to.have.length(3);
+                    expect(paths.synced).to.have.members(['/olddir', '/mydir', '/olddir/file1.txt']);
+                    expect(paths.failed).to.have.length(0);
                     fs2.stat('/olddir', function (err, stats) {
                       expect(err).to.not.exist;
                       expect(stats).to.exist;
@@ -895,8 +982,12 @@ describe('Rsync', function() {
                                   expect(err).to.not.exist;
                                   rsync.diff(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
                                     expect(err).to.not.exist;
-                                    rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err) {
+                                    rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
                                       expect(err).to.not.exist;
+                                      expect(paths).to.exist;
+                                      expect(paths.synced).to.have.length(5);
+                                      expect(paths.synced).to.have.members(['/newdir', '/newdir/file1.txt', '/notmydir', '/olddir', '/mydir']);
+                                      expect(paths.failed).to.have.length(0);
                                       fs2.stat('/newdir', function (err, stats) {
                                         expect(err).to.not.exist;
                                         expect(stats).to.exist;
@@ -952,8 +1043,12 @@ describe('Rsync', function() {
             expect(err).to.not.exist;
             rsync.diff(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
               expect(err).to.not.exist;
-              rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err) {
+              rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
                 expect(err).to.not.exist;
+                expect(paths).to.exist;
+                expect(paths.synced).to.have.length(1);
+                expect(paths.synced).to.have.members(['/myfile.txt']);
+                expect(paths.failed).to.have.length(0);
                 fs2.readFile('/myfile.txt', 'utf8', function (err, data) {
                   expect(err).to.not.exist;
                   expect(data).to.exist;
@@ -966,8 +1061,12 @@ describe('Rsync', function() {
                         expect(err).to.not.exist;
                         rsync.diff(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
                           expect(err).to.not.exist;
-                          rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err) {
+                          rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
                             expect(err).to.not.exist;
+                            expect(paths).to.exist;
+                            expect(paths.synced).to.have.length(1);
+                            expect(paths.synced).to.have.members(['/myfile.txt']);
+                            expect(paths.failed).to.have.length(0);
                             fs2.readFile('/myfile.txt', 'utf8', function (err, data) {
                               expect(err).to.exist;
                               expect(err.code).to.equal('ENOENT');
@@ -1003,8 +1102,12 @@ describe('Rsync', function() {
               expect(err).to.not.exist;
               rsync.diff(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
                 expect(err).to.not.exist;
-                rsync.patch(fs2, '/test', data, OPTION_REC_SIZE, function (err) {
+                rsync.patch(fs2, '/test', data, OPTION_REC_SIZE, function (err, paths) {
                   expect(err).to.not.exist;
+                  expect(paths).to.exist;
+                  expect(paths.synced).to.have.length(1);
+                  expect(paths.synced).to.have.members(['/test/index']);
+                  expect(paths.failed).to.have.length(0);
                   fs2.readFile('/test/index', 'utf8', function (err, data) {
                     expect(err).to.not.exist;
                     expect(data).to.exist;
@@ -1020,8 +1123,12 @@ describe('Rsync', function() {
                             expect(err).to.not.exist;
                             rsync.diff(fs2, '/test', data, OPTION_REC_SIZE, function (err, data) {
                               expect(err).to.not.exist;
-                              rsync.patch(fs, '/test', data, OPTION_REC_SIZE, function (err) {
+                              rsync.patch(fs, '/test', data, OPTION_REC_SIZE, function (err, paths) {
                                 expect(err).to.not.exist;
+                                expect(paths).to.exist;
+                                expect(paths.synced).to.have.length(1);
+                                expect(paths.synced).to.have.members(['/test/index']);
+                                expect(paths.failed).to.have.length(0);
                                 fs.readFile('/test/index', 'utf8', function (err, data) {
                                   expect(err).to.not.exist;
                                   expect(data).to.exist;
@@ -1058,8 +1165,12 @@ describe('Rsync', function() {
               expect(err).to.not.exist;
               rsync.diff(fs, '/projects/hello', data, OPTION_REC_SIZE, function (err, data) {
                 expect(err).to.not.exist;
-                rsync.patch(fs2, '/projects/hello', data, OPTION_REC_SIZE, function (err) {
+                rsync.patch(fs2, '/projects/hello', data, OPTION_REC_SIZE, function (err, paths) {
                   expect(err).to.not.exist;
+                  expect(paths).to.exist;
+                  expect(paths.synced).to.have.length(1);
+                  expect(paths.synced).to.have.members(['/projects/hello']);
+                  expect(paths.failed).to.have.length(0);
                   fs2.readFile('/projects/hello', 'utf8', function (err, data) {
                     expect(err).to.not.exist;
                     expect(data).to.exist;
@@ -1072,8 +1183,12 @@ describe('Rsync', function() {
                           expect(err).to.not.exist;
                           rsync.diff(fs2, '/projects/hello', data, OPTION_REC_SIZE, function (err, data) {
                             expect(err).to.not.exist;
-                            rsync.patch(fs, '/projects/hello', data, OPTION_REC_SIZE, function (err) {
+                            rsync.patch(fs, '/projects/hello', data, OPTION_REC_SIZE, function (err, data) {
                               expect(err).to.not.exist;
+                              expect(paths).to.exist;
+                              expect(paths.synced).to.have.length(1);
+                              expect(paths.synced).to.have.members(['/projects/hello']);
+                              expect(paths.failed).to.have.length(0);
                               fs.readFile('/projects/hello', 'utf8', function (err, data) {
                                 expect(err).to.not.exist;
                                 expect(data).to.exist;
@@ -1116,8 +1231,12 @@ describe('Rsync', function() {
               expect(err).to.not.exist;
               rsync.diff(fs, '/projects/hello', data, OPTION_REC_SIZE, function (err, data) {
                 expect(err).to.not.exist;
-                rsync.patch(fs2, '/projects/hello', data, OPTION_REC_SIZE, function (err) {
+                rsync.patch(fs2, '/projects/hello', data, OPTION_REC_SIZE, function (err, paths) {
                   expect(err).to.not.exist;
+                  expect(paths).to.exist;
+                  expect(paths.synced).to.have.length(1);
+                  expect(paths.synced).to.have.members(['/projects/hello']);
+                  expect(paths.failed).to.have.length(0);
                   fs2.readFile('/projects/hello', function (err, data) {
                     expect(err).to.not.exist;
                     expect(data).to.exist;
@@ -1131,8 +1250,12 @@ describe('Rsync', function() {
                           expect(err).to.not.exist;
                           rsync.diff(fs2, '/projects/hello', data, OPTION_REC_SIZE, function (err, data) {
                             expect(err).to.not.exist;
-                            rsync.patch(fs, '/projects/hello', data, OPTION_REC_SIZE, function (err) {
+                            rsync.patch(fs, '/projects/hello', data, OPTION_REC_SIZE, function (err, paths) {
                               expect(err).to.not.exist;
+                              expect(paths).to.exist;
+                              expect(paths.synced).to.have.length(1);
+                              expect(paths.synced).to.have.members(['/projects/hello']);
+                              expect(paths.failed).to.have.length(0);
                               fs.readFile('/projects/hello', function (err, data) {
                                 expect(err).to.not.exist;
                                 expect(data).to.exist;
@@ -1175,8 +1298,12 @@ describe('Rsync', function() {
               expect(err).to.not.exist;
               rsync.diff(fs, '/projects/hello', data, OPTION_REC_SIZE, function (err, data) {
                 expect(err).to.not.exist;
-                rsync.patch(fs2, '/projects/hello', data, OPTION_REC_SIZE, function (err) {
+                rsync.patch(fs2, '/projects/hello', data, OPTION_REC_SIZE, function (err, paths) {
                   expect(err).to.not.exist;
+                  expect(paths).to.exist;
+                  expect(paths.synced).to.have.length(1);
+                  expect(paths.synced).to.have.members(['/projects/hello']);
+                  expect(paths.failed).to.have.length(0);
                   fs2.readFile('/projects/hello', function (err, data) {
                     expect(err).to.not.exist;
                     expect(data).to.exist;
@@ -1190,8 +1317,12 @@ describe('Rsync', function() {
                           expect(err).to.not.exist;
                           rsync.diff(fs2, '/projects/hello', data, OPTION_REC_SIZE, function (err, data) {
                             expect(err).to.not.exist;
-                            rsync.patch(fs, '/projects/hello', data, OPTION_REC_SIZE, function (err) {
+                            rsync.patch(fs, '/projects/hello', data, OPTION_REC_SIZE, function (err, paths) {
                               expect(err).to.not.exist;
+                              expect(paths).to.exist;
+                              expect(paths.synced).to.have.length(1);
+                              expect(paths.synced).to.have.members(['/projects/hello']);
+                              expect(paths.failed).to.have.length(0);
                               fs.readFile('/projects/hello', function (err, data) {
                                 expect(err).to.not.exist;
                                 expect(data).to.exist;
@@ -1218,5 +1349,4 @@ describe('Rsync', function() {
       });
     });
   });
-
 });
