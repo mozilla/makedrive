@@ -229,25 +229,31 @@ function createFS(options) {
     if(token) {
       connect(token);
     } else {
+      // Remove WebSocket protocol from URL, and swap for http:// or https://
+      // ws://drive.webmaker.org/ -> http://drive.webmaker.org/api/sync
+      var apiSync = url.replace(/^([^\/]*\/\/)?/, function(match, p1) {
+        return p1 === 'wss://' ? 'https://' : 'http://';
+      });
+      // Also add /api/sync to the end:
+      apiSync.replace(/\/?$/, '/api/sync');
+
       request({
-        // Remove WebSocket protocol from URL, just use // and add /api/sync
-        // ws://drive.webmaker.org/ -> //drive.webmaker.org/api/sync
-        url: url.replace(/^[^\/]*\/\//, '//') + '/api/sync',
+        url: apiSync,
         method: 'GET',
         json: true
       }, function(err, msg, body) {
         var statusCode;
         var error;
 
-        msg = msg || null;
         statusCode = msg && msg.statusCode;
-        error = statusCode !== 200 ? { message: err || 'Unable to get token', code: statusCode } : null;
+        error = statusCode !== 200 ?
+          { message: err || 'Unable to get token', code: statusCode } : null;
 
         if(error) {
           sync.onError(error);
-          return;
+        } else {
+          connect(body);
         }
-        connect(body);
       });
     }
   };
