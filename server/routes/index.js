@@ -1,5 +1,5 @@
 // Expose internals
-var middleware = require( './middleware' ),
+var middleware = require( '../middleware.js' ),
     env = require('../lib/environment'),
     version = require('../../package.json').version,
     FilerWebServer = require('../lib/filer-www'),
