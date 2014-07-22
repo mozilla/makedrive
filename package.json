@@ -1,6 +1,6 @@
 {
   "name": "makedrive",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Webmaker Filesystem",
   "scripts": {
     "postinstall": "bower install",
