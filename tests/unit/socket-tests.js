@@ -38,7 +38,8 @@ describe('[Downstream Syncing with Websockets]', function(){
 
        var socketPackage = util.openSocket(socketData, {
          onMessage: function(message) {
-           message = util.resolveToJSON(message);
+           message = util.toSyncMessage(message);
+
            expect(message).to.exist;
            expect(message.type).to.equal(SyncMessage.REQUEST);
            expect(message.name).to.equal(SyncMessage.CHKSUM);
@@ -83,7 +84,7 @@ describe('[Downstream Syncing with Websockets]', function(){
 
        var socketPackage = util.openSocket(socketData, {
          onMessage: function(message) {
-           message = util.resolveToJSON(message);
+           message = util.toSyncMessage(message);
            expect(message).to.exist;
            expect(message.type).to.equal(SyncMessage.REQUEST);
            expect(message.name).to.equal(SyncMessage.CHKSUM);
@@ -122,7 +123,7 @@ describe('[Downstream Syncing with Websockets]', function(){
        var socketPackage = util.openSocket(socketData, {
          onMessage: function(message) {
            // First, confirm server acknowledgment
-           message = util.resolveToJSON(message);
+           message = util.toSyncMessage(message);
            expect(message).to.exist;
            expect(message.type).to.equal(SyncMessage.REQUEST);
            expect(message.name).to.equal(SyncMessage.CHKSUM);
@@ -155,7 +156,7 @@ describe('[Downstream Syncing with Websockets]', function(){
 
        util.prepareDownstreamSync(result.username, result.token, function(syncData, fs, socketPackage) {
          util.downstreamSyncSteps.generateDiffs(socketPackage, syncData, fs, function(msg, cb) {
-           msg = util.resolveToJSON(msg);
+           msg = util.toSyncMessage(msg);
 
            expect(msg.type, "[Message type error: \"" + (msg.content && msg.content.error) +"\"]" ).to.equal(SyncMessage.RESPONSE);
            expect(msg.name).to.equal(SyncMessage.DIFFS);
@@ -177,10 +178,10 @@ describe('[Downstream Syncing with Websockets]', function(){
 
        util.prepareDownstreamSync('generateDiffs', result.username, result.token, function(syncData, fs, socketPackage) {
          util.downstreamSyncSteps.patchClientFilesystem(socketPackage, syncData, fs, function(msg, cb) {
-           msg = util.resolveToJSON(msg);
+           msg = util.toSyncMessage(msg);
            var startSyncMsg = SyncMessage.request.sync;
            util.sendSyncMessage(socketPackage, startSyncMsg, function(message){
-             message = util.resolveToJSON(message);
+             message = util.toSyncMessage(message);
 
              expect(message).to.exist;
              expect(message.type).to.equal(SyncMessage.RESPONSE);
@@ -202,7 +203,7 @@ describe('[Downstream Syncing with Websockets]', function(){
        util.prepareDownstreamSync(result.username, result.token, function(data, fs, socketPackage) {
          var startSyncMsg = SyncMessage.request.sync;
          util.sendSyncMessage(socketPackage, startSyncMsg, function(msg){
-           var msg = util.resolveToJSON(msg);
+           var msg = util.toSyncMessage(msg);
 
            expect(msg).to.exist;
            expect(msg.type).to.equal(SyncMessage.ERROR);
@@ -228,7 +229,7 @@ describe('[Upstream Syncing with Websockets]', function(){
         util.completeDownstreamSync(result.username, result.token, function(syncData, fs, socketPackage) {
           // Authorize a user, open a socket, authorize and complete a downstream sync
           util.upstreamSyncSteps.requestSync(socketPackage, function(message, cb) {
-            message = util.resolveToJSON(message);
+            message = util.toSyncMessage(message);
 
             expect(message).to.exist;
             expect(message.type, "[Error: \"" + (message && message.name) + "\"]" ).to.equal(SyncMessage.RESPONSE);
@@ -236,7 +237,7 @@ describe('[Upstream Syncing with Websockets]', function(){
 
             setTimeout(function() {
               util.upstreamSyncSteps.requestSync(socketPackage, function(message2, cb2) {
-                message2 = util.resolveToJSON(message2);
+                message2 = util.toSyncMessage(message2);
 
                 expect(message2).to.exist;
                 expect(message2.type, "[Error: \"" + (message2 && message2.name) + "\"]" ).to.equal(SyncMessage.RESPONSE);
@@ -267,7 +268,7 @@ describe('[Upstream Syncing with Websockets]', function(){
             util.completeDownstreamSync(result2.username, result2.token, function(syncData2, fs2, socketPackage2) {
               // Start an upstream sync with the first client of the user
               util.upstreamSyncSteps.requestSync(socketPackage, function(message, cb) {
-                message = util.resolveToJSON(message);
+                message = util.toSyncMessage(message);
 
                 expect(message).to.exist;
                 expect(message.type, "[Error: \"" + (message && message.name) + "\"]" ).to.equal(SyncMessage.RESPONSE);
@@ -277,7 +278,7 @@ describe('[Upstream Syncing with Websockets]', function(){
                 // get the second client of the same user to initiate an upstream sync
                 setTimeout(function() {
                   util.upstreamSyncSteps.requestSync(socketPackage2, function(message2, cb2) {
-                    message2 = util.resolveToJSON(message2);
+                    message2 = util.toSyncMessage(message2);
 
                     expect(message2).to.exist;
                     expect(message2.type, "[Error: \"" + (message2 && message2.name) + "\"]" ).to.equal(SyncMessage.RESPONSE);
@@ -310,7 +311,7 @@ describe('[Upstream Syncing with Websockets]', function(){
             util.completeDownstreamSync(result2.username, result2.token, function(syncData2, fs2, socketPackage2) {
               // Start an upstream sync with the first client of the user
               util.upstreamSyncSteps.requestSync(socketPackage, function(message, cb) {
-                message = util.resolveToJSON(message);
+                message = util.toSyncMessage(message);
 
                 expect(message).to.exist;
                 expect(message.type, "[Error: \"" + (message && message.name) + "\"]" ).to.equal(SyncMessage.RESPONSE);
@@ -319,7 +320,7 @@ describe('[Upstream Syncing with Websockets]', function(){
                 // After it's confirmed to be started, wait half the time before the lock should be broken and
                 // get the second client of the same user to initiate an upstream sync
                 util.upstreamSyncSteps.requestSync(socketPackage2, function(message2, cb2) {
-                  message2 = util.resolveToJSON(message2);
+                  message2 = util.toSyncMessage(message2);
 
                   expect(message2).to.exist;
                   expect(message2.type, "[Error: \"" + (message2 && message2.name) + "\"]" ).to.equal(SyncMessage.ERROR);

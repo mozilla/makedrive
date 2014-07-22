@@ -105,12 +105,14 @@ function ensureFile(path, contents, jar, callback) {
 }
 
 
-function resolveToJSON(string) {
-  return SyncMessage.parse(JSON.parse(string));
-}
-
-function resolveFromJSON(obj) {
-  return obj.stringify();
+function toSyncMessage(string) {
+  try {
+    string = JSON.parse(string);
+    string = SyncMessage.parse(string);
+  } catch(e) {
+    expect(e, "[Error parsing a SyncMessage to JSON]").to.not.exist;
+  }
+  return string;
 }
 
 /**
@@ -299,7 +301,7 @@ function cleanupSockets(done) {
 function sendSyncMessage(socketPackage, syncMessage, callback) {
   var socket = socketPackage.socket;
   socketPackage.setMessage(callback);
-  socketPackage.socket.send(resolveFromJSON(syncMessage));
+  socketPackage.socket.send(syncMessage.stringify());
 }
 
 /**
@@ -321,7 +323,7 @@ var downstreamSyncSteps = {
       socketPackage.socket.once("message", socketPackage.onMessage);
 
       if (!customAssertions) {
-        message = resolveToJSON(message);
+        message = toSyncMessage(message);
 
         expect(message.type, "[Diffs error: \"" + (message.content && message.content.error) + "\"]").to.equal(SyncMessage.RESPONSE);
         expect(message.name).to.equal(SyncMessage.DIFFS);
@@ -357,7 +359,7 @@ var downstreamSyncSteps = {
       expect(err, "[Rsync patch error: \"" + err + "\"]").not.to.exist;
 
       var patchResponse = SyncMessage.response.patch;
-      socketPackage.socket.send(resolveFromJSON(patchResponse));
+      socketPackage.socket.send(patchResponse.stringify());
 
       cb();
     });
@@ -377,7 +379,7 @@ var upstreamSyncSteps = {
       socketPackage.socket.once("message", socketPackage.onMessage);
 
       if (!customAssertions) {
-        message = resolveToJSON(message);
+        message = toSyncMessage(message);
 
         expect(message).to.exist;
         expect(message.type).to.equal(SyncMessage.RESPONSE);
@@ -390,7 +392,7 @@ var upstreamSyncSteps = {
     });
 
     var requestSyncMessage = SyncMessage.request.sync;
-    socketPackage.socket.send(resolveFromJSON(requestSyncMessage));
+    socketPackage.socket.send(requestSyncMessage.stringify());
   },
   generateChecksums: function(socketPackage, data, customAssertions, cb) {
     if (!cb) {
@@ -403,7 +405,7 @@ var upstreamSyncSteps = {
       // Reattach original listener
       socketPackage.socket.once("message", socketPackage.onMessage);
 
-      message = resolveToJSON(message);
+      message = toSyncMessage(message);
       if (!customAssertions) {
         expect(message).to.exist;
         expect(message.type).to.equal(SyncMessage.REQUEST);
@@ -423,7 +425,7 @@ var upstreamSyncSteps = {
       path: data.path,
       srcList: data.srcList
     };
-    socketPackage.socket.send(resolveFromJSON(requestChksumMsg));
+    socketPackage.socket.send(requestChksumMsg.stringify());
   },
   patchServerFilesystem: function(socketPackage, data, fs, customAssertions, cb) {
     if (!cb) {
@@ -440,7 +442,7 @@ var upstreamSyncSteps = {
       socketPackage.socket.once("message", socketPackage.onMessage);
 
       if (!customAssertions) {
-        message = resolveToJSON(message);
+        message = toSyncMessage(message);
 
         expect(message.type, "[Diffs error: \"" + (message.content && message.content.error) + "\"]").to.equal(SyncMessage.RESPONSE);
         expect(message.name).to.equal(SyncMessage.PATCH);
@@ -487,7 +489,7 @@ function prepareDownstreamSync(finalStep, username, token, cb){
 
     var socketPackage = openSocket({
       onMessage: function(message) {
-        message = resolveToJSON(message);
+        message = toSyncMessage(message);
 
         expect(message).to.exist;
         expect(message.type).to.equal(SyncMessage.RESPONSE);
@@ -495,7 +497,7 @@ function prepareDownstreamSync(finalStep, username, token, cb){
         expect(message.content).to.be.null;
 
         socketPackage.socket.once("message", function(message) {
-          message = resolveToJSON(message);
+          message = toSyncMessage(message);
           expect(message).to.exist;
           expect(message.type).to.equal(SyncMessage.REQUEST);
           expect(message.name).to.equal(SyncMessage.CHKSUM);
@@ -866,8 +868,7 @@ module.exports = {
   socketURL: socketURL,
   username: uniqueUsername,
   createJar: jar,
-  resolveToJSON: resolveToJSON,
-  resolveFromJSON: resolveFromJSON,
+  toSyncMessage: toSyncMessage,
 
   // Connection helpers
   authenticate: authenticate,

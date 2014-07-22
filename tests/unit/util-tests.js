@@ -215,7 +215,7 @@ describe('Test util.js', function(){
         var socketPackage = util.openSocket(socketData, {
           onMessage: function(message){
             // First, confirm server acknowledgment
-            message = util.resolveToJSON(message);
+            message = util.toSyncMessage(message);
             expect(message).to.exist;
             expect(message.type).to.equal(SyncMessage.REQUEST);
             expect(message.name).to.equal(SyncMessage.CHKSUM);
@@ -300,7 +300,7 @@ describe('Test util.js', function(){
 
         util.prepareDownstreamSync(username, result.token, function(syncData, fs, socketPackage) {
           util.downstreamSyncSteps.generateDiffs(socketPackage, syncData, fs, function(message, cb) {
-            message = util.resolveToJSON(message);
+            message = util.toSyncMessage(message);
 
             expect(message.type).to.equal(SyncMessage.RESPONSE);
             expect(message.name).to.equal(SyncMessage.DIFFS);
@@ -367,7 +367,7 @@ describe('Test util.js', function(){
           expect(fs instanceof FileSystem).to.equal.true;
 
           util.upstreamSyncSteps.requestSync(socketPackage, function(message, cb) {
-            message = util.resolveToJSON(message);
+            message = util.toSyncMessage(message);
 
             expect(message).to.exist;
             expect(message.type).to.equal(SyncMessage.RESPONSE);
