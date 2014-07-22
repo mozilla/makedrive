@@ -34,7 +34,7 @@ to the `AUTHORS` file.
 * Publish the new version of the module to NPM
 
 #### How to configure
-1. Copy `env.sample` to `.env`
+1. Copy `env.dist` to `.env`
 2. Modify as needed, or leave alone for defaults
 
 #### How to Publish
