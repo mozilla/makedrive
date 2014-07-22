@@ -45,8 +45,11 @@
  *
  * The `sync` property also exposes a number of methods, including:
  *
- * - connect(url): try to connet to the specified sync server URL.
- * An 'error' or 'connected' event will follow, depending on success.
+ * - connect(url, [token]): try to connect to the specified sync server URL.
+ * An 'error' or 'connected' event will follow, depending on success. If the
+ * token parameter is provided, that authentication token will be used. Otherwise
+ * the client will try to obtain one from the server's /api/sync route. This
+ * requires the user to be authenticated previously with Webmaker.
  *
  * - disconnect(): disconnect from the sync server.
  *
@@ -67,6 +70,7 @@
 var SyncManager = require('./sync-manager.js');
 var Filer = require('../../lib/filer.js');
 var EventEmitter = require('events').EventEmitter;
+var request = require('request');
 
 var MakeDrive = {};
 module.exports = MakeDrive;
@@ -190,33 +194,62 @@ function createFS(options) {
       }, 60 * 1000);
     }
 
-    // Try to connect to provided server URL
-    sync.manager = new SyncManager(sync, _fs);
-    sync.manager.init(url, token, function(err) {
-      if(err) {
-        sync.onError(err);
-        return;
-      }
+    function connect(token) {
+      // Try to connect to provided server URL
+      sync.manager = new SyncManager(sync, _fs);
+      sync.manager.init(url, token, function(err) {
+        if(err) {
+          sync.onError(err);
+          return;
+        }
 
-      // In a browser, try to clean-up after ourselves when window goes away
-      if("onbeforeunload" in global) {
-        sync.cleanupFn = function() {
-          if(sync && sync.manager) {
-            sync.manager.close();
-          }
+        // In a browser, try to clean-up after ourselves when window goes away
+        if("onbeforeunload" in global) {
+          sync.cleanupFn = function() {
+            if(sync && sync.manager) {
+              sync.manager.close();
+            }
+          };
+          global.addEventListener('beforeunload', sync.cleanupFn);
+        }
+
+        // Wait on initial downstream sync events to complete
+        sync.onSyncing = function() {
+          // do nothing, wait for onCompleted()
         };
-        global.addEventListener('beforeunload', sync.cleanupFn);
-      }
+        sync.onCompleted = function() {
+          // Downstream sync is done, finish connect() setup
+          downstreamSyncCompleted();
+        };
+      });
+    }
 
-      // Wait on initial downstream sync events to complete
-      sync.onSyncing = function() {
-        // do nothing, wait for onCompleted()
-      };
-      sync.onCompleted = function() {
-        // Downstream sync is done, finish connect() setup
-        downstreamSyncCompleted();
-      };
-    });
+    // If we were provided a token, we can connect right away, otherwise
+    // we need to get one first via the /api/sync route
+    if(token) {
+      connect(token);
+    } else {
+      request({
+        // Remove WebSocket protocol from URL, just use // and add /api/sync
+        // ws://drive.webmaker.org/ -> //drive.webmaker.org/api/sync
+        url: url.replace(/^[^\/]*\/\//, '//') + '/api/sync',
+        method: 'GET',
+        json: true
+      }, function(err, msg, body) {
+        var statusCode;
+        var error;
+
+        msg = msg || null;
+        statusCode = msg && msg.statusCode;
+        error = statusCode !== 200 ? { message: err || 'Unable to get token', code: statusCode } : null;
+
+        if(error) {
+          sync.onError(error);
+          return;
+        }
+        connect(body);
+      });
+    }
   };
 
   // Disconnect from the server
