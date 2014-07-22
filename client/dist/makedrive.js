@@ -11713,17 +11713,21 @@ function set_extended_attribute (context, path_or_fd, name, value, flag, callbac
 }
 
 /**
- * make_root_directory
+ * ensure_root_directory. Creates a root node if necessary.
+ *
+ * Note: this should only be invoked when formatting a new file system.
+ * Multiple invocations of this by separate instances will still result
+ * in only a single super node.
  */
-// Note: this should only be invoked when formatting a new file system
-function make_root_directory(context, callback) {
+function ensure_root_directory(context, callback) {
   var superNode;
   var directoryNode;
   var directoryData;
 
-  function write_super_node(error, existingNode) {
+  function ensure_super_node(error, existingNode) {
     if(!error && existingNode) {
-      callback(new Errors.EEXIST());
+      // Another instance has beat us and already created the super node.
+      callback();
     } else if(error && !(error instanceof Errors.ENOENT)) {
       callback(error);
     } else {
@@ -11763,7 +11767,7 @@ function make_root_directory(context, callback) {
     }
   }
 
-  context.get(SUPER_NODE_ID, write_super_node);
+  context.get(SUPER_NODE_ID, ensure_super_node);
 }
 
 /**
@@ -11964,6 +11968,8 @@ function open_file(context, path, flags, callback) {
   function read_directory_data(error, result) {
     if(error) {
       callback(error);
+    } else if(result.mode !== MODE_DIRECTORY) {
+      callback(new Errors.ENOENT());
     } else {
       directoryNode = result;
       context.get(directoryNode.data, check_if_file_exists);
@@ -13403,7 +13409,7 @@ function ftruncate(fs, context, fd, length, callback) {
 }
 
 module.exports = {
-  makeRootDirectory: make_root_directory,
+  ensureRootDirectory: ensure_root_directory,
   open: open,
   close: close,
   mknod: mknod,
@@ -13685,7 +13691,7 @@ function FileSystem(options, callback) {
         complete(err);
         return;
       }
-      impl.makeRootDirectory(context, complete);
+      impl.ensureRootDirectory(context, complete);
     });
   });
 }
@@ -14306,7 +14312,9 @@ module.exports = IndexedDB;
 }).call(this,typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
 },{"../constants.js":46,"../errors.js":49}],59:[function(_dereq_,module,exports){
 var FILE_SYSTEM_NAME = _dereq_('../constants.js').FILE_SYSTEM_NAME;
-var asyncCallback = _dereq_('../../lib/async.js').nextTick;
+// NOTE: prefer setImmediate to nextTick for proper recursion yielding.
+// see https://github.com/js-platform/filer/pull/24
+var asyncCallback = _dereq_('../../lib/async.js').setImmediate;
 
 /**
  * Make shared in-memory DBs possible when using the same name.
@@ -14882,7 +14890,7 @@ Shell.prototype.ls = function(dir, options, callback) {
         });
       }
 
-      async.each(entries, getDirEntry, function(error) {
+      async.eachSeries(entries, getDirEntry, function(error) {
         callback(error, result);
       });
     });
@@ -14950,7 +14958,7 @@ Shell.prototype.rm = function(path, options, callback) {
           // Root dir entries absolutely
           return Path.join(pathname, filename);
         });
-        async.each(entries, remove, function(error) {
+        async.eachSeries(entries, remove, function(error) {
           if(error) {
             callback(error);
             return;
@@ -17793,35 +17801,22 @@ exports.INSPECT_MAX_BYTES = 50
 Buffer.poolSize = 8192
 
 /**
- * If `TYPED_ARRAY_SUPPORT`:
+ * If `Buffer._useTypedArrays`:
  *   === true    Use Uint8Array implementation (fastest)
- *   === false   Use Object implementation (most compatible, even IE6)
- *
- * Browsers that support typed arrays are IE 10+, Firefox 4+, Chrome 7+, Safari 5.1+,
- * Opera 11.6+, iOS 4.2+.
- *
- * Note:
- *
- * - Implementation must support adding new properties to `Uint8Array` instances.
- *   Firefox 4-29 lacked support, fixed in Firefox 30+.
- *   See: https://bugzilla.mozilla.org/show_bug.cgi?id=695438.
- *
- *  - Chrome 9-10 is missing the `TypedArray.prototype.subarray` function.
- *
- *  - IE10 has a broken `TypedArray.prototype.subarray` function which returns arrays of
- *    incorrect length in some situations.
- *
- * We detect these buggy browsers and set `TYPED_ARRAY_SUPPORT` to `false` so they will
- * get the Object implementation, which is slower but will work correctly.
+ *   === false   Use Object implementation (compatible down to IE6)
  */
-var TYPED_ARRAY_SUPPORT = (function () {
+Buffer._useTypedArrays = (function () {
+  // Detect if browser supports Typed Arrays. Supported browsers are IE 10+, Firefox 4+,
+  // Chrome 7+, Safari 5.1+, Opera 11.6+, iOS 4.2+. If the browser does not support adding
+  // properties to `Uint8Array` instances, then that's the same as no `Uint8Array` support
+  // because we need to be able to add all the node Buffer API methods. This is an issue
+  // in Firefox 4-29. Now fixed: https://bugzilla.mozilla.org/show_bug.cgi?id=695438
   try {
     var buf = new ArrayBuffer(0)
     var arr = new Uint8Array(buf)
     arr.foo = function () { return 42 }
-    return 42 === arr.foo() && // typed array instances can be augmented
-        typeof arr.subarray === 'function' && // chrome 9-10 lack `subarray`
-        new Uint8Array(1).subarray(1, 1).byteLength === 0 // ie10 has broken `subarray`
+    return 42 === arr.foo() &&
+        typeof arr.subarray === 'function' // Chrome 9-10 lack `subarray`
   } catch (e) {
     return false
   }
@@ -17845,23 +17840,23 @@ function Buffer (subject, encoding, noZero) {
 
   var type = typeof subject
 
+  if (encoding === 'base64' && type === 'string') {
+    subject = base64clean(subject)
+  }
+
   // Find the length
   var length
   if (type === 'number')
-    length = subject > 0 ? subject >>> 0 : 0
-  else if (type === 'string') {
-    if (encoding === 'base64')
-      subject = base64clean(subject)
+    length = coerce(subject)
+  else if (type === 'string')
     length = Buffer.byteLength(subject, encoding)
-  } else if (type === 'object' && subject !== null) { // assume object is array-like
-    if (subject.type === 'Buffer' && isArray(subject.data))
-      subject = subject.data
-    length = +subject.length > 0 ? Math.floor(+subject.length) : 0
-  } else
+  else if (type === 'object')
+    length = coerce(subject.length) // assume that object is array-like
+  else
     throw new Error('First argument needs to be a number, array or string.')
 
   var buf
-  if (TYPED_ARRAY_SUPPORT) {
+  if (Buffer._useTypedArrays) {
     // Preferred: Return an augmented `Uint8Array` instance for best performance
     buf = Buffer._augment(new Uint8Array(length))
   } else {
@@ -17872,7 +17867,7 @@ function Buffer (subject, encoding, noZero) {
   }
 
   var i
-  if (TYPED_ARRAY_SUPPORT && typeof subject.byteLength === 'number') {
+  if (Buffer._useTypedArrays && typeof subject.byteLength === 'number') {
     // Speed optimization -- use set if we're copying from a typed array
     buf._set(subject)
   } else if (isArrayish(subject)) {
@@ -17886,7 +17881,7 @@ function Buffer (subject, encoding, noZero) {
     }
   } else if (type === 'string') {
     buf.write(subject, 0, encoding)
-  } else if (type === 'number' && !TYPED_ARRAY_SUPPORT && !noZero) {
+  } else if (type === 'number' && !Buffer._useTypedArrays && !noZero) {
     for (i = 0; i < length; i++) {
       buf[i] = 0
     }
@@ -17918,7 +17913,7 @@ Buffer.isEncoding = function (encoding) {
 }
 
 Buffer.isBuffer = function (b) {
-  return !!(b != null && b._isBuffer)
+  return !!(b !== null && b !== undefined && b._isBuffer)
 }
 
 Buffer.byteLength = function (str, encoding) {
@@ -18193,7 +18188,7 @@ Buffer.prototype.copy = function (target, target_start, start, end) {
 
   var len = end - start
 
-  if (len < 100 || !TYPED_ARRAY_SUPPORT) {
+  if (len < 100 || !Buffer._useTypedArrays) {
     for (var i = 0; i < len; i++) {
       target[i + target_start] = this[i + start]
     }
@@ -18265,29 +18260,10 @@ function utf16leSlice (buf, start, end) {
 
 Buffer.prototype.slice = function (start, end) {
   var len = this.length
-  start = ~~start
-  end = end === undefined ? len : ~~end
+  start = clamp(start, len, 0)
+  end = clamp(end, len, len)
 
-  if (start < 0) {
-    start += len;
-    if (start < 0)
-      start = 0
-  } else if (start > len) {
-    start = len
-  }
-
-  if (end < 0) {
-    end += len
-    if (end < 0)
-      end = 0
-  } else if (end > len) {
-    end = len
-  }
-
-  if (end < start)
-    end = start
-
-  if (TYPED_ARRAY_SUPPORT) {
+  if (Buffer._useTypedArrays) {
     return Buffer._augment(this.subarray(start, end))
   } else {
     var sliceLen = end - start
@@ -18746,7 +18722,7 @@ Buffer.prototype.inspect = function () {
  */
 Buffer.prototype.toArrayBuffer = function () {
   if (typeof Uint8Array !== 'undefined') {
-    if (TYPED_ARRAY_SUPPORT) {
+    if (Buffer._useTypedArrays) {
       return (new Buffer(this)).buffer
     } else {
       var buf = new Uint8Array(this.length)
@@ -18837,6 +18813,25 @@ function base64clean (str) {
 function stringtrim (str) {
   if (str.trim) return str.trim()
   return str.replace(/^\s+|\s+$/g, '')
+}
+
+// slice(start, end)
+function clamp (index, len, defaultValue) {
+  if (typeof index !== 'number') return defaultValue
+  index = ~~index;  // Coerce to integer.
+  if (index >= len) return len
+  if (index >= 0) return index
+  index += len
+  if (index >= 0) return index
+  return 0
+}
+
+function coerce (length) {
+  // Coerce length to a number (possibly NaN), round up
+  // in case it's fractional (e.g. 123.456) then do a
+  // double negate to coerce a NaN to 0. Easy, right?
+  length = ~~Math.ceil(+length)
+  return length < 0 ? 0 : length
 }
 
 function isArray (subject) {
