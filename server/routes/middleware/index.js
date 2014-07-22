@@ -1,4 +1,5 @@
 var Sync = require('../../lib/sync');
+var env = require('../../lib/environment');
 var websocketAuth = require('../../lib/websocket-auth');
 
 function generateError( code, msg ) {
@@ -21,7 +22,8 @@ module.exports = {
     next();
   },
   crossOriginHandler: function( req, res, next ) {
-    res.header( "Access-Control-Allow-Origin", "*" );
+    res.header( "Access-Control-Allow-Origin", env.get("ALLOWED_CORS_DOMAINS") );
+    res.header( "Access-Control-Allow-Credentials", true );
     next();
   }
 };
