@@ -27,4 +27,3 @@ node_modules
 *~
 .env
 client/vendors
-client/dist
