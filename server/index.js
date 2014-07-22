@@ -31,6 +31,7 @@ if ( env.get( "ENABLE_GELF_LOGS" ) ) {
 
 // General middleware
 app.disable( "x-powered-by" );
+app.use( middleware.crossOriginHandler );
 app.use( helmet.contentTypeOptions() );
 app.use( helmet.hsts() );
 app.enable( "trust proxy" );

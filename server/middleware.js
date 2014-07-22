@@ -29,8 +29,11 @@ module.exports = {
   },
 
   crossOriginHandler: function( req, res, next ) {
-    res.header( "Access-Control-Allow-Origin", env.get("ALLOWED_CORS_DOMAINS") );
-    res.header( "Access-Control-Allow-Credentials", true );
+    if (env.get("ALLOWED_CORS_DOMAINS").indexOf(req.headers.origin) > -1) {
+      res.header('Access-Control-Allow-Origin', req.headers.origin);
+      res.header('Access-Control-Allow-Credentials', true);
+    }
+
     next();
   },
 

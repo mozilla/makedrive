@@ -1,13 +1,15 @@
 var expect = require('chai').expect;
 var request = require('request');
 var util = require('../lib/util');
+// Ensure the client timeout restricts tests to a reasonable length
 var env = require('../../server/lib/environment');
-var ALLOW_DOMAINS = process.env.ALLOWED_CORS_DOMAINS || env.get("ALLOWED_CORS_DOMAINS");
+env.set('ALLOWED_CORS_DOMAINS', 'http://localhost:9090');
+var ALLOW_DOMAINS = process.env.ALLOWED_CORS_DOMAINS;
 
 describe('[HTTP route tests]', function() {
   it('should allow CORS access to /api/sync route', function(done) {
-    request.get('http://localhost:9090/api/sync', function(req, res, body) {
-      expect(res.headers['access-control-allow-origin']).to.be.eql(ALLOW_DOMAINS);
+    request.get('http://localhost:9090/api/sync', { headers: {origin: ALLOW_DOMAINS }}, function(req, res, body) {
+      expect(ALLOW_DOMAINS).to.contain(res.headers['access-control-allow-origin']);
       done();
     });
   });
