@@ -11,14 +11,20 @@ function generateError( code, msg ) {
 module.exports = {
   authenticationHandler: function( req, res, next ) {
     var username = req.session && req.session.user && req.session.user.username;
-    if ( !username ) {
+
+    // If cookie session doesn't exist, check to see if data got passed in via query string
+    if ( !username && !!env.get( "ALLOW_QUERY_STRING_API_SYNC" ) && req.query.username ) {
+      username = req.query.username;
+    }
+
+    if( !username ) {
       return next( generateError( 401, "Webmaker Authentication Required." ) );
     }
 
     req.session.sessionId = websocketAuth.createSessionTracker(username, req.session.sessionId);
-
     req.params.username = username;
     req.params.sessionId = req.session.sessionId;
+
     next();
   },
 
