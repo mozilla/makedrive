@@ -68,6 +68,7 @@
  */
 
 var SyncManager = require('./sync-manager.js');
+var SyncFileSystem = require('./sync-filesystem.js');
 var Filer = require('../../lib/filer.js');
 var syncPathResolver = require('../../lib/sync-path-resolver');
 var EventEmitter = require('events').EventEmitter;
@@ -95,7 +96,9 @@ function createFS(options) {
     provider = new Filer.FileSystem.providers.Fallback('makedrive');
   }
 
-  _fs = new Filer.FileSystem({provider: provider});
+  // Our fs instance is a modified Filer fs, with extra sync awareness
+  // for conflict mediation, etc.
+  _fs = new SyncFileSystem({provider: provider});
   var sync = _fs.sync = new EventEmitter();
 
   // Auto-sync handles
