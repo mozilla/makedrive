@@ -69,6 +69,7 @@
 
 var SyncManager = require('./sync-manager.js');
 var Filer = require('../../lib/filer.js');
+var syncPathResolver = require('../../lib/sync-path-resolver');
 var EventEmitter = require('events').EventEmitter;
 var request = require('request');
 
@@ -100,7 +101,7 @@ function createFS(options) {
   // Auto-sync handles
   var watcher;
   var syncInterval;
-  var needsSync = false;
+  var syncPaths = [];
 
   // State of the sync connection
   sync.SYNC_DISCONNECTED = 0;
@@ -111,6 +112,39 @@ function createFS(options) {
 
   // Intitially we are not connected
   sync.state = sync.SYNC_DISCONNECTED;
+
+  // Turn on auto-syncing if its not already on
+  sync.auto = function() {
+    if(watcher) {
+      return;
+    }
+
+    watcher = _fs.watch('/', {recursive: true}, function(event, filename) {
+      syncPaths.push(filename);
+    });
+
+    if(syncInterval) {
+      clearInterval(syncInterval);
+    }
+
+    syncInterval = setInterval(function() {
+      var pathToSync = '/';
+      if(syncPaths.length) {
+        pathToSync = syncPathResolver.resolve(syncPaths);
+        sync.request(pathToSync);
+      }
+    }, 60 * 1000);
+  };
+
+  // Turn off auto-syncing and turn on manual syncing
+  sync.manual = function() {
+    if(watcher) {
+      watcher.close();
+      watcher = null;
+      clearInterval(syncInterval);
+      syncInterval = null;
+    }
+  };
 
   sync.onError = function(err) {
     sync.state = sync.SYNC_ERROR;
@@ -161,8 +195,15 @@ function createFS(options) {
         sync.state = sync.SYNC_SYNCING;
         sync.emit('syncing');
       };
-      sync.onCompleted = function() {
-        needsSync = false;
+
+      sync.onCompleted = function(paths) {
+        // If changes happened to the files that needed to be synced
+        // during the sync itself, they will be overwritten
+        // https://github.com/mozilla/makedrive/issues/129 and
+        // https://github.com/mozilla/makedrive/issues/3
+        if(paths && watcher) {
+          syncPaths = syncPathResolver.filterSynced(syncPaths, paths.synced);
+        }
         sync.state = sync.SYNC_CONNECTED;
         sync.emit('completed');
       };
@@ -173,25 +214,11 @@ function createFS(options) {
 
       // If we're in manual mode, bail before starting auto-sync
       if(options.manual) {
+        sync.manual();
         return;
       }
 
-      // Start auto-sync'ing fs based on changes every 1 min.
-      // TODO: https://github.com/mozilla/makedrive/issues/118
-      watcher = _fs.watch('/', {recursive: true}, function(event, filename) {
-        // Mark the fs as dirty, and we'll sync on next interval
-        needsSync = true;
-
-        // Also try to start a sync now, which might fail if we're already syncing.
-        sync.request('/');
-      });
-
-      syncInterval = setInterval(function() {
-        if(needsSync) {
-          sync.request('/');
-          needsSync = false;
-        }
-      }, 60 * 1000);
+      sync.auto();
     }
 
     function connect(token) {
