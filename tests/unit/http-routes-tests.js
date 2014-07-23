@@ -3,12 +3,12 @@ var request = require('request');
 var util = require('../lib/util');
 // Ensure the client timeout restricts tests to a reasonable length
 var env = require('../../server/lib/environment');
-env.set('ALLOWED_CORS_DOMAINS', 'http://localhost:9090');
+env.set('ALLOWED_CORS_DOMAINS', util.serverURL);
 var ALLOW_DOMAINS = process.env.ALLOWED_CORS_DOMAINS;
 
 describe('[HTTP route tests]', function() {
   it('should allow CORS access to /api/sync route', function(done) {
-    request.get('http://localhost:9090/api/sync', { headers: {origin: ALLOW_DOMAINS }}, function(req, res, body) {
+    request.get(util.serverURL + '/api/sync', { headers: {origin: ALLOW_DOMAINS }}, function(req, res, body) {
       expect(ALLOW_DOMAINS).to.contain(res.headers['access-control-allow-origin']);
       done();
     });
