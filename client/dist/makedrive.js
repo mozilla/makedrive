@@ -77,8 +77,11 @@ module.exports = global.WebSocket;
  *
  * The `sync` property also exposes a number of methods, including:
  *
- * - connect(url): try to connet to the specified sync server URL.
- * An 'error' or 'connected' event will follow, depending on success.
+ * - connect(url, [token]): try to connect to the specified sync server URL.
+ * An 'error' or 'connected' event will follow, depending on success. If the
+ * token parameter is provided, that authentication token will be used. Otherwise
+ * the client will try to obtain one from the server's /api/sync route. This
+ * requires the user to be authenticated previously with Webmaker.
  *
  * - disconnect(): disconnect from the sync server.
  *
@@ -99,6 +102,7 @@ module.exports = global.WebSocket;
 var SyncManager = _dereq_('./sync-manager.js');
 var Filer = _dereq_('../../lib/filer.js');
 var EventEmitter = _dereq_('events').EventEmitter;
+var request = _dereq_('request');
 
 var MakeDrive = {};
 module.exports = MakeDrive;
@@ -222,33 +226,68 @@ function createFS(options) {
       }, 60 * 1000);
     }
 
-    // Try to connect to provided server URL
-    sync.manager = new SyncManager(sync, _fs);
-    sync.manager.init(url, token, function(err) {
-      if(err) {
-        sync.onError(err);
-        return;
-      }
+    function connect(token) {
+      // Try to connect to provided server URL
+      sync.manager = new SyncManager(sync, _fs);
+      sync.manager.init(url, token, function(err) {
+        if(err) {
+          sync.onError(err);
+          return;
+        }
 
-      // In a browser, try to clean-up after ourselves when window goes away
-      if("onbeforeunload" in global) {
-        sync.cleanupFn = function() {
-          if(sync && sync.manager) {
-            sync.manager.close();
-          }
+        // In a browser, try to clean-up after ourselves when window goes away
+        if("onbeforeunload" in global) {
+          sync.cleanupFn = function() {
+            if(sync && sync.manager) {
+              sync.manager.close();
+            }
+          };
+          global.addEventListener('beforeunload', sync.cleanupFn);
+        }
+
+        // Wait on initial downstream sync events to complete
+        sync.onSyncing = function() {
+          // do nothing, wait for onCompleted()
         };
-        global.addEventListener('beforeunload', sync.cleanupFn);
-      }
+        sync.onCompleted = function() {
+          // Downstream sync is done, finish connect() setup
+          downstreamSyncCompleted();
+        };
+      });
+    }
 
-      // Wait on initial downstream sync events to complete
-      sync.onSyncing = function() {
-        // do nothing, wait for onCompleted()
-      };
-      sync.onCompleted = function() {
-        // Downstream sync is done, finish connect() setup
-        downstreamSyncCompleted();
-      };
-    });
+    // If we were provided a token, we can connect right away, otherwise
+    // we need to get one first via the /api/sync route
+    if(token) {
+      connect(token);
+    } else {
+      // Remove WebSocket protocol from URL, and swap for http:// or https://
+      // ws://drive.webmaker.org/ -> http://drive.webmaker.org/api/sync
+      var apiSync = url.replace(/^([^\/]*\/\/)?/, function(match, p1) {
+        return p1 === 'wss://' ? 'https://' : 'http://';
+      });
+      // Also add /api/sync to the end:
+      apiSync.replace(/\/?$/, '/api/sync');
+
+      request({
+        url: apiSync,
+        method: 'GET',
+        json: true
+      }, function(err, msg, body) {
+        var statusCode;
+        var error;
+
+        statusCode = msg && msg.statusCode;
+        error = statusCode !== 200 ?
+          { message: err || 'Unable to get token', code: statusCode } : null;
+
+        if(error) {
+          sync.onError(error);
+        } else {
+          connect(body);
+        }
+      });
+    }
   };
 
   // Disconnect from the server
@@ -299,7 +338,7 @@ MakeDrive.Path = Filer.Path;
 MakeDrive.Errors = Filer.Errors;
 
 }).call(this,typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../../lib/filer.js":69,"./sync-manager.js":4,"events":114}],3:[function(_dereq_,module,exports){
+},{"../../lib/filer.js":69,"./sync-manager.js":4,"events":115,"request":76}],3:[function(_dereq_,module,exports){
 var SyncMessage = _dereq_('../../lib/syncmessage');
 var rsync = _dereq_('../../lib/rsync');
 var rsyncOptions = _dereq_('../../lib/constants').rsyncDefaults;
@@ -1591,7 +1630,7 @@ module.exports = {
 }());
 
 }).call(this,_dereq_("FWaASH"))
-},{"FWaASH":79}],8:[function(_dereq_,module,exports){
+},{"FWaASH":80}],8:[function(_dereq_,module,exports){
 // Based on https://github.com/diy/intercom.js/blob/master/lib/events.js
 // Copyright 2012 DIY Co Apache License, Version 2.0
 // http://www.apache.org/licenses/LICENSE-2.0
@@ -2571,7 +2610,7 @@ function b64_enc (data) {
 module.exports = request;
 
 }).call(this,_dereq_("buffer").Buffer)
-},{"buffer":76}],12:[function(_dereq_,module,exports){
+},{"buffer":77}],12:[function(_dereq_,module,exports){
 'use strict';
 // private property
 var _keyStr = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
@@ -2912,7 +2951,7 @@ module.exports.test = function(b){
     return Buffer.isBuffer(b);
 };
 }).call(this,_dereq_("buffer").Buffer)
-},{"buffer":76}],21:[function(_dereq_,module,exports){
+},{"buffer":77}],21:[function(_dereq_,module,exports){
 'use strict';
 var Uint8ArrayReader = _dereq_('./uint8ArrayReader');
 
@@ -3938,7 +3977,7 @@ else {
 }
 
 }).call(this,_dereq_("buffer").Buffer)
-},{"buffer":76}],26:[function(_dereq_,module,exports){
+},{"buffer":77}],26:[function(_dereq_,module,exports){
 'use strict';
 var DataReader = _dereq_('./dataReader');
 
@@ -11259,7 +11298,7 @@ module.exports = {
 };
 
 }).call(this,_dereq_("buffer").Buffer)
-},{"buffer":76}],49:[function(_dereq_,module,exports){
+},{"buffer":77}],49:[function(_dereq_,module,exports){
 var errors = {};
 [
   /**
@@ -13444,7 +13483,7 @@ module.exports = {
 };
 
 }).call(this,_dereq_("buffer").Buffer)
-},{"../../lib/nodash.js":10,"../constants.js":46,"../directory-entry.js":47,"../encoding.js":48,"../errors.js":49,"../node.js":54,"../open-file-description.js":55,"../path.js":56,"../stats.js":65,"../super-node.js":66,"buffer":76}],51:[function(_dereq_,module,exports){
+},{"../../lib/nodash.js":10,"../constants.js":46,"../directory-entry.js":47,"../encoding.js":48,"../errors.js":49,"../node.js":54,"../open-file-description.js":55,"../path.js":56,"../stats.js":65,"../super-node.js":66,"buffer":77}],51:[function(_dereq_,module,exports){
 var _ = _dereq_('../../lib/nodash.js');
 
 var isNullPath = _dereq_('../path.js').isNull;
@@ -13853,7 +13892,7 @@ module.exports = {
 };
 
 }).call(this,_dereq_("buffer").Buffer)
-},{"./errors.js":49,"./filesystem/interface.js":51,"./path.js":56,"buffer":76}],54:[function(_dereq_,module,exports){
+},{"./errors.js":49,"./filesystem/interface.js":51,"./path.js":56,"buffer":77}],54:[function(_dereq_,module,exports){
 var MODE_FILE = _dereq_('./constants.js').MODE_FILE;
 
 function Node(options) {
@@ -15653,6 +15692,27 @@ function checksum (path, options, callback) {
   });
 }
 
+function extractPathsFromDiffs(path, diffs) {
+  var diffPaths = [];
+
+  function extractPath(diff, index, array) {
+    var dirPath = getDirPath(path, diff.path);
+    var nodePath = Path.join(dirPath, diff.path);
+
+    if(!diff.identical) {
+      diffPaths.push(nodePath);
+    }
+
+    if(diff.contents) {
+      var contentPaths = extractPathsFromDiffs(nodePath, diff.contents);
+      diffPaths = diffPaths.concat(contentPaths);
+    }
+  }
+
+  diffs.forEach(extractPath);
+  return diffPaths;
+}
+
 // Generate the list of paths at the source file system
 rsync.sourceList = function getSrcList(fs, path, options, callback) {
   callback = findCallback(callback, options);
@@ -16029,12 +16089,30 @@ rsync.patch = function(fs, path, diff, options, callback) {
   callback = findCallback(callback, options);
 
   var paramError = validateParams(fs, path);
+  var paths = {
+    synced: [], 
+    failed: [],
+    update: function(newPaths) {
+      this.synced = this.synced.concat(newPaths.synced);
+      this.failed = this.failed.concat(newPaths.failed);
+    }
+  };
+  var pathsToSync = extractPathsFromDiffs(path, diff);
 
   if(paramError) {
-    return callback(paramError);
+    return callback(paramError, paths);
   }
 
   options = configureOptions(options);
+
+  function handleError(err, callback) {
+    // Determine the node paths for those that were not synced
+    // by getting the difference between the paths that needed to
+    // be synced and the paths that were synced
+    var failedPaths = _.difference(pathsToSync, paths.synced);
+    paths.failed = paths.failed.concat(failedPaths);
+    callback(err, paths);
+  }
 
   // Remove the nodes in the patched directory that are no longer present in the source
   function removeNodes(path, entryDiff, callback) {
@@ -16045,7 +16123,7 @@ rsync.patch = function(fs, path, diff, options, callback) {
 
     fs.readdir(path, function(err, destContents) {
       if(err) {
-        return callback(err);
+        return handleError(err, callback);
       }
 
       var deletedNodes = destContents;
@@ -16058,10 +16136,18 @@ rsync.patch = function(fs, path, diff, options, callback) {
       }
 
       function unlink(item, callback) {
-        fs.unlink(Path.join(path, item), callback);
+        var deletePath = Path.join(path, item);
+        paths.synced.push(deletePath);
+        fs.unlink(deletePath, callback);
       }
 
-      async.eachSeries(deletedNodes, unlink, callback);
+      async.eachSeries(deletedNodes, unlink, function(err) {
+        if(err) {
+          return callback(err, paths);
+        }
+
+        callback(null, paths);
+      });
     });
   }
 
@@ -16071,11 +16157,14 @@ rsync.patch = function(fs, path, diff, options, callback) {
 
     // Directory
     if(entry.contents) {
-      return rsync.patch(fs, Path.join(path, entry.path), entry.contents, options, function(err) {
+      return rsync.patch(fs, Path.join(path, entry.path), entry.contents, options, function(err, dirPaths) {
         if(err) {
-          return callback(err);
+          paths.update(dirPaths);
+          return handleError(err, callback);
         }
 
+        paths.synced.push(syncPath);
+        paths.update(dirPaths);
         removeNodes(Path.join(path, entry.path), entry.contents, callback);
       });
     }
@@ -16083,15 +16172,16 @@ rsync.patch = function(fs, path, diff, options, callback) {
     else if (entry.link) {
       return fs.symlink(entry.link, syncPath, function(err){
         if(err) {
-          return callback(err);
+          return handleError(err, callback);
         }
 
-        callback();
+        paths.synced.push(syncPath);
+        callback(null, paths);
       });
     }
     // File
     if(entry.identical) {
-      return callback();
+      return callback(null, paths);
     }
 
     fs.readFile(syncPath, function(err, data) {
@@ -16107,7 +16197,7 @@ rsync.patch = function(fs, path, diff, options, callback) {
 
       if(err) {
         if(err.code !== 'ENOENT') {
-          return callback(err);
+          return handleError(err, callback);
         }
         raw = new Buffer(0);
       } else {
@@ -16134,20 +16224,22 @@ rsync.patch = function(fs, path, diff, options, callback) {
       var buf = Buffer.concat(chunks);
       fs.writeFile(syncPath, buf, function(err) {
         if(err) {
-          return callback(err);
+          return handleError(err, callback);
         }
 
         if(!options.time) {
-          return callback();
+          paths.synced.push(syncPath);
+          return callback(null, paths);
         }
 
         // Updates the modified time of the node
         fs.utimes(syncPath, entry.modified, entry.modified, function(err) {
           if(err) {
-            return callback(err);
+            return handleError(err, callback);
           }
 
-          callback();
+          paths.synced.push(syncPath);
+          callback(null, paths);
         });
       });
     });
@@ -16158,11 +16250,11 @@ rsync.patch = function(fs, path, diff, options, callback) {
     callback = findCallback(callback, diff);
     fs.lstat(path, function(err, stats) {
       if(err) {
-        return callback(err);
+        return handleError(err, callback);
       }
 
       if(!stats.isDirectory()) {
-        return callback();
+        return callback(null, paths);
       }
 
       removeNodes(path, diff, callback);
@@ -16172,7 +16264,7 @@ rsync.patch = function(fs, path, diff, options, callback) {
   if(diff) {
     async.eachSeries(diff, syncEach, function(err) {
       if(err) {
-        callback(err);
+        callback(err, paths);
       } else {
         removeNodesInParent(diff, callback);
       }
@@ -16184,7 +16276,7 @@ rsync.patch = function(fs, path, diff, options, callback) {
 
 module.exports = rsync;
 
-},{"./filer.js":69,"MD5":72,"async":75,"crypto-js":88,"lodash":115}],71:[function(_dereq_,module,exports){
+},{"./filer.js":69,"MD5":72,"async":75,"crypto-js":89,"lodash":116}],71:[function(_dereq_,module,exports){
 // Constructor
 function SyncMessage(type, name, content) {
   if(!isValidType(type)) {
@@ -16524,7 +16616,7 @@ module.exports = SyncMessage;
 })();
 
 }).call(this,_dereq_("buffer").Buffer)
-},{"buffer":76,"charenc":73,"crypt":74}],73:[function(_dereq_,module,exports){
+},{"buffer":77,"charenc":73,"crypt":74}],73:[function(_dereq_,module,exports){
 var charenc = {
   // UTF-8 encoding
   utf8: {
@@ -17784,7 +17876,420 @@ module.exports = charenc;
 }());
 
 }).call(this,_dereq_("FWaASH"))
-},{"FWaASH":79}],76:[function(_dereq_,module,exports){
+},{"FWaASH":80}],76:[function(_dereq_,module,exports){
+// Browser Request
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+var XHR = XMLHttpRequest
+if (!XHR) throw new Error('missing XMLHttpRequest')
+
+module.exports = request
+request.log = {
+  'trace': noop, 'debug': noop, 'info': noop, 'warn': noop, 'error': noop
+}
+
+var DEFAULT_TIMEOUT = 3 * 60 * 1000 // 3 minutes
+
+//
+// request
+//
+
+function request(options, callback) {
+  // The entry-point to the API: prep the options object and pass the real work to run_xhr.
+  if(typeof callback !== 'function')
+    throw new Error('Bad callback given: ' + callback)
+
+  if(!options)
+    throw new Error('No options given')
+
+  var options_onResponse = options.onResponse; // Save this for later.
+
+  if(typeof options === 'string')
+    options = {'uri':options};
+  else
+    options = JSON.parse(JSON.stringify(options)); // Use a duplicate for mutating.
+
+  options.onResponse = options_onResponse // And put it back.
+
+  if (options.verbose) request.log = getLogger();
+
+  if(options.url) {
+    options.uri = options.url;
+    delete options.url;
+  }
+
+  if(!options.uri && options.uri !== "")
+    throw new Error("options.uri is a required argument");
+
+  if(typeof options.uri != "string")
+    throw new Error("options.uri must be a string");
+
+  var unsupported_options = ['proxy', '_redirectsFollowed', 'maxRedirects', 'followRedirect']
+  for (var i = 0; i < unsupported_options.length; i++)
+    if(options[ unsupported_options[i] ])
+      throw new Error("options." + unsupported_options[i] + " is not supported")
+
+  options.callback = callback
+  options.method = options.method || 'GET';
+  options.headers = options.headers || {};
+  options.body    = options.body || null
+  options.timeout = options.timeout || request.DEFAULT_TIMEOUT
+
+  if(options.headers.host)
+    throw new Error("Options.headers.host is not supported");
+
+  if(options.json) {
+    options.headers.accept = options.headers.accept || 'application/json'
+    if(options.method !== 'GET')
+      options.headers['content-type'] = 'application/json'
+
+    if(typeof options.json !== 'boolean')
+      options.body = JSON.stringify(options.json)
+    else if(typeof options.body !== 'string')
+      options.body = JSON.stringify(options.body)
+  }
+
+  // If onResponse is boolean true, call back immediately when the response is known,
+  // not when the full request is complete.
+  options.onResponse = options.onResponse || noop
+  if(options.onResponse === true) {
+    options.onResponse = callback
+    options.callback = noop
+  }
+
+  // XXX Browsers do not like this.
+  //if(options.body)
+  //  options.headers['content-length'] = options.body.length;
+
+  // HTTP basic authentication
+  if(!options.headers.authorization && options.auth)
+    options.headers.authorization = 'Basic ' + b64_enc(options.auth.username + ':' + options.auth.password);
+
+  return run_xhr(options)
+}
+
+var req_seq = 0
+function run_xhr(options) {
+  var xhr = new XHR
+    , timed_out = false
+    , is_cors = is_crossDomain(options.uri)
+    , supports_cors = ('withCredentials' in xhr)
+
+  req_seq += 1
+  xhr.seq_id = req_seq
+  xhr.id = req_seq + ': ' + options.method + ' ' + options.uri
+  xhr._id = xhr.id // I know I will type "_id" from habit all the time.
+
+  if(is_cors && !supports_cors) {
+    var cors_err = new Error('Browser does not support cross-origin request: ' + options.uri)
+    cors_err.cors = 'unsupported'
+    return options.callback(cors_err, xhr)
+  }
+
+  xhr.timeoutTimer = setTimeout(too_late, options.timeout)
+  function too_late() {
+    timed_out = true
+    var er = new Error('ETIMEDOUT')
+    er.code = 'ETIMEDOUT'
+    er.duration = options.timeout
+
+    request.log.error('Timeout', { 'id':xhr._id, 'milliseconds':options.timeout })
+    return options.callback(er, xhr)
+  }
+
+  // Some states can be skipped over, so remember what is still incomplete.
+  var did = {'response':false, 'loading':false, 'end':false}
+
+  xhr.onreadystatechange = on_state_change
+  xhr.open(options.method, options.uri, true) // asynchronous
+  if(is_cors)
+    xhr.withCredentials = !! options.withCredentials
+  xhr.send(options.body)
+  return xhr
+
+  function on_state_change(event) {
+    if(timed_out)
+      return request.log.debug('Ignoring timed out state change', {'state':xhr.readyState, 'id':xhr.id})
+
+    request.log.debug('State change', {'state':xhr.readyState, 'id':xhr.id, 'timed_out':timed_out})
+
+    if(xhr.readyState === XHR.OPENED) {
+      request.log.debug('Request started', {'id':xhr.id})
+      for (var key in options.headers)
+        xhr.setRequestHeader(key, options.headers[key])
+    }
+
+    else if(xhr.readyState === XHR.HEADERS_RECEIVED)
+      on_response()
+
+    else if(xhr.readyState === XHR.LOADING) {
+      on_response()
+      on_loading()
+    }
+
+    else if(xhr.readyState === XHR.DONE) {
+      on_response()
+      on_loading()
+      on_end()
+    }
+  }
+
+  function on_response() {
+    if(did.response)
+      return
+
+    did.response = true
+    request.log.debug('Got response', {'id':xhr.id, 'status':xhr.status})
+    clearTimeout(xhr.timeoutTimer)
+    xhr.statusCode = xhr.status // Node request compatibility
+
+    // Detect failed CORS requests.
+    if(is_cors && xhr.statusCode == 0) {
+      var cors_err = new Error('CORS request rejected: ' + options.uri)
+      cors_err.cors = 'rejected'
+
+      // Do not process this request further.
+      did.loading = true
+      did.end = true
+
+      return options.callback(cors_err, xhr)
+    }
+
+    options.onResponse(null, xhr)
+  }
+
+  function on_loading() {
+    if(did.loading)
+      return
+
+    did.loading = true
+    request.log.debug('Response body loading', {'id':xhr.id})
+    // TODO: Maybe simulate "data" events by watching xhr.responseText
+  }
+
+  function on_end() {
+    if(did.end)
+      return
+
+    did.end = true
+    request.log.debug('Request done', {'id':xhr.id})
+
+    xhr.body = xhr.responseText
+    if(options.json) {
+      try        { xhr.body = JSON.parse(xhr.responseText) }
+      catch (er) { return options.callback(er, xhr)        }
+    }
+
+    options.callback(null, xhr, xhr.body)
+  }
+
+} // request
+
+request.withCredentials = false;
+request.DEFAULT_TIMEOUT = DEFAULT_TIMEOUT;
+
+//
+// defaults
+//
+
+request.defaults = function(options, requester) {
+  var def = function (method) {
+    var d = function (params, callback) {
+      if(typeof params === 'string')
+        params = {'uri': params};
+      else {
+        params = JSON.parse(JSON.stringify(params));
+      }
+      for (var i in options) {
+        if (params[i] === undefined) params[i] = options[i]
+      }
+      return method(params, callback)
+    }
+    return d
+  }
+  var de = def(request)
+  de.get = def(request.get)
+  de.post = def(request.post)
+  de.put = def(request.put)
+  de.head = def(request.head)
+  return de
+}
+
+//
+// HTTP method shortcuts
+//
+
+var shortcuts = [ 'get', 'put', 'post', 'head' ];
+shortcuts.forEach(function(shortcut) {
+  var method = shortcut.toUpperCase();
+  var func   = shortcut.toLowerCase();
+
+  request[func] = function(opts) {
+    if(typeof opts === 'string')
+      opts = {'method':method, 'uri':opts};
+    else {
+      opts = JSON.parse(JSON.stringify(opts));
+      opts.method = method;
+    }
+
+    var args = [opts].concat(Array.prototype.slice.apply(arguments, [1]));
+    return request.apply(this, args);
+  }
+})
+
+//
+// CouchDB shortcut
+//
+
+request.couch = function(options, callback) {
+  if(typeof options === 'string')
+    options = {'uri':options}
+
+  // Just use the request API to do JSON.
+  options.json = true
+  if(options.body)
+    options.json = options.body
+  delete options.body
+
+  callback = callback || noop
+
+  var xhr = request(options, couch_handler)
+  return xhr
+
+  function couch_handler(er, resp, body) {
+    if(er)
+      return callback(er, resp, body)
+
+    if((resp.statusCode < 200 || resp.statusCode > 299) && body.error) {
+      // The body is a Couch JSON object indicating the error.
+      er = new Error('CouchDB error: ' + (body.error.reason || body.error.error))
+      for (var key in body)
+        er[key] = body[key]
+      return callback(er, resp, body);
+    }
+
+    return callback(er, resp, body);
+  }
+}
+
+//
+// Utility
+//
+
+function noop() {}
+
+function getLogger() {
+  var logger = {}
+    , levels = ['trace', 'debug', 'info', 'warn', 'error']
+    , level, i
+
+  for(i = 0; i < levels.length; i++) {
+    level = levels[i]
+
+    logger[level] = noop
+    if(typeof console !== 'undefined' && console && console[level])
+      logger[level] = formatted(console, level)
+  }
+
+  return logger
+}
+
+function formatted(obj, method) {
+  return formatted_logger
+
+  function formatted_logger(str, context) {
+    if(typeof context === 'object')
+      str += ' ' + JSON.stringify(context)
+
+    return obj[method].call(obj, str)
+  }
+}
+
+// Return whether a URL is a cross-domain request.
+function is_crossDomain(url) {
+  var rurl = /^([\w\+\.\-]+:)(?:\/\/([^\/?#:]*)(?::(\d+))?)?/
+
+  // jQuery #8138, IE may throw an exception when accessing
+  // a field from window.location if document.domain has been set
+  var ajaxLocation
+  try { ajaxLocation = location.href }
+  catch (e) {
+    // Use the href attribute of an A element since IE will modify it given document.location
+    ajaxLocation = document.createElement( "a" );
+    ajaxLocation.href = "";
+    ajaxLocation = ajaxLocation.href;
+  }
+
+  var ajaxLocParts = rurl.exec(ajaxLocation.toLowerCase()) || []
+    , parts = rurl.exec(url.toLowerCase() )
+
+  var result = !!(
+    parts &&
+    (  parts[1] != ajaxLocParts[1]
+    || parts[2] != ajaxLocParts[2]
+    || (parts[3] || (parts[1] === "http:" ? 80 : 443)) != (ajaxLocParts[3] || (ajaxLocParts[1] === "http:" ? 80 : 443))
+    )
+  )
+
+  //console.debug('is_crossDomain('+url+') -> ' + result)
+  return result
+}
+
+// MIT License from http://phpjs.org/functions/base64_encode:358
+function b64_enc (data) {
+    // Encodes string using MIME base64 algorithm
+    var b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+    var o1, o2, o3, h1, h2, h3, h4, bits, i = 0, ac = 0, enc="", tmp_arr = [];
+
+    if (!data) {
+        return data;
+    }
+
+    // assume utf8 data
+    // data = this.utf8_encode(data+'');
+
+    do { // pack three octets into four hexets
+        o1 = data.charCodeAt(i++);
+        o2 = data.charCodeAt(i++);
+        o3 = data.charCodeAt(i++);
+
+        bits = o1<<16 | o2<<8 | o3;
+
+        h1 = bits>>18 & 0x3f;
+        h2 = bits>>12 & 0x3f;
+        h3 = bits>>6 & 0x3f;
+        h4 = bits & 0x3f;
+
+        // use hexets to index into b64, and append result to encoded string
+        tmp_arr[ac++] = b64.charAt(h1) + b64.charAt(h2) + b64.charAt(h3) + b64.charAt(h4);
+    } while (i < data.length);
+
+    enc = tmp_arr.join('');
+
+    switch (data.length % 3) {
+        case 1:
+            enc = enc.slice(0, -2) + '==';
+        break;
+        case 2:
+            enc = enc.slice(0, -1) + '=';
+        break;
+    }
+
+    return enc;
+}
+
+},{}],77:[function(_dereq_,module,exports){
 /*!
  * The buffer module from node.js, for the browser.
  *
@@ -18942,7 +19447,7 @@ function assert (test, message) {
   if (!test) throw new Error(message || 'Failed assertion')
 }
 
-},{"base64-js":77,"ieee754":78}],77:[function(_dereq_,module,exports){
+},{"base64-js":78,"ieee754":79}],78:[function(_dereq_,module,exports){
 var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 ;(function (exports) {
@@ -19064,7 +19569,7 @@ var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 	exports.fromByteArray = uint8ToBase64
 }(typeof exports === 'undefined' ? (this.base64js = {}) : exports))
 
-},{}],78:[function(_dereq_,module,exports){
+},{}],79:[function(_dereq_,module,exports){
 exports.read = function(buffer, offset, isLE, mLen, nBytes) {
   var e, m,
       eLen = nBytes * 8 - mLen - 1,
@@ -19150,7 +19655,7 @@ exports.write = function(buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128;
 };
 
-},{}],79:[function(_dereq_,module,exports){
+},{}],80:[function(_dereq_,module,exports){
 // shim for using process in browser
 
 var process = module.exports = {};
@@ -19215,7 +19720,7 @@ process.chdir = function (dir) {
     throw new Error('process.chdir is not supported');
 };
 
-},{}],80:[function(_dereq_,module,exports){
+},{}],81:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -19443,7 +19948,7 @@ process.chdir = function (dir) {
 	return CryptoJS.AES;
 
 }));
-},{"./cipher-core":81,"./core":82,"./enc-base64":83,"./evpkdf":85,"./md5":90}],81:[function(_dereq_,module,exports){
+},{"./cipher-core":82,"./core":83,"./enc-base64":84,"./evpkdf":86,"./md5":91}],82:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -20319,7 +20824,7 @@ process.chdir = function (dir) {
 
 
 }));
-},{"./core":82}],82:[function(_dereq_,module,exports){
+},{"./core":83}],83:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -21065,7 +21570,7 @@ process.chdir = function (dir) {
 	return CryptoJS;
 
 }));
-},{}],83:[function(_dereq_,module,exports){
+},{}],84:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -21189,7 +21694,7 @@ process.chdir = function (dir) {
 	return CryptoJS.enc.Base64;
 
 }));
-},{"./core":82}],84:[function(_dereq_,module,exports){
+},{"./core":83}],85:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -21339,7 +21844,7 @@ process.chdir = function (dir) {
 	return CryptoJS.enc.Utf16;
 
 }));
-},{"./core":82}],85:[function(_dereq_,module,exports){
+},{"./core":83}],86:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -21472,7 +21977,7 @@ process.chdir = function (dir) {
 	return CryptoJS.EvpKDF;
 
 }));
-},{"./core":82,"./hmac":87,"./sha1":106}],86:[function(_dereq_,module,exports){
+},{"./core":83,"./hmac":88,"./sha1":107}],87:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -21539,7 +22044,7 @@ process.chdir = function (dir) {
 	return CryptoJS.format.Hex;
 
 }));
-},{"./cipher-core":81,"./core":82}],87:[function(_dereq_,module,exports){
+},{"./cipher-core":82,"./core":83}],88:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -21683,7 +22188,7 @@ process.chdir = function (dir) {
 
 
 }));
-},{"./core":82}],88:[function(_dereq_,module,exports){
+},{"./core":83}],89:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -21702,7 +22207,7 @@ process.chdir = function (dir) {
 	return CryptoJS;
 
 }));
-},{"./aes":80,"./cipher-core":81,"./core":82,"./enc-base64":83,"./enc-utf16":84,"./evpkdf":85,"./format-hex":86,"./hmac":87,"./lib-typedarrays":89,"./md5":90,"./mode-cfb":91,"./mode-ctr":93,"./mode-ctr-gladman":92,"./mode-ecb":94,"./mode-ofb":95,"./pad-ansix923":96,"./pad-iso10126":97,"./pad-iso97971":98,"./pad-nopadding":99,"./pad-zeropadding":100,"./pbkdf2":101,"./rabbit":103,"./rabbit-legacy":102,"./rc4":104,"./ripemd160":105,"./sha1":106,"./sha224":107,"./sha256":108,"./sha3":109,"./sha384":110,"./sha512":111,"./tripledes":112,"./x64-core":113}],89:[function(_dereq_,module,exports){
+},{"./aes":81,"./cipher-core":82,"./core":83,"./enc-base64":84,"./enc-utf16":85,"./evpkdf":86,"./format-hex":87,"./hmac":88,"./lib-typedarrays":90,"./md5":91,"./mode-cfb":92,"./mode-ctr":94,"./mode-ctr-gladman":93,"./mode-ecb":95,"./mode-ofb":96,"./pad-ansix923":97,"./pad-iso10126":98,"./pad-iso97971":99,"./pad-nopadding":100,"./pad-zeropadding":101,"./pbkdf2":102,"./rabbit":104,"./rabbit-legacy":103,"./rc4":105,"./ripemd160":106,"./sha1":107,"./sha224":108,"./sha256":109,"./sha3":110,"./sha384":111,"./sha512":112,"./tripledes":113,"./x64-core":114}],90:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -21779,7 +22284,7 @@ process.chdir = function (dir) {
 	return CryptoJS.lib.WordArray;
 
 }));
-},{"./core":82}],90:[function(_dereq_,module,exports){
+},{"./core":83}],91:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22048,7 +22553,7 @@ process.chdir = function (dir) {
 	return CryptoJS.MD5;
 
 }));
-},{"./core":82}],91:[function(_dereq_,module,exports){
+},{"./core":83}],92:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22127,7 +22632,7 @@ process.chdir = function (dir) {
 	return CryptoJS.mode.CFB;
 
 }));
-},{"./cipher-core":81,"./core":82}],92:[function(_dereq_,module,exports){
+},{"./cipher-core":82,"./core":83}],93:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22244,7 +22749,7 @@ process.chdir = function (dir) {
 	return CryptoJS.mode.CTRGladman;
 
 }));
-},{"./cipher-core":81,"./core":82}],93:[function(_dereq_,module,exports){
+},{"./cipher-core":82,"./core":83}],94:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22303,7 +22808,7 @@ process.chdir = function (dir) {
 	return CryptoJS.mode.CTR;
 
 }));
-},{"./cipher-core":81,"./core":82}],94:[function(_dereq_,module,exports){
+},{"./cipher-core":82,"./core":83}],95:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22344,7 +22849,7 @@ process.chdir = function (dir) {
 	return CryptoJS.mode.ECB;
 
 }));
-},{"./cipher-core":81,"./core":82}],95:[function(_dereq_,module,exports){
+},{"./cipher-core":82,"./core":83}],96:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22399,7 +22904,7 @@ process.chdir = function (dir) {
 	return CryptoJS.mode.OFB;
 
 }));
-},{"./cipher-core":81,"./core":82}],96:[function(_dereq_,module,exports){
+},{"./cipher-core":82,"./core":83}],97:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22449,7 +22954,7 @@ process.chdir = function (dir) {
 	return CryptoJS.pad.Ansix923;
 
 }));
-},{"./cipher-core":81,"./core":82}],97:[function(_dereq_,module,exports){
+},{"./cipher-core":82,"./core":83}],98:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22494,7 +22999,7 @@ process.chdir = function (dir) {
 	return CryptoJS.pad.Iso10126;
 
 }));
-},{"./cipher-core":81,"./core":82}],98:[function(_dereq_,module,exports){
+},{"./cipher-core":82,"./core":83}],99:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22535,7 +23040,7 @@ process.chdir = function (dir) {
 	return CryptoJS.pad.Iso97971;
 
 }));
-},{"./cipher-core":81,"./core":82}],99:[function(_dereq_,module,exports){
+},{"./cipher-core":82,"./core":83}],100:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22566,7 +23071,7 @@ process.chdir = function (dir) {
 	return CryptoJS.pad.NoPadding;
 
 }));
-},{"./cipher-core":81,"./core":82}],100:[function(_dereq_,module,exports){
+},{"./cipher-core":82,"./core":83}],101:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22612,7 +23117,7 @@ process.chdir = function (dir) {
 	return CryptoJS.pad.ZeroPadding;
 
 }));
-},{"./cipher-core":81,"./core":82}],101:[function(_dereq_,module,exports){
+},{"./cipher-core":82,"./core":83}],102:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22758,7 +23263,7 @@ process.chdir = function (dir) {
 	return CryptoJS.PBKDF2;
 
 }));
-},{"./core":82,"./hmac":87,"./sha1":106}],102:[function(_dereq_,module,exports){
+},{"./core":83,"./hmac":88,"./sha1":107}],103:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22949,7 +23454,7 @@ process.chdir = function (dir) {
 	return CryptoJS.RabbitLegacy;
 
 }));
-},{"./cipher-core":81,"./core":82,"./enc-base64":83,"./evpkdf":85,"./md5":90}],103:[function(_dereq_,module,exports){
+},{"./cipher-core":82,"./core":83,"./enc-base64":84,"./evpkdf":86,"./md5":91}],104:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23142,7 +23647,7 @@ process.chdir = function (dir) {
 	return CryptoJS.Rabbit;
 
 }));
-},{"./cipher-core":81,"./core":82,"./enc-base64":83,"./evpkdf":85,"./md5":90}],104:[function(_dereq_,module,exports){
+},{"./cipher-core":82,"./core":83,"./enc-base64":84,"./evpkdf":86,"./md5":91}],105:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23282,7 +23787,7 @@ process.chdir = function (dir) {
 	return CryptoJS.RC4;
 
 }));
-},{"./cipher-core":81,"./core":82,"./enc-base64":83,"./evpkdf":85,"./md5":90}],105:[function(_dereq_,module,exports){
+},{"./cipher-core":82,"./core":83,"./enc-base64":84,"./evpkdf":86,"./md5":91}],106:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23550,7 +24055,7 @@ process.chdir = function (dir) {
 	return CryptoJS.RIPEMD160;
 
 }));
-},{"./core":82}],106:[function(_dereq_,module,exports){
+},{"./core":83}],107:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23701,7 +24206,7 @@ process.chdir = function (dir) {
 	return CryptoJS.SHA1;
 
 }));
-},{"./core":82}],107:[function(_dereq_,module,exports){
+},{"./core":83}],108:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23782,7 +24287,7 @@ process.chdir = function (dir) {
 	return CryptoJS.SHA224;
 
 }));
-},{"./core":82,"./sha256":108}],108:[function(_dereq_,module,exports){
+},{"./core":83,"./sha256":109}],109:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23982,7 +24487,7 @@ process.chdir = function (dir) {
 	return CryptoJS.SHA256;
 
 }));
-},{"./core":82}],109:[function(_dereq_,module,exports){
+},{"./core":83}],110:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -24306,7 +24811,7 @@ process.chdir = function (dir) {
 	return CryptoJS.SHA3;
 
 }));
-},{"./core":82,"./x64-core":113}],110:[function(_dereq_,module,exports){
+},{"./core":83,"./x64-core":114}],111:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -24390,7 +24895,7 @@ process.chdir = function (dir) {
 	return CryptoJS.SHA384;
 
 }));
-},{"./core":82,"./sha512":111,"./x64-core":113}],111:[function(_dereq_,module,exports){
+},{"./core":83,"./sha512":112,"./x64-core":114}],112:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -24714,7 +25219,7 @@ process.chdir = function (dir) {
 	return CryptoJS.SHA512;
 
 }));
-},{"./core":82,"./x64-core":113}],112:[function(_dereq_,module,exports){
+},{"./core":83,"./x64-core":114}],113:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -25485,7 +25990,7 @@ process.chdir = function (dir) {
 	return CryptoJS.TripleDES;
 
 }));
-},{"./cipher-core":81,"./core":82,"./enc-base64":83,"./evpkdf":85,"./md5":90}],113:[function(_dereq_,module,exports){
+},{"./cipher-core":82,"./core":83,"./enc-base64":84,"./evpkdf":86,"./md5":91}],114:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -25790,7 +26295,7 @@ process.chdir = function (dir) {
 	return CryptoJS;
 
 }));
-},{"./core":82}],114:[function(_dereq_,module,exports){
+},{"./core":83}],115:[function(_dereq_,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -26095,7 +26600,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],115:[function(_dereq_,module,exports){
+},{}],116:[function(_dereq_,module,exports){
 (function (global){
 /**
  * @license
