@@ -267,7 +267,7 @@ function createFS(options) {
         return p1 === 'wss://' ? 'https://' : 'http://';
       });
       // Also add /api/sync to the end:
-      apiSync.replace(/\/?$/, '/api/sync');
+      apiSync = apiSync.replace(/\/?$/, '/api/sync');
 
       request({
         url: apiSync,
