@@ -62,9 +62,9 @@ function corsOptions ( req, res ) {
 // Declare routes
 routes( app );
 
-port = env.get( "PORT", 9090 );
+port = process.env.PORT || env.get( "PORT", 9090 );
 var server = http.createServer( app );
-server.listen(9090);
+server.listen(port);
 
 socketServer( server );
 
