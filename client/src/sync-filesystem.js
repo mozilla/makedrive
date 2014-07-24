@@ -1,5 +1,6 @@
 var Filer = require('../../lib/filer.js');
 var conflict = require('../../lib/conflict.js');
+var constants = require('../../lib/constants.js');
 
 function SyncFileSystem(options) {
   var self = this;
@@ -19,11 +20,11 @@ function SyncFileSystem(options) {
   });
 
   function fsetUnsynced(fd, callback) {
-    fs.fsetxattr(fd, 'makedrive-unsynced', Date.now(), callback);
+    fs.fsetxattr(fd, constants.attributes.unsynced, Date.now(), callback);
   }
 
   function setUnsynced(path, callback) {
-    fs.setxattr(path, 'makedrive-unsynced', Date.now(), callback);
+    fs.setxattr(path, constants.attributes.unsynced, Date.now(), callback);
   }
 
   // These methods modify the filesystem. Wrap these calls.
@@ -114,7 +115,7 @@ function SyncFileSystem(options) {
 
   // Expose extra operations for checking whether path/fd is unsynced
   self.removeUnsynced = function(path, callback) {
-    fs.removexattr(path, 'makedrive-unsynced', function(err) {
+    fs.removexattr(path, constants.attributes.unsynced, function(err) {
       if(err && err.code !== 'ENOATTR') {
         return callback(err);
       }
@@ -123,7 +124,7 @@ function SyncFileSystem(options) {
     });
   };
   self.fremoveUnsynced = function(fd, callback) {
-    fs.fremovexattr(fd, 'makedrive-unsynced', function(err) {
+    fs.fremovexattr(fd, constants.attributes.unsynced, function(err) {
       if(err && err.code !== 'ENOATTR') {
         return callback(err);
       }
@@ -133,7 +134,7 @@ function SyncFileSystem(options) {
   };
 /** Note sure if we need to expose this or not, probably not.
   self.setUnsynced = function(path, callback) {
-    fs.setxattr(path, 'makedrive-unsynced', true, function(err) {
+    fs.setxattr(path, constants.attributes.unsynced, true, function(err) {
       if(err) {
         return callback(err);
       }
@@ -142,7 +143,7 @@ function SyncFileSystem(options) {
     });
   };
   self.fsetUnsynced = function(fd, callback) {
-    fs.fsetxattr(fd, 'makedrive-unsynced', true, function(err) {
+    fs.fsetxattr(fd, constants.attributes.unsynced, true, function(err) {
       if(err) {
         return callback(err);
       }
@@ -152,7 +153,7 @@ function SyncFileSystem(options) {
   };
 **/
   self.getUnsynced = function(path, callback) {
-    fs.getxattr(path, 'makedrive-unsynced', function(err, value) {
+    fs.getxattr(path, constants.attributes.unsynced, function(err, value) {
       if(err && err.code !== 'ENOATTR') {
         return callback(err);
       }
@@ -161,7 +162,7 @@ function SyncFileSystem(options) {
     });
   };
   self.fgetUnsynced = function(fd, callback) {
-    fs.fgetxattr(fd, 'makedrive-unsynced', function(err, value) {
+    fs.fgetxattr(fd, constants.attributes.unsynced, function(err, value) {
       if(err && err.code !== 'ENOATTR') {
         return callback(err);
       }
