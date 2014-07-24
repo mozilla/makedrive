@@ -14,7 +14,6 @@ function SyncFileSystem(options) {
      self[method] = function() {
        fs[method].apply(fs, arguments);
      };
-     console.log('self[' + method + ']', self[method]);
   });
 
   function fsetUnsynced(fd, callback) {
@@ -72,7 +71,6 @@ function SyncFileSystem(options) {
              if(err) {
                callback(err);
              } else {
-console.log('wrote makedrive-unsynced for ' + pathOrFD);
                callback.apply(null, args);
              }
            });
@@ -81,8 +79,12 @@ console.log('wrote makedrive-unsynced for ' + pathOrFD);
 
        fs[method].apply(fs, args);
      };
-     console.log('self[' + method + ']', self[method]);
   });
+
+  // Expose fs.Shell()
+  self.Shell = function(options) {
+    return fs.Shell(options);
+  };
 }
 
 module.exports = SyncFileSystem;

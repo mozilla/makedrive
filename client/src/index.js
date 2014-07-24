@@ -151,6 +151,7 @@ function createFS(options) {
 
   sync.onError = function(err) {
     sync.state = sync.SYNC_ERROR;
+console.log('error', err);
     sync.emit('error', err);
   };
 
