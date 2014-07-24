@@ -8,8 +8,7 @@ function SyncFileSystem(options) {
   // The following non-modifying fs operations can be run as normal,
   // and are simply forwarded to the fs instance. NOTE: we have
   // included setting xattributes since we don't sync these to the server.
-  // Also note that fs.unlink is included, since we can't decorate a file
-  // that's been removed.
+  // Also note that fs.unlink is here since we don't want to flag such changes.
   ['stat', 'fstat', 'lstat', 'exists', 'readlink', 'realpath',
    'rmdir', 'readdir', 'open', 'close', 'fsync', 'read', 'readFile',
    'setxattr', 'fsetxattr', 'getxattr', 'fgetxattr', 'removexattr',
@@ -28,8 +27,8 @@ function SyncFileSystem(options) {
   }
 
   // These methods modify the filesystem. Wrap these calls.
-  ['rename', 'truncate', 'link', 'symlink', 'mknod',
-   'mkdir', 'utimes', 'writeFile','ftruncate', 'futimes', 'write',
+  ['rename', 'truncate', 'link', 'symlink', 'mknod', 'mkdir',
+   'utimes', 'writeFile','ftruncate', 'futimes', 'write',
    'appendFile'].forEach(function(method) {
      self[method] = function() {
        var args = Array.prototype.slice.call(arguments, 0);
@@ -94,13 +93,13 @@ function SyncFileSystem(options) {
         return callback(err);
       }
 
-      conflict.isConflicted(fs, newPath, function(err, conflicted) {
+      conflict.isConflictedCopy(fs, newPath, function(err, conflicted) {
         if(err) {
           return callback(err);
         }
 
         if(conflicted) {
-          conflict.removeConflict(fs, newPath, callback);
+          conflict.removeFileConflict(fs, newPath, callback);
         } else {
           callback();
         }
