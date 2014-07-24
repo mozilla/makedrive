@@ -125,4 +125,35 @@ describe('MakeDrive Client Conflicts', function(){
     });
   });
 
+  it('should remove conflicted attribute when renaming', function(done) {
+    conflict.isConflictedCopy(fs, '/dir/file', function(err, conflicted) {
+      if(err) throw err;
+
+      expect(conflicted).to.be.false;
+
+      conflict.makeConflictedCopy(fs, '/dir/file', function(err, conflictedPath) {
+        if(err) throw err;
+
+        expect(conflict.filenameContainsConflicted(conflictedPath)).to.be.true;
+
+        conflict.isConflictedCopy(fs, conflictedPath, function(err, conflicted) {
+          if(err) throw err;
+
+          expect(conflicted).to.be.true;
+
+          fs.rename(conflictedPath, '/dir/backup', function(err) {
+            if(err) throw err;
+
+            conflict.isConflictedCopy(fs, '/dir/backup', function(err, conflicted) {
+              if(err) throw err;
+
+              expect(conflicted).to.be.false;
+              done();
+            });
+          });
+        });
+      });
+    });
+  });
+
 });
