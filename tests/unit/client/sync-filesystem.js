@@ -3,9 +3,8 @@ var util = require('../../lib/util.js');
 var MakeDrive = require('../../../client/src');
 var Filer = require('../../../lib/filer.js');
 var SyncFileSystem = require('../../../client/src/sync-filesystem.js');
-var conflict = require('../../../client/src/conflict');
 
-describe('MakeDrive Client SyncFileSystem and Conflicts', function(){
+describe('MakeDrive Client SyncFileSystem', function(){
   var fs;
 
   beforeEach(function(done) {
