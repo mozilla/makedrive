@@ -1,5 +1,5 @@
 var Filer = require('../../lib/filer.js');
-var conflict = require('./conflict.js');
+var conflict = require('../../lib/conflict.js');
 
 function SyncFileSystem(options) {
   var self = this;

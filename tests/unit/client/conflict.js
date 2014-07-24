@@ -3,7 +3,7 @@ var util = require('../../lib/util.js');
 var MakeDrive = require('../../../client/src');
 var Filer = require('../../../lib/filer.js');
 var SyncFileSystem = require('../../../client/src/sync-filesystem.js');
-var conflict = require('../../../client/src/conflict');
+var conflict = require('../../../lib/conflict.js');
 
 describe('MakeDrive Client Conflicts', function(){
   var fs;
