@@ -30,7 +30,7 @@ function generateConflictedPath(fs, path, callback) {
   var basename = Path.basename(path);
   var extname = Path.extname(path);
 
-  var now = new Date;
+  var now = new Date();
   var dateStamp = now.getFullYear() + '-' +
         now.getMonth() + '-' +
         now.getDay() + ' ' +
