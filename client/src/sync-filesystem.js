@@ -1,4 +1,5 @@
 var Filer = require('../../lib/filer.js');
+var conflict = require('./conflict.js');
 
 function SyncFileSystem(options) {
   var self = this;
@@ -7,10 +8,12 @@ function SyncFileSystem(options) {
   // The following non-modifying fs operations can be run as normal,
   // and are simply forwarded to the fs instance. NOTE: we have
   // included setting xattributes since we don't sync these to the server.
+  // Also note that fs.unlink is included, since we can't decorate a file
+  // that's been removed.
   ['stat', 'fstat', 'lstat', 'exists', 'readlink', 'realpath',
    'rmdir', 'readdir', 'open', 'close', 'fsync', 'read', 'readFile',
    'setxattr', 'fsetxattr', 'getxattr', 'fgetxattr', 'removexattr',
-   'fremovexattr', 'watch'].forEach(function(method) {
+   'fremovexattr', 'watch', 'unlink'].forEach(function(method) {
      self[method] = function() {
        fs[method].apply(fs, arguments);
      };
@@ -25,7 +28,7 @@ function SyncFileSystem(options) {
   }
 
   // These methods modify the filesystem. Wrap these calls.
-  ['rename', 'truncate', 'link', 'symlink', 'unlink', 'mknod',
+  ['rename', 'truncate', 'link', 'symlink', 'mknod',
    'mkdir', 'utimes', 'writeFile','ftruncate', 'futimes', 'write',
    'appendFile'].forEach(function(method) {
      self[method] = function() {
@@ -81,9 +84,91 @@ function SyncFileSystem(options) {
      };
   });
 
+  // We also want to do extra work in the case of a rename.
+  // If a file is a conflicted copy, and a rename is done,
+  // remove the conflict.
+  var rename = self.rename;
+  self.rename = function(oldPath, newPath, callback) {
+    rename(oldPath, newPath, function(err) {
+      if(err) {
+        return callback(err);
+      }
+
+      conflict.isConflicted(fs, newPath, function(err, conflicted) {
+        if(err) {
+          return callback(err);
+        }
+
+        if(conflicted) {
+          conflict.removeConflict(fs, newPath, callback);
+        } else {
+          callback();
+        }
+      });
+    });
+  };
+
   // Expose fs.Shell()
   self.Shell = function(options) {
     return fs.Shell(options);
+  };
+
+  // Expose extra operations for checking whether path/fd is unsynced
+  self.removeUnsynced = function(path, callback) {
+    fs.removexattr(path, 'makedrive-unsynced', function(err) {
+      if(err && err.code !== 'ENOATTR') {
+        return callback(err);
+      }
+
+      callback();
+    });
+  };
+  self.fremoveUnsynced = function(fd, callback) {
+    fs.fremovexattr(fd, 'makedrive-unsynced', function(err) {
+      if(err && err.code !== 'ENOATTR') {
+        return callback(err);
+      }
+
+      callback();
+    });
+  };
+/** Note sure if we need to expose this or not, probably not.
+  self.setUnsynced = function(path, callback) {
+    fs.setxattr(path, 'makedrive-unsynced', true, function(err) {
+      if(err) {
+        return callback(err);
+      }
+
+      callback();
+    });
+  };
+  self.fsetUnsynced = function(fd, callback) {
+    fs.fsetxattr(fd, 'makedrive-unsynced', true, function(err) {
+      if(err) {
+        return callback(err);
+      }
+
+      callback();
+    });
+  };
+**/
+  self.getUnsynced = function(path, callback) {
+    fs.getxattr(path, 'makedrive-unsynced', function(err, value) {
+      if(err && err.code !== 'ENOATTR') {
+        return callback(err);
+      }
+
+      callback(null, !!value);
+    });
+  };
+  self.fgetUnsynced = function(fd, callback) {
+    fs.fgetxattr(fd, 'makedrive-unsynced', function(err, value) {
+      if(err && err.code !== 'ENOATTR') {
+        return callback(err);
+      }
+
+      callback(null, !!value);
+    });
   };
 }
 
