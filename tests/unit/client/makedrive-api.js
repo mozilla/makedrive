@@ -57,7 +57,7 @@ describe('MakeDrive Client API', function(){
 
       var layout = {'/file': 'data'};
 
-      var fs = MakeDrive.fs({provider: provider, manual: true});
+      var fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
       var sync = fs.sync;
 
       var everSeenSyncing = false;

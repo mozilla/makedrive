@@ -12,11 +12,17 @@
  *
  * - manual=true - by default the filesystem syncs automatically in
  * the background. This disables it.
+ *
  * - memory=true - by default we use a persistent store (indexeddb
  * or websql). This overrides and uses a temporary ram disk.
+ *
  * - provider=<Object> - a Filer data provider to use instead of the
  * default provider normally used. The provider given should already
  * be instantiated (i.e., don't pass a constructor function).
+ *
+ * - forceCreate=true - by default we return the same fs instance with
+ * every call to MakeDrive.fs(). In some cases it is necessary to have
+ * multiple instances.  Using forceCreate=ture does this.
  *
  * Various bits of Filer are available on MakeDrive, including:
  *
@@ -77,11 +83,6 @@ var request = require('request');
 var MakeDrive = {};
 module.exports = MakeDrive;
 
-// We manage a single fs instance internally. NOTE: that other
-// tabs/windows may also be using this same instance (i.e., fs
-// is shared at the provider level).
-var _fs;
-
 function createFS(options) {
   options.manual = options.manual === true;
   options.memory = options.memory === true;
@@ -98,8 +99,8 @@ function createFS(options) {
 
   // Our fs instance is a modified Filer fs, with extra sync awareness
   // for conflict mediation, etc.
-  _fs = new SyncFileSystem({provider: provider});
-  var sync = _fs.sync = new EventEmitter();
+  var fs = new SyncFileSystem({provider: provider});
+  var sync = fs.sync = new EventEmitter();
 
   // Auto-sync handles
   var watcher;
@@ -169,7 +170,7 @@ console.log('error', err);
     }
 
     // Make sure the path exists, otherwise use root dir
-    _fs.exists(path, function(exists) {
+    fs.exists(path, function(exists) {
       path = exists ? path : '/';
       sync.manager.syncPath(path);
     });
@@ -227,7 +228,7 @@ console.log('error', err);
 
     function connect(token) {
       // Try to connect to provided server URL
-      sync.manager = new SyncManager(sync, _fs);
+      sync.manager = new SyncManager(sync, fs);
       sync.manager.init(url, token, function(err) {
         if(err) {
           sync.onError(err);
@@ -321,15 +322,26 @@ console.log('error', err);
 
     sync.onDisconnected();
   };
+
+  return fs;
 }
 
 // Manage single instance of a Filer filesystem with auto-sync'ing
+var sharedFS;
+
 MakeDrive.fs = function(options) {
-  if(!_fs) {
-    createFS(options || {});
+  options = options || {};
+
+  // We usually only want to hand out a single, shared instance
+  // for every call, but sometimes you need multiple (e.g., tests)
+  if(options.forceCreate) {
+    return createFS(options);
   }
 
-  return _fs;
+  if(!sharedFS) {
+    sharedFS = createFS(options);
+  }
+  return sharedFS;
 };
 
 // Expose bits of Filer that clients will need on MakeDrive

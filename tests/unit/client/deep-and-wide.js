@@ -34,7 +34,7 @@ describe('MakeDrive Client - sync many dirs, many files', function(){
     util.authenticatedConnection(function( err, result ) {
       expect(err).not.to.exist;
 
-      var fs = MakeDrive.fs({provider: provider, manual: true});
+      var fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
       var sync = fs.sync;
 
       // Make a layout with 25 dirs, each with sub-dirs, and files

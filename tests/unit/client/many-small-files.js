@@ -34,7 +34,7 @@ describe('MakeDrive Client - sync many small files', function(){
     util.authenticatedConnection(function( err, result ) {
       expect(err).not.to.exist;
 
-      var fs = MakeDrive.fs({provider: provider, manual: true});
+      var fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
       var sync = fs.sync;
 
       // Make a layout with /project and 100 small html files inside

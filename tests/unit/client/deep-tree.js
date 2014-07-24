@@ -22,7 +22,7 @@ describe('MakeDrive Client - sync deep tree structure', function(){
     util.authenticatedConnection(function( err, result ) {
       expect(err).not.to.exist;
 
-      var fs = MakeDrive.fs({provider: provider, manual: true});
+      var fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
       var sync = fs.sync;
 
       // Make a directory 20 levels deep with one file inside.

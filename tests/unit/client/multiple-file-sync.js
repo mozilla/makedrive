@@ -22,7 +22,7 @@ describe('MakeDrive Client - sync multiple files', function(){
     util.authenticatedConnection(function( err, result ) {
       expect(err).not.to.exist;
 
-      var fs = MakeDrive.fs({provider: provider, manual: true});
+      var fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
       var sync = fs.sync;
 
       var layout = {
