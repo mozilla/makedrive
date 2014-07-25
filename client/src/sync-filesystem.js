@@ -120,12 +120,6 @@ function SyncFileSystem(options) {
   };
 
   // Expose extra operations for checking whether path/fd is unsynced
-  self.removeUnsynced = function(path, callback) {
-    fsUtils.removeUnsynced(fs, path, callback);
-  };
-  self.fremoveUnsynced = function(fd, callback) {
-    fsUtils.fremoveUnsynced(fs, fd, callback);
-  };
   self.getUnsynced = function(path, callback) {
     fsUtils.getUnsynced(fs, path, callback);
   };

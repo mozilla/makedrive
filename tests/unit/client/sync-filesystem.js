@@ -2,6 +2,7 @@ var expect = require('chai').expect;
 var util = require('../../lib/util.js');
 var MakeDrive = require('../../../client/src');
 var Filer = require('../../../lib/filer.js');
+var fsUtils = require('../../../lib/fs-utils.js');
 var SyncFileSystem = require('../../../client/src/sync-filesystem.js');
 
 describe('MakeDrive Client SyncFileSystem', function(){
@@ -79,8 +80,6 @@ describe('MakeDrive Client SyncFileSystem', function(){
     // Extra SyncFileSystem specific things
     expect(fs.getUnsynced).to.be.a.function;
     expect(fs.fgetUnsynced).to.be.a.function;
-    expect(fs.removeUnsynced).to.be.a.function;
-    expect(fs.fremoveUnsynced).to.be.a.function;
   });
 
   it('should allow fs.rename and mark unsynced', function(done) {
@@ -240,7 +239,7 @@ describe('MakeDrive Client SyncFileSystem', function(){
       if(err) throw err;
 
       expectMakeDriveUnsyncedAttribForPath('/some-file', function() {
-        fs.removeUnsynced('/some-file', function(err) {
+        fsUtils.removeUnsynced(fs, '/some-file', function(err) {
           if(err) throw err;
 
           fs.getUnsynced('/some-file', function(err, unsynced) {
@@ -264,7 +263,7 @@ describe('MakeDrive Client SyncFileSystem', function(){
         if(err) throw err;
 
         expectMakeDriveUnsyncedAttribForFD(fd, function() {
-          fs.removeUnsynced('/some-file', function(err) {
+          fsUtils.removeUnsynced(fs, '/some-file', function(err) {
             if(err) throw err;
 
             fs.fgetUnsynced(fd, function(err, unsynced) {

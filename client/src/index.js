@@ -13,16 +13,16 @@
  * - manual=true - by default the filesystem syncs automatically in
  * the background. This disables it.
  *
- * - memory=true - by default we use a persistent store (indexeddb
- * or websql). This overrides and uses a temporary ram disk.
+ * - memory=<Boolean> - by default we use a persistent store (indexeddb
+ * or websql). Using memory=true overrides and uses a temporary ram disk.
  *
  * - provider=<Object> - a Filer data provider to use instead of the
  * default provider normally used. The provider given should already
  * be instantiated (i.e., don't pass a constructor function).
  *
- * - forceCreate=true - by default we return the same fs instance with
+ * - forceCreate=<Boolean> - by default we return the same fs instance with
  * every call to MakeDrive.fs(). In some cases it is necessary to have
- * multiple instances.  Using forceCreate=ture does this.
+ * multiple instances.  Using forceCreate=true does this.
  *
  * Various bits of Filer are available on MakeDrive, including:
  *
