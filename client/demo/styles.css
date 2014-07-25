@@ -1,79 +1,168 @@
-body {
-  background-color: black;
-}
-
 #editor {
   top: 0;
   left: 0;
   font-size: 15pt;
-  height: 400px;
+  height: 640px;
   border-color: #272822;
   width: 100%
 }
 
-#fileTitle {
-  background-color: #272822;
-  border-color: #272822;
-  border-bottom-color: grey;
-  color: #999;
+.editor-button {
+  position: fixed;
+  top: 52px;
+  width: 30px;
+  z-index: 10011;
+  font-size: 25px;
+  left: 15px;
+  -webkit-transition: all 0.5s ease;
+  -moz-transition: all 0.5s ease;
+  -o-transition: all 0.5s ease;
+  transition: all 0.5s ease;
+  cursor: pointer;
 }
 
-#nav {
-  background-color: #A3000E;
+div.alert.alert-success {
+  position: absolute;
+  right: 50%;
+  z-index: 4;
+  bottom: 80%;
+  display: none;
 }
 
-label {
-  font-weight: normal;
+div.alert.alert-danger {
+  position: absolute;
+  right: 40%;
+  z-index: 4;
+  bottom: 80%;
+  display: none;
 }
 
-.resize {
-  width: 35%;
+.side-bar-open {
+    left: 15px;
+    color: white;
 }
 
 body {
-  background: #4A4A4A;
-  color: white;
+  background: #E9EDF0;
+  color: gray;
 }
 
-#frm #form {
-  display: block;
-  float: left
+html, body {
+    height:100%;
 }
 
-#nav > div > div.navbar-header > a:hover, #bs-example-navbar-collapse-1 > ul > li > a:hover {
-  background-color: #820000;
+/*!
+ * Start Bootstrap - Simple Sidebar HTML Template (http://startbootstrap.com)
+ * Code licensed under the Apache License v2.0.
+ * For details, see http://www.apache.org/licenses/LICENSE-2.0.
+ */
+
+/* Toggle Styles */
+
+#wrapper {
+    padding-left: 0;
+    max-height: 655px;
+    height: 100%;
+    -webkit-transition: all 0.5s ease;
+    -moz-transition: all 0.5s ease;
+    -o-transition: all 0.5s ease;
+    transition: all 0.5s ease;
 }
 
-#tree {
-  margin-top: 24px;
-  background-color: #272822;
-  border-left-color: grey;
-  border-left-width: medium;
-  height: 435px;
+#wrapper.toggled {
+    padding-left: 250px;
 }
 
-#editorContainer, #inputContainer {
-  padding-right: 0px;
+#sidebar-wrapper {
+    position: fixed;
+    left: 250px;
+    width: 0;
+    height: 100%;
+    margin-left: -250px;
+    overflow-y: auto;
+    background: #8F9596;
+    -webkit-transition: all 0.5s ease;
+    -moz-transition: all 0.5s ease;
+    -o-transition: all 0.5s ease;
+    transition: all 0.5s ease;
+    border-right: 1px solid black;
 }
 
-.col-xs-7 {
-  padding-right: 16px;
+#jstree > ul {
+  color: #000;
+  font-weight: 300;
 }
 
-.folder {
-  color: white;
-}
-#files > li {
-  background-color: #272822;
-}
-.padding {
-   padding-left: 5px;
+#wrapper.toggled #sidebar-wrapper {
+    width: 250px;
 }
 
-.collapsable-hitarea {
-  background-color: white;
+#page-content-wrapper {
+    padding-top: 20px;
+    width: 100%;
 }
 
-.center {
-  text-align: center;
+#wrapper.toggled #page-content-wrapper {
+    position: absolute;
+    margin-right: -250px;
+}
+
+/* Sidebar Styles */
+
+.sidebar-nav {
+    position: absolute;
+    top: 0;
+    width: 250px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.sidebar-nav > .sidebar-brand {
+    height: 65px;
+    font-size: 18px;
+    line-height: 60px;
+}
+
+@media(max-width:768px) {
+
+    span.side-bar-button {
+        left: 225px;
+        color: white;
+    }
+
+    span.side-bar-open {
+        left: 15px;
+        color: gray;
+    }
+}
+
+@media(min-width:768px) {
+    .side-bar-open {
+        left: 225px;
+    }
+    #wrapper {
+        padding-left: 250px;
+    }
+
+    #wrapper.toggled {
+        padding-left: 0;
+    }
+
+    #sidebar-wrapper {
+        width: 250px;
+    }
+
+    #wrapper.toggled #sidebar-wrapper {
+        width: 0;
+    }
+
+    #wrapper.toggled #page-content-wrapper {
+        position: relative;
+        margin-right: 0;
+    }
+}
+
+.sign-in-button {
+  padding: 7px 20px;
 }

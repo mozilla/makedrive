@@ -1,8 +1,9 @@
-env:
- - "PORT=9090 ALLOWED_CORS_DOMAINS=\"http://localhost:7777\" NODE_ENV=\"development\" ENABLE_GELF_LOGS=false SESSION_SECRET=\"secret value\" FORCE_SSL=false LOGIN_SERVER_URL_WITH_AUTH=\"http://localhost:3000\""
 language: node_js
 node_js:
- - "0.10"
+- '0.10'
+before_install:
+- npm install -g grunt-cli
 before_script:
- - npm install -g grunt-cli
- - grunt init
+- grunt init
+env:
+ - "PORT=9090 ALLOWED_CORS_DOMAINS=\"http://localhost:7777\" NODE_ENV=\"development\" ENABLE_GELF_LOGS=false SESSION_SECRET=\"secret value\" FORCE_SSL=false LOGIN_SERVER_URL_WITH_AUTH=\"http://localhost:3000\""

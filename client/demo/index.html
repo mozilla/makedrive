@@ -1,109 +1,117 @@
-<!--[if lt IE 7]>
-    <html class="no-js lt-ie9 lt-ie8 lt-ie7" prefix="og: http://ogp.me/ns# fb: http://www.facebook.com/2008/fbml">
-    <![endif]-->
-    <!--[if IE 7]>
-        <html class="no-js lt-ie9 lt-ie8" prefix="og: http://ogp.me/ns# fb: http://www.facebook.com/2008/fbml">
-        <![endif]-->
-        <!--[if IE 8]>
-            <html class="no-js lt-ie9" prefix="og: http://ogp.me/ns# fb: http://www.facebook.com/2008/fbml">
-            <![endif]-->
-            <!--[if gt IE 8]>
-                <!-->
-                <html class="no-js" prefix="og: http://ogp.me/ns# fb: http://www.facebook.com/2008/fbml">
-                <!--<![endif]-->
-                
-                <head>
-                    <meta charset="utf-8">
-                    <!-- Force the latest IE version, in various cases when it may fall back to IE7 mode. But It is invalid html. -->
-                    <!-- <meta http-equiv="X-UA-Compatible" content="IE=edge"> -->
-                    <title>CDOT Webmaker</title>
-                    <meta name="description" content="">
-                    <meta name="viewport" content="width=device-width">
-                    <meta name="keywords" content="Markdown Parser" />
-                    <link rel="stylesheet" type="text/css" href="../vendors/makerstrap/dist/makerstrap.complete.min.css">
-                    <link rel="stylesheet" type="text/css" href="styles.css">
-                    <script type="text/javascript" src="/vendors/jquery/dist/jquery.min.js"></script>
-                    <link rel="stylesheet" type="text/css" href="/vendors/jquery.treeview/jquery.treeview.css">
-                    <script type='text/javascript' src='/vendors/jquery.treeview/jquery.treeview.js'></script>
-                    <script type='text/javascript' src='../dist/makedrive.js'></script>
-                </head>
-                
-                <body>
-                    <nav id="nav" class="navbar navbar-inverse navbar-fixed-top" role="navigation">
-                        <div class="container">
-                            <!-- Brand and toggle get grouped for better mobile display -->
-                            <div class="navbar-header">
-                                <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1"> <span class="sr-only">Toggle navigation</span>
- <span class="icon-bar"></span>
- <span class="icon-bar"></span>
- <span class="icon-bar"></span>
+<!doctype html>
 
-                                </button> <a class="navbar-brand" href="https://cdot.senecacollege.ca/">CDOT Webmaker Team</a>
+<html lang="en" dir="ltr" xmlns:ng="http://angularjs.org" ng-app="makedriveApp" id="ng-app">
+  <head>
+    <meta charset="utf-8">
+    <!-- Force the latest IE version, in various cases when it may fall back to IE7 mode. But It is invalid html. -->
+    <!-- <meta http-equiv="X-UA-Compatible" content="IE=edge"> -->
+    <title>Webmaker MakeDrive Demo</title>
+    <meta name="description" content="">
+    <meta name="viewport" content="width=device-width">
+    <meta name="keywords" content="Mozilla MakeDrive" />
+    <link rel="stylesheet" type="text/css" href="/vendors/makerstrap/dist/makerstrap.complete.min.css" />
+    <link rel="stylesheet" type="text/css" href="styles.css" />
+    <link rel="stylesheet" href="/vendors/jstree/dist/themes/default/style.min.css" />
+    <link rel="stylesheet" href="/vendors/angular-ui/build/angular-ui.min.css" />
+    <script type='text/javascript' src='../dist/makedrive.js'></script>
 
-                            </div>
-                            <!-- Collect the nav links, forms, and other content for toggling -->
-                            <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
-                                <ul class="nav navbar-nav navbar-right">
-                                    <li><a href="https://github.com/humphd/makedrive"><span class="fa fa-github"></span> mozilla/makedrive</a>
+  </head>
+  <body>
 
-                                    </li>
-                                </ul>
-                            </div>
-                            <!-- /.navbar-collapse -->
-                        </div>
-                        <!-- /.container-fluid -->
-                    </nav>
-                    <div class="jumbotron">
-                        <div class="container center">
-                             <h1>Makedrive</h1>
+    <div ng-controller="createUserController"></div>
+    <div id="wrapper" ng-controller="init">
+      <!-- Sidebar -->
+      <div id="sidebar-wrapper" >
+        <ul class="sidebar-nav">
+          <li class="sidebar-brand">
+          </li>
+          <li>
+            <div id="jstree"></div>
+          </li>
+        </ul>
+      </div>
+      <nav class="navbar navbar-default" role="navigation">
+        <div class="container-fluid">
+          <!-- Brand and toggle get grouped for better mobile display -->
+          <div class="navbar-header">
+            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+              <span class="sr-only">Toggle navigation</span>
+              <span class="icon-bar"></span>
+              <span class="icon-bar"></span>
+              <span class="icon-bar"></span>
+            </button>
+            <a class="navbar-brand" href="#">Mozilla MakeDrive</a>
+          </div>
 
-                            <p>Bi-directional Sync Demo</p>
-                        </div>
-                    </div>
-                    <div class="container">
-                        <div class="row">
-                            <div class="col-xs-7"> <span id="events"></span>
+          <!-- Collect the nav links, forms, and other content for toggling -->
+          <div class="collapse navbar-collapse">
 
-                                <div class="row">
-                                  <div class="col-xs-12">
-                                    <label>File Name:</label>
-                                    </div>
-                                </div>
-                                <div class="row">
-                                    <div class="col-xs-12" id="inputContainer">
-                                      <div class="input-group">
-                                        <input type="text" id="fileTitle" class="form-control" />
-                                          <span class="input-group-btn">
-                                            <button class="btn btn-info" id="btnSave">Save</button>
-                                          </span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="row">
-                                  <div class="col-xs-12" id="editorContainer">
-                                    <pre id="editor">alert('Hello world!');</pre>
-                                  </div>
-                                </div>
-                            </div>
-                            <div class="col-xs-5" id="tree">
-                                <ul id="abc" class="filetree treeview">
-                                    <li class="collapsable">
-                                        <div class="hitarea collapsable-hitarea"></div>
-                                        <span class="folder"><span class="padding">projects</span></span>
-                                        <ul id="files">
-                                        </ul>
-                                    </li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-                    <script>
-                        $('#abc').treeview();
-                    </script>
-                    <script src="../vendors/ace-builds/src-min/ace.js" type="text/javascript" charset="utf-8"></script>
-                    <script src="../vendors/ace-builds/src-min/theme-monokai.js"></script>
-                    <script src="../vendors/ace-builds/src-min/mode-javascript.js"></script>
-                    <script src="./index.js"></script>
-                </body>
-                
-                </html>
+            <ul class="nav navbar-nav navbar-right">
+              <li>
+              <div ng-include="'/demo/partials/user.html'"></div>
+
+              </li>
+            </ul>
+          </div><!-- /.navbar-collapse -->
+        </div><!-- /.container-fluid -->
+      </nav>
+        <!-- /#sidebar-wrapper -->
+        <div>
+        <div id="success" class="alert alert-success">
+          <span class="fa fa-check"></span>
+            Sync completed!
+        </div>
+        <div class="alert alert-danger">
+          <span class="fa fa-times"></span>
+            Oops! You have an error in your sync process: {{error}}
+        </div>
+        </div>
+      <!-- Page Content -->
+      <div id="page-content-wrapper">
+        <div class="container-fluid">
+          <div class="row">
+            <div ng-controller="clickToggle">
+              <span class="editor-button side-bar-button" ng-class="{'side-bar-open': !toggled }">
+                <i ng-click="toggle()" title="show/hide sidebar" ng-hide="toggled" class="fa fa-arrow-circle-left" ng-cloak></i>
+                <i ng-click="toggle()" title="show/hide sidebar" ng-show="toggled" class="fa fa-arrow-circle-right" ng-cloak></i>
+              </span>
+
+              <form name="myForm">
+                <div class="col-lg-9">
+                  <div class="input-group">
+                    <span class="input-group-addon">/</span>
+                    <input ng-model="path" type="text" class="form-control" placeholder="path/to/file/or/folder">
+                  </div>
+                </div>
+                <div class="col-lg-3">
+                  <button class="btn btn-default pull-right" ng-controller="mkfile" ng-click="mkfile(path)">Create file</button>
+                  <button class="btn btn-default pull-right" ng-controller="mkdir" ng-click="mkdirp(path)">Create directory</button>
+                </div>
+              </form>
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-lg-12">
+<pre ng-controller="editor" id="editor">
+function callback(x) {
+  log('received "' + x + '"');
+}
+
+function request() {
+    $.get('request', callback);
+}
+
+request();</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- /#page-content-wrapper -->
+
+    </div>
+    <script src="/angular-config.js"></script>
+    <script src="/demo/js/compiled/dependencies.min.js"></script>
+    <script src="https://login.persona.org/include.js"></script>
+    <script src="/demo/js/compiled/app.min.js"></script>
+  </body>
+</html>

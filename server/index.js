@@ -4,6 +4,7 @@ if ( process.env.NEW_RELIC_ENABLED ) {
 
 var express = require( "express" ),
     helmet = require( "helmet" ),
+    WebmakerAuth = require( "webmaker-auth" ),
     Path = require( "path" ),
     http = require( "http" ),
     messina;
@@ -16,6 +17,12 @@ var env = require( "./lib/environment" ),
 
 var app = express(),
     distDir = Path.resolve( __dirname, "dist" ),
+    webmakerAuth = new WebmakerAuth({
+      loginURL: env.get( "LOGIN" ),
+      secretKey: env.get( "SESSION_SECRET" ),
+      forceSSL: env.get( "FORCE_SSL" ),
+      domain: env.get( "COOKIE_DOMAIN" )
+    }),
     logger,
     port;
 
@@ -39,17 +46,8 @@ app.use( express.compress() );
 app.use(express.static(Path.join(__dirname,'../client')));
 app.use( express.json() );
 app.use( express.urlencoded() );
-app.use( express.cookieParser() );
-app.use( express.cookieSession( {
-  key: env.get('COOKIE_KEY'),
-  secret: env.get('SESSION_SECRET'),
-  domain: env.get('COOKIE_DOMAIN'),
-  cookie: {
-    maxAge: 31536000000,
-    secure: env.get('FORCE_SSL')
-  },
-  proxy: true
-}) );
+app.use( webmakerAuth.cookieParser() );
+app.use( webmakerAuth.cookieSession() );
 
 app.use( app.router );
 
@@ -61,7 +59,7 @@ function corsOptions ( req, res ) {
 }
 
 // Declare routes
-routes( app );
+routes( app, webmakerAuth );
 
 port = process.env.PORT || env.get( "PORT", 9090 );
 var server = http.createServer( app );

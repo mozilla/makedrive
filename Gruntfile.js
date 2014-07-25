@@ -11,6 +11,10 @@ var PROMPT_CONFIRM_CONFIG = 'confirmation',
 
 
 module.exports = function(grunt) {
+  require('time-grunt')(grunt);
+  require('jit-grunt')(grunt, {
+    express: 'grunt-express-server'
+  });
   grunt.initConfig({
     pkg: grunt.file.readJSON( "package.json" ),
 
@@ -38,6 +42,37 @@ module.exports = function(grunt) {
       develop: {
         src: "client/dist/makedrive.js",
         dest: "client/dist/makedrive.min.js"
+      },
+      dependencies: {
+        options: {
+          sourceMap: true,
+          mangle: false
+        },
+        files: {
+          'client/demo/js/compiled/dependencies.min.js': [
+            'client/vendors/jquery/dist/jquery.min.js',
+            'client/vendors/ace-builds/src-min/ace.js',
+            'client/vendors/ace-builds/src-min/theme-monokai.js',
+            'client/vendors/ace-builds/src-min/mode-javascript.js',
+            'client/vendors/jstree/dist/jstree.min.js',
+            'client/vendors/webmaker-auth-client/dist/webmaker-auth-client.min.js',
+            // angular dependencies
+            'client/vendors/angular/angular.js',
+            'client/vendors/angular-route/angular-route.min.js',
+            '/client/vendors/angular-ui/build/angular-ui.min.js',
+            'client/vendors/angular-bootstrap/ui-bootstrap.js',
+            'client/vendors/angular-bootstrap/ui-bootstrap-tpls.js'
+          ],
+        },
+      },
+      angular_app: {
+        options: {
+          sourceMap: true,
+          mangle: false
+        },
+        files: {
+          'client/demo/js/compiled/app.min.js': ['client/demo/js/angular/*.js']
+        },
       }
     },
 
@@ -120,24 +155,43 @@ module.exports = function(grunt) {
         "server/**/*.js",
         "lib/**/*.js"
       ]
+    },
+
+
+    watch: {
+      angular: {
+        files: ['client/demo/js/angular/*.js'],
+        tasks: ['uglify:angular_app'],
+        options: {
+          spawn: false
+        }
+      },
+      node: {
+        files: ['server/*.js', 'server/**/*.js'],
+        tasks: ['express:dev'],
+        options: {
+          spawn: false
+        }
+      }
+    },
+    express: {
+      dev: {
+        options: {
+          script: 'app.js',
+          node_env: 'DEV',
+          port: ''
+        }
+      }
     }
   });
-
-  // Load extension tasks
-  grunt.loadNpmTasks( "grunt-contrib-jshint" );
-  grunt.loadNpmTasks( "grunt-contrib-clean" );
-  grunt.loadNpmTasks( "grunt-contrib-uglify" );
-  grunt.loadNpmTasks( "grunt-browserify" );
-  grunt.loadNpmTasks( "grunt-bump" );
-  grunt.loadNpmTasks( "grunt-npm" );
-  grunt.loadNpmTasks( "grunt-prompt" );
-  grunt.loadNpmTasks( "grunt-exec" );
 
   // Simple multi-tasks
   grunt.registerTask( "test", [ "jshint", "exec:run_mocha" ] );
   grunt.registerTask( "default", [ "test" ] );
   grunt.registerTask( "init", [ "exec:update_submodule", "exec:npm_install_submodule" ] );
   grunt.registerTask( "build", [ "test", "clean", "browserify:makedriveClient", "uglify" ] );
+  grunt.registerTask( "install", [ "uglify:dependencies", "uglify:angular_app" ] );
+  grunt.registerTask( "dev", [ "uglify:angular_app", "express:dev", "watch" ] );
 
   // Complex multi-tasks
   grunt.registerTask('publish', 'Publish MakeDrive as a new version to NPM, bower and github.', function(patchLevel) {

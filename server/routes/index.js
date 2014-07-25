@@ -8,11 +8,32 @@ var middleware = require( '../middleware.js' ),
     WebSocketServer = require('ws').Server,
     websocketAuth = require('../lib/websocket-auth');
 
-module.exports = function createRoutes( app ) {
+module.exports = function createRoutes( app, webmakerAuth ) {
 
   app.get( "/", function( req, res ) {
     res.send( "MakeDrive: https://wiki.mozilla.org/Webmaker/MakeDrive" );
   });
+
+
+  /*
+     This angular configuration and WebmakerAuth route
+     is being use for our demo page only.
+  */
+  var angularConfig = {
+    accountSettingsUrl: env.get('LOGIN') + '/account',
+    loginURL: env.get('LOGIN' )
+  };
+
+  app.get( "/angular-config.js", function( req, res ) {
+    res.setHeader( "Content-type", "text/javascript" );
+    res.send( "window.angularConfig = " + JSON.stringify( angularConfig ) );
+  });
+
+  app.post( "/verify", webmakerAuth.handlers.verify );
+  app.post( "/authenticate", webmakerAuth.handlers.authenticate );
+  app.post( "/create", webmakerAuth.handlers.create );
+  app.post( "/logout", webmakerAuth.handlers.logout );
+  app.post( "/check-username", webmakerAuth.handlers.exists );
 
   function setupWWWRoutes(route, options) {
     app.get(route, middleware.authenticationHandler, function( req, res ) {

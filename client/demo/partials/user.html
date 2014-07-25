@@ -1,0 +1,17 @@
+<ul class="nav navbar-nav navbar-right">
+  <li class="dropdown" ng-cloak ng-show="_user.email">
+    <a class="navbar-user-info dropdown-toggle">
+      <img class="user-info-avatar" ng-src="{{_user.avatar}}"> Hi <strong>{{_user.username}}</strong>
+      <span class="label label-primary" ng-show="_user.isAdmin">admin</span>
+      <span class="label label-info" ng-show="!_user.isAdmin && _user.isSuperMentor">supermentor</span>
+      <span class="label label-warning" ng-show="!_user.isAdmin && !_user.isSuperMentor && _user.isMentor">mentor</span>
+      <span class="caret"></span>
+    </a>
+    <ul class="dropdown-menu">
+      <li><a ng-click="logout()"><span class="fa fa-sign-out"></span> Sign out</a></li>
+    </ul>
+  </li>
+  <li class="sign-in-button">
+    <button ng-show="!_user.email" class="btn btn-default" ng-click="login()">Sign in</button>
+  </li>
+</ul>
