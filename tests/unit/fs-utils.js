@@ -1,14 +1,15 @@
 var expect = require('chai').expect;
-var util = require('../../lib/util.js');
-var MakeDrive = require('../../../client/src');
-var Filer = require('../../../lib/filer.js');
-var SyncFileSystem = require('../../../client/src/sync-filesystem.js');
+var util = require('../lib/util.js');
+var MakeDrive = require('../../client/src');
+var Filer = require('../../lib/filer.js');
+var FileSystem = Filer.FileSystem;
+var fsUtils = require('../../lib/fs-utils.js');
 
-describe('MakeDrive Client SyncFileSystem', function(){
+describe('MakeDrive fs-utils.js', function(){
   var fs;
 
   beforeEach(function(done) {
-    fs = new SyncFileSystem({provider: new Filer.FileSystem.providers.Memory(util.username())});
+    fs = new FileSystem({provider: new FileSystem.providers.Memory(util.username())});
 
     // Write one dir and one file
     fs.mkdir('/dir', function(err) {
@@ -28,7 +29,7 @@ describe('MakeDrive Client SyncFileSystem', function(){
   function expectMakeDriveUnsyncedAttribForPath(path, callback) {
     fs.getUnsynced(path, function(err, unsynced) {
       expect(err).not.to.exist;
-      expect(unsynced).to.be.a.number;
+      expect(unsynced).to.be.true;
 
       callback();
     });
@@ -37,69 +38,142 @@ describe('MakeDrive Client SyncFileSystem', function(){
   function expectMakeDriveUnsyncedAttribForFD(fd, callback) {
     fs.fgetUnsynced(fd, function(err, unsynced) {
       expect(err).not.to.exist;
-      expect(unsynced).to.be.a.number;
+      expect(unsynced).to.be.true;
 
       callback();
     });
   }
 
-  it('should have all the usual properties of a regular fs', function() {
-    expect(fs.rename).to.be.a.function;
-    expect(fs.ftruncate).to.be.a.function;
-    expect(fs.truncate).to.be.a.function;
-    expect(fs.stat).to.be.a.function;
-    expect(fs.fstat).to.be.a.function;
-    expect(fs.exists).to.be.a.function;
-    expect(fs.link).to.be.a.function;
-    expect(fs.symlink).to.be.a.function;
-    expect(fs.readlink).to.be.a.function;
-    expect(fs.realpath).to.be.a.function;
-    expect(fs.unlink).to.be.a.function;
-    expect(fs.mknod).to.be.a.function;
-    expect(fs.mkdir).to.be.a.function;
-    expect(fs.readdir).to.be.a.function;
-    expect(fs.close).to.be.a.function;
-    expect(fs.open).to.be.a.function;
-    expect(fs.utimes).to.be.a.function;
-    expect(fs.futimes).to.be.a.function;
-    expect(fs.fsync).to.be.a.function;
-    expect(fs.write).to.be.a.function;
-    expect(fs.read).to.be.a.function;
-    expect(fs.readFile).to.be.a.function;
-    expect(fs.writeFile).to.be.a.function;
-    expect(fs.appendFile).to.be.a.function;
-    expect(fs.setxattr).to.be.a.function;
-    expect(fs.fsetxattr).to.be.a.function;
-    expect(fs.getxattr).to.be.a.function;
-    expect(fs.removexattr).to.be.a.function;
-    expect(fs.fremovexattr).to.be.a.function;
-    expect(fs.watch).to.be.a.function;
-    expect(fs.Shell).to.be.a.function;
-
-    // Extra SyncFileSystem specific things
-    expect(fs.getUnsynced).to.be.a.function;
-    expect(fs.fgetUnsynced).to.be.a.function;
-    expect(fs.removeUnsynced).to.be.a.function;
-    expect(fs.fremoveUnsynced).to.be.a.function;
+  it('should have all the expected properties', function() {
+    expect(fsUtils.forceCopy).to.be.a.function;
+    expect(fsUtils.isPathUnsynced).to.be.a.function;
+    expect(fsUtils.removeUnsynced).to.be.a.function;
+    expect(fsUtils.fremoveUnsynced).to.be.a.function;
+    expect(fsUtils.setUnsynced).to.be.a.function;
+    expect(fsUtils.fsetUnsynced).to.be.a.function;
+    expect(fsUtils.getUnsynced).to.be.a.function;
+    expect(fsUtils.fgetUnsynced).to.be.a.function;
   });
 
-  it('should allow fs.rename and mark unsynced', function(done) {
-    fs.readFile('/dir/file', 'utf8', function(err, data) {
-      if(err) throw err;
+  it('should copy an existing file on forceCopy()', function(done) {
+    fsUtils.forceCopy(fs, '/dir/file', '/dir/file2', function(err) {
+      expect(err).not.to.exist;
 
-      fs.rename('/dir/file', '/dir/file2', function(err) {
+      fs.readFile('/dir/file2', 'utf8', function(err, data) {
         if(err) throw err;
 
-        fs.readFile('/dir/file2', 'utf8', function(err, data2) {
+        expect(data).to.equal('data');
+        done();
+      });
+    });
+  });
+
+  it('should overwrite an existing file on forceCopy()', function(done) {
+    fs.writeFile('/dir/file2', 'different data', function(err) {
+      if(err) throw err;
+
+      fsUtils.forceCopy(fs, '/dir/file2', '/dir/file', function(err) {
+        expect(err).not.to.exist;
+
+        fs.readFile('/dir/file', 'utf8', function(err, data) {
           if(err) throw err;
 
-          expect(data2).to.equal(data);
-          expectMakeDriveUnsyncedAttribForPath('/dir/file2', done);
+          expect(data).to.equal('different data');
+          done();
         });
       });
     });
   });
 
+  it('should report false for isPathUnsynced() if path does not exist', function(done) {
+    fsUtils.isPathUnsynced(fs, '/no/such/file', function(err, unsynced) {
+      expect(err).not.to.exist;
+      expect(unsynced).to.be.false;
+      done();
+    });
+  });
+
+  it('should report false for isPathUnsynced() if path has no metadata', function(done) {
+    fsUtils.isPathUnsynced(fs, '/dir/file', function(err, unsynced) {
+      expect(err).not.to.exist;
+      expect(unsynced).to.be.false;
+      done();
+    });
+  });
+
+  it('should report true for isPathUnsynced() if path has unsynced metadata', function(done) {
+    fsUtils.setUnsynced(fs, '/dir/file', function(err) {
+      expect(err).not.to.exist;
+
+      fsUtils.isPathUnsynced(fs, '/dir/file', function(err, unsynced) {
+        expect(err).not.to.exist;
+        expect(unsynced).to.be.true;
+        done();
+      });
+    });
+  });
+
+  it('should give date for getUnsynced() if path has unsynced metadata', function(done) {
+    fsUtils.setUnsynced(fs, '/dir/file', function(err) {
+      expect(err).not.to.exist;
+
+      fsUtils.getUnsynced(fs, '/dir/file', function(err, unsynced) {
+        expect(err).not.to.exist;
+        expect(unsynced).to.be.a.number;
+        done();
+      });
+    });
+  });
+
+  it('should remove metadata when calling removeUnsynced()', function(done) {
+    fsUtils.setUnsynced(fs, '/dir/file', function(err) {
+      expect(err).not.to.exist;
+
+      fsUtils.getUnsynced(fs, '/dir/file', function(err, unsynced) {
+        expect(err).not.to.exist;
+        expect(unsynced).to.be.a.number;
+
+        fsUtils.removeUnsynced(fs, '/dir/file', function(err) {
+          expect(err).not.to.exist;
+
+          fsUtils.getUnsynced(fs, '/dir/file', function(err, unsynced) {
+            expect(err).not.to.exist;
+            expect(unsynced).not.to.exist;
+            done();
+          });
+        });
+      });
+    });
+  });
+
+  it('should work with fd vs. path', function(done) {
+    fs.open('/dir/file', 'w', function(err, fd) {
+      if(err) throw err;
+
+      fsUtils.fsetUnsynced(fs, fd, function(err) {
+        expect(err).not.to.exist;
+
+        fsUtils.fgetUnsynced(fs, fd, function(err, unsynced) {
+          expect(err).not.to.exist;
+          expect(unsynced).to.be.a.number;
+
+          fsUtils.fremoveUnsynced(fs, fd, function(err) {
+            expect(err).not.to.exist;
+
+            fsUtils.fgetUnsynced(fs, fd, function(err, unsynced) {
+              expect(err).not.to.exist;
+              expect(unsynced).not.to.exist;
+
+              fs.close(fd);
+              done();
+            });
+          });
+        });
+      });
+    });
+  });
+
+/**
   it('should allow fs.truncate and mark unsynced', function(done) {
     fs.truncate('/dir/file', 1, function(err) {
       if(err) throw err;
@@ -245,7 +319,7 @@ describe('MakeDrive Client SyncFileSystem', function(){
 
           fs.getUnsynced('/some-file', function(err, unsynced) {
             expect(err).not.to.exist;
-            expect(unsynced).not.to.exist;
+            expect(unsynced).to.be.false;
 
             done();
           });
@@ -269,7 +343,7 @@ describe('MakeDrive Client SyncFileSystem', function(){
 
             fs.fgetUnsynced(fd, function(err, unsynced) {
               expect(err).not.to.exist;
-              expect(unsynced).not.to.exist;
+              expect(unsynced).to.be.false;
 
               fs.close(fd);
               done();
@@ -279,5 +353,5 @@ describe('MakeDrive Client SyncFileSystem', function(){
       });
     });
   });
-
+**/
 });

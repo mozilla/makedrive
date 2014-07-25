@@ -1,4 +1,5 @@
 var Filer = require('../../lib/filer.js');
+var fsUtils = require('../../lib/fs-utils.js');
 var conflict = require('../../lib/conflict.js');
 var constants = require('../../lib/constants.js');
 
@@ -20,11 +21,11 @@ function SyncFileSystem(options) {
   });
 
   function fsetUnsynced(fd, callback) {
-    fs.fsetxattr(fd, constants.attributes.unsynced, Date.now(), callback);
+    fsUtils.fsetUnsynced(fs, fd, callback);
   }
 
   function setUnsynced(path, callback) {
-    fs.setxattr(path, constants.attributes.unsynced, Date.now(), callback);
+    fsUtils.setUnsynced(fs, path, callback);
   }
 
   // These methods modify the filesystem. Wrap these calls.
@@ -68,16 +69,15 @@ function SyncFileSystem(options) {
        args[lastIdx] = function wrappedCallback() {
          var args = Array.prototype.slice.call(arguments, 0);
          if(args[0]) {
-           callback(args[0]);
-         } else {
-           setUnsyncedFn(pathOrFD, function(err) {
-             if(err) {
-               callback(err);
-             } else {
-               callback.apply(null, args);
-             }
-           });
+           return callback(args[0]);
          }
+
+         setUnsyncedFn(pathOrFD, function(err) {
+           if(err) {
+             return callback(err);
+           }
+           callback.apply(null, args);
+         });
        };
 
        fs[method].apply(fs, args);
@@ -115,60 +115,16 @@ function SyncFileSystem(options) {
 
   // Expose extra operations for checking whether path/fd is unsynced
   self.removeUnsynced = function(path, callback) {
-    fs.removexattr(path, constants.attributes.unsynced, function(err) {
-      if(err && err.code !== 'ENOATTR') {
-        return callback(err);
-      }
-
-      callback();
-    });
+    fsUtils.removeUnsynced(fs, path, callback);
   };
   self.fremoveUnsynced = function(fd, callback) {
-    fs.fremovexattr(fd, constants.attributes.unsynced, function(err) {
-      if(err && err.code !== 'ENOATTR') {
-        return callback(err);
-      }
-
-      callback();
-    });
+    fsUtils.fremoveUnsynced(fs, fd, callback);
   };
-/** Note sure if we need to expose this or not, probably not.
-  self.setUnsynced = function(path, callback) {
-    fs.setxattr(path, constants.attributes.unsynced, true, function(err) {
-      if(err) {
-        return callback(err);
-      }
-
-      callback();
-    });
-  };
-  self.fsetUnsynced = function(fd, callback) {
-    fs.fsetxattr(fd, constants.attributes.unsynced, true, function(err) {
-      if(err) {
-        return callback(err);
-      }
-
-      callback();
-    });
-  };
-**/
   self.getUnsynced = function(path, callback) {
-    fs.getxattr(path, constants.attributes.unsynced, function(err, value) {
-      if(err && err.code !== 'ENOATTR') {
-        return callback(err);
-      }
-
-      callback(null, !!value);
-    });
+    fsUtils.getUnsynced(fs, path, callback);
   };
   self.fgetUnsynced = function(fd, callback) {
-    fs.fgetxattr(fd, constants.attributes.unsynced, function(err, value) {
-      if(err && err.code !== 'ENOATTR') {
-        return callback(err);
-      }
-
-      callback(null, !!value);
-    });
+    fsUtils.fgetUnsynced(fs, fd, callback);
   };
 }
 
