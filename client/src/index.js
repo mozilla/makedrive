@@ -240,7 +240,8 @@ function createFS(options) {
       request({
         url: apiSync,
         method: 'GET',
-        json: true
+        json: true,
+        withCredentials: true
       }, function(err, msg, body) {
         var statusCode;
         var error;
