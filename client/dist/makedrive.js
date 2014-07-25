@@ -44,11 +44,21 @@ module.exports = global.WebSocket;
  *
  * - manual=true - by default the filesystem syncs automatically in
  * the background. This disables it.
- * - memory=true - by default we use a persistent store (indexeddb
- * or websql). This overrides and uses a temporary ram disk.
+ *
+ * - memory=<Boolean> - by default we use a persistent store (indexeddb
+ * or websql). Using memory=true overrides and uses a temporary ram disk.
+ *
  * - provider=<Object> - a Filer data provider to use instead of the
  * default provider normally used. The provider given should already
  * be instantiated (i.e., don't pass a constructor function).
+ *
+ * - forceCreate=<Boolean> - by default we return the same fs instance with
+ * every call to MakeDrive.fs(). In some cases it is necessary to have
+ * multiple instances.  Using forceCreate=true does this.
+ *
+ * - interval=<Number> - by default, the filesystem syncs every minute if
+ * auto syncing is turned on otherwise the interval between syncs can be
+ * specified in ms.
  *
  * Various bits of Filer are available on MakeDrive, including:
  *
@@ -100,17 +110,14 @@ module.exports = global.WebSocket;
  */
 
 var SyncManager = _dereq_('./sync-manager.js');
+var SyncFileSystem = _dereq_('./sync-filesystem.js');
 var Filer = _dereq_('../../lib/filer.js');
+var syncPathResolver = _dereq_('../../lib/sync-path-resolver');
 var EventEmitter = _dereq_('events').EventEmitter;
 var request = _dereq_('request');
 
 var MakeDrive = {};
 module.exports = MakeDrive;
-
-// We manage a single fs instance internally. NOTE: that other
-// tabs/windows may also be using this same instance (i.e., fs
-// is shared at the provider level).
-var _fs;
 
 function createFS(options) {
   options.manual = options.manual === true;
@@ -126,13 +133,17 @@ function createFS(options) {
     provider = new Filer.FileSystem.providers.Fallback('makedrive');
   }
 
-  _fs = new Filer.FileSystem({provider: provider});
-  var sync = _fs.sync = new EventEmitter();
+  // Our fs instance is a modified Filer fs, with extra sync awareness
+  // for conflict mediation, etc.
+  var fs = new SyncFileSystem({provider: provider});
+  var sync = fs.sync = new EventEmitter();
 
   // Auto-sync handles
   var watcher;
-  var syncInterval;
-  var needsSync = false;
+  var autoSync;
+  var syncPaths = [];
+  var syncInterval = options.interval|0;
+  syncInterval = syncInterval > 0 ? syncInterval : 60 * 1000;
 
   // State of the sync connection
   sync.SYNC_DISCONNECTED = 0;
@@ -143,6 +154,41 @@ function createFS(options) {
 
   // Intitially we are not connected
   sync.state = sync.SYNC_DISCONNECTED;
+
+  // Turn on auto-syncing if its not already on
+  sync.auto = function(interval) {
+    if(watcher) {
+      return;
+    }
+
+    syncInterval = interval|0 > 0 ? interval|0 : 60 * 1000;
+
+    watcher = fs.watch('/', {recursive: true}, function(event, filename) {
+      syncPaths.push(filename);
+    });
+
+    if(autoSync) {
+      clearInterval(autoSync);
+    }
+
+    autoSync = setInterval(function() {
+      var pathToSync = '/';
+      if(syncPaths.length) {
+        pathToSync = syncPathResolver.resolve(syncPaths);
+        sync.request(pathToSync);
+      }
+    }, syncInterval);
+  };
+
+  // Turn off auto-syncing and turn on manual syncing
+  sync.manual = function() {
+    if(watcher) {
+      watcher.close();
+      watcher = null;
+      clearInterval(autoSync);
+      autoSync = null;
+    }
+  };
 
   sync.onError = function(err) {
     sync.state = sync.SYNC_ERROR;
@@ -163,7 +209,7 @@ function createFS(options) {
     }
 
     // Make sure the path exists, otherwise use root dir
-    _fs.exists(path, function(exists) {
+    fs.exists(path, function(exists) {
       path = exists ? path : '/';
       sync.manager.syncPath(path);
     });
@@ -193,8 +239,15 @@ function createFS(options) {
         sync.state = sync.SYNC_SYNCING;
         sync.emit('syncing');
       };
-      sync.onCompleted = function() {
-        needsSync = false;
+
+      sync.onCompleted = function(paths) {
+        // If changes happened to the files that needed to be synced
+        // during the sync itself, they will be overwritten
+        // https://github.com/mozilla/makedrive/issues/129 and
+        // https://github.com/mozilla/makedrive/issues/3
+        if(paths && watcher) {
+          syncPaths = syncPathResolver.filterSynced(syncPaths, paths.synced);
+        }
         sync.state = sync.SYNC_CONNECTED;
         sync.emit('completed');
       };
@@ -205,30 +258,16 @@ function createFS(options) {
 
       // If we're in manual mode, bail before starting auto-sync
       if(options.manual) {
+        sync.manual();
         return;
       }
 
-      // Start auto-sync'ing fs based on changes every 1 min.
-      // TODO: https://github.com/mozilla/makedrive/issues/118
-      watcher = _fs.watch('/', {recursive: true}, function(event, filename) {
-        // Mark the fs as dirty, and we'll sync on next interval
-        needsSync = true;
-
-        // Also try to start a sync now, which might fail if we're already syncing.
-        sync.request('/');
-      });
-
-      syncInterval = setInterval(function() {
-        if(needsSync) {
-          sync.request('/');
-          needsSync = false;
-        }
-      }, 60 * 1000);
+      sync.auto();
     }
 
     function connect(token) {
       // Try to connect to provided server URL
-      sync.manager = new SyncManager(sync, _fs);
+      sync.manager = new SyncManager(sync, fs);
       sync.manager.init(url, token, function(err) {
         if(err) {
           sync.onError(err);
@@ -315,22 +354,33 @@ function createFS(options) {
       watcher.close();
       watcher = null;
     }
-    if(syncInterval) {
-      clearInterval(syncInterval);
-      syncInterval = null;
+    if(autoSync) {
+      clearInterval(autoSync);
+      autoSync = null;
     }
 
     sync.onDisconnected();
   };
+
+  return fs;
 }
 
 // Manage single instance of a Filer filesystem with auto-sync'ing
+var sharedFS;
+
 MakeDrive.fs = function(options) {
-  if(!_fs) {
-    createFS(options || {});
+  options = options || {};
+
+  // We usually only want to hand out a single, shared instance
+  // for every call, but sometimes you need multiple (e.g., tests)
+  if(options.forceCreate) {
+    return createFS(options);
   }
 
-  return _fs;
+  if(!sharedFS) {
+    sharedFS = createFS(options);
+  }
+  return sharedFS;
 };
 
 // Expose bits of Filer that clients will need on MakeDrive
@@ -339,7 +389,7 @@ MakeDrive.Path = Filer.Path;
 MakeDrive.Errors = Filer.Errors;
 
 }).call(this,typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../../lib/filer.js":69,"./sync-manager.js":4,"events":115,"request":76}],3:[function(_dereq_,module,exports){
+},{"../../lib/filer.js":71,"../../lib/sync-path-resolver":74,"./sync-filesystem.js":4,"./sync-manager.js":5,"events":119,"request":80}],3:[function(_dereq_,module,exports){
 var SyncMessage = _dereq_('../../lib/syncmessage');
 var rsync = _dereq_('../../lib/rsync');
 var rsyncOptions = _dereq_('../../lib/constants').rsyncDefaults;
@@ -511,7 +561,140 @@ function handleMessage(syncManager, data) {
 
 module.exports = handleMessage;
 
-},{"../../lib/constants":67,"../../lib/diff":68,"../../lib/rsync":70,"../../lib/syncmessage":71,"./sync-states":5,"./sync-steps":6}],4:[function(_dereq_,module,exports){
+},{"../../lib/constants":69,"../../lib/diff":70,"../../lib/rsync":73,"../../lib/syncmessage":75,"./sync-states":6,"./sync-steps":7}],4:[function(_dereq_,module,exports){
+/**
+ * An extended Filer FileSystem with wrapped methods
+ * for writing that manage file metadata (xattribs)
+ * reflecting sync state.
+ */
+
+var Filer = _dereq_('../../lib/filer.js');
+var fsUtils = _dereq_('../../lib/fs-utils.js');
+var conflict = _dereq_('../../lib/conflict.js');
+var constants = _dereq_('../../lib/constants.js');
+
+function SyncFileSystem(options) {
+  var self = this;
+  var fs = new Filer.FileSystem(options);
+
+  // The following non-modifying fs operations can be run as normal,
+  // and are simply forwarded to the fs instance. NOTE: we have
+  // included setting xattributes since we don't sync these to the server.
+  // Also note that fs.unlink is here since we don't want to flag such changes.
+  ['stat', 'fstat', 'lstat', 'exists', 'readlink', 'realpath',
+   'rmdir', 'readdir', 'open', 'close', 'fsync', 'read', 'readFile',
+   'setxattr', 'fsetxattr', 'getxattr', 'fgetxattr', 'removexattr',
+   'fremovexattr', 'watch', 'unlink'].forEach(function(method) {
+     self[method] = function() {
+       fs[method].apply(fs, arguments);
+     };
+  });
+
+  function fsetUnsynced(fd, callback) {
+    fsUtils.fsetUnsynced(fs, fd, callback);
+  }
+
+  function setUnsynced(path, callback) {
+    fsUtils.setUnsynced(fs, path, callback);
+  }
+
+  // These methods modify the filesystem. Wrap these calls.
+  ['rename', 'truncate', 'link', 'symlink', 'mknod', 'mkdir',
+   'utimes', 'writeFile','ftruncate', 'futimes', 'write',
+   'appendFile'].forEach(function(method) {
+     self[method] = function() {
+       var args = Array.prototype.slice.call(arguments, 0);
+       var lastIdx = args.length - 1;
+       var callback = args[lastIdx];
+
+       // Grab the path or fd so we can use it to set the xattribute.
+       // Most methods take `path` or `fd` as the first arg, but it's
+       // second for some.
+       var pathOrFD;
+       switch(method) {
+         case 'rename':
+         case 'link':
+         case 'symlink':
+           pathOrFD = args[1];
+           break;
+         default:
+           pathOrFD = args[0];
+           break;
+       }
+
+       // Figure out which function to use when setting the xattribute
+       // depending on whether this method uses paths or descriptors.
+       var setUnsyncedFn;
+       switch(method) {
+         case 'ftruncate':
+         case 'futimes':
+         case 'write':
+           setUnsyncedFn = fsetUnsynced;
+           break;
+         default:
+           setUnsyncedFn = setUnsynced;
+           break;
+       }
+
+       args[lastIdx] = function wrappedCallback() {
+         var args = Array.prototype.slice.call(arguments, 0);
+         if(args[0]) {
+           return callback(args[0]);
+         }
+
+         setUnsyncedFn(pathOrFD, function(err) {
+           if(err) {
+             return callback(err);
+           }
+           callback.apply(null, args);
+         });
+       };
+
+       fs[method].apply(fs, args);
+     };
+  });
+
+  // We also want to do extra work in the case of a rename.
+  // If a file is a conflicted copy, and a rename is done,
+  // remove the conflict.
+  var rename = self.rename;
+  self.rename = function(oldPath, newPath, callback) {
+    rename(oldPath, newPath, function(err) {
+      if(err) {
+        return callback(err);
+      }
+
+      conflict.isConflictedCopy(fs, newPath, function(err, conflicted) {
+        if(err) {
+          return callback(err);
+        }
+
+        if(conflicted) {
+          conflict.removeFileConflict(fs, newPath, callback);
+        } else {
+          callback();
+        }
+      });
+    });
+  };
+
+  // Expose fs.Shell()
+  self.Shell = function(options) {
+    return fs.Shell(options);
+  };
+
+  // Expose extra operations for checking whether path/fd is unsynced
+  self.getUnsynced = function(path, callback) {
+    fsUtils.getUnsynced(fs, path, callback);
+  };
+  self.fgetUnsynced = function(fd, callback) {
+    fsUtils.fgetUnsynced(fs, fd, callback);
+  };
+}
+
+module.exports = SyncFileSystem;
+
+},{"../../lib/conflict.js":68,"../../lib/constants.js":69,"../../lib/filer.js":71,"../../lib/fs-utils.js":72}],5:[function(_dereq_,module,exports){
 var SyncMessage = _dereq_( '../../lib/syncmessage' ),
     messageHandler = _dereq_('./message-handler'),
     states = _dereq_('./sync-states'),
@@ -647,14 +830,14 @@ SyncManager.prototype.close = function() {
 
 module.exports = SyncManager;
 
-},{"../../lib/syncmessage":71,"./message-handler":3,"./sync-states":5,"./sync-steps":6,"ws":1}],5:[function(_dereq_,module,exports){
+},{"../../lib/syncmessage":75,"./message-handler":3,"./sync-states":6,"./sync-steps":7,"ws":1}],6:[function(_dereq_,module,exports){
 module.exports = {
   SYNCING: "SYNC IN PROGRESS",
   READY: "READY",
   ERROR: "ERROR",
   CLOSED: "CLOSED"
 };
-},{}],6:[function(_dereq_,module,exports){
+},{}],7:[function(_dereq_,module,exports){
 module.exports = {
   INIT: "SYNC INITIALIZED",
   CHKSUM: "CHECKSUM",
@@ -663,7 +846,7 @@ module.exports = {
   SYNCED: "SYNCED",
   FAILED: "FAILED"
 };
-},{}],7:[function(_dereq_,module,exports){
+},{}],8:[function(_dereq_,module,exports){
 (function (process){
 /*global setImmediate: false, setTimeout: false, console: false */
 
@@ -1631,7 +1814,7 @@ module.exports = {
 }());
 
 }).call(this,_dereq_("FWaASH"))
-},{"FWaASH":80}],8:[function(_dereq_,module,exports){
+},{"FWaASH":84}],9:[function(_dereq_,module,exports){
 // Based on https://github.com/diy/intercom.js/blob/master/lib/events.js
 // Copyright 2012 DIY Co Apache License, Version 2.0
 // http://www.apache.org/licenses/LICENSE-2.0
@@ -1704,7 +1887,7 @@ EventEmitter.prototype.removeAllListeners = pub.removeAllListeners;
 
 module.exports = EventEmitter;
 
-},{}],9:[function(_dereq_,module,exports){
+},{}],10:[function(_dereq_,module,exports){
 (function (global){
 // Based on https://github.com/diy/intercom.js/blob/master/lib/intercom.js
 // Copyright 2012 DIY Co Apache License, Version 2.0
@@ -2026,7 +2209,7 @@ Intercom.getInstance = (function() {
 module.exports = Intercom;
 
 }).call(this,typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../src/shared.js":61,"./eventemitter.js":8}],10:[function(_dereq_,module,exports){
+},{"../src/shared.js":62,"./eventemitter.js":9}],11:[function(_dereq_,module,exports){
 // Cherry-picked bits of underscore.js, lodash.js
 
 /**
@@ -2125,7 +2308,7 @@ function nodash(value) {
 
 module.exports = nodash;
 
-},{}],11:[function(_dereq_,module,exports){
+},{}],12:[function(_dereq_,module,exports){
 (function (Buffer){
 // Browser Request
 //
@@ -2611,7 +2794,7 @@ function b64_enc (data) {
 module.exports = request;
 
 }).call(this,_dereq_("buffer").Buffer)
-},{"buffer":77}],12:[function(_dereq_,module,exports){
+},{"buffer":81}],13:[function(_dereq_,module,exports){
 'use strict';
 // private property
 var _keyStr = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
@@ -2683,7 +2866,7 @@ exports.decode = function(input, utf8) {
 
 };
 
-},{}],13:[function(_dereq_,module,exports){
+},{}],14:[function(_dereq_,module,exports){
 'use strict';
 function CompressedObject() {
     this.compressedSize = 0;
@@ -2713,7 +2896,7 @@ CompressedObject.prototype = {
 };
 module.exports = CompressedObject;
 
-},{}],14:[function(_dereq_,module,exports){
+},{}],15:[function(_dereq_,module,exports){
 'use strict';
 exports.STORE = {
     magic: "\x00\x00",
@@ -2728,7 +2911,7 @@ exports.STORE = {
 };
 exports.DEFLATE = _dereq_('./flate');
 
-},{"./flate":17}],15:[function(_dereq_,module,exports){
+},{"./flate":18}],16:[function(_dereq_,module,exports){
 'use strict';
 var utils = _dereq_('./utils');
 
@@ -2837,7 +3020,7 @@ DataReader.prototype = {
 };
 module.exports = DataReader;
 
-},{"./utils":27}],16:[function(_dereq_,module,exports){
+},{"./utils":28}],17:[function(_dereq_,module,exports){
 'use strict';
 exports.base64 = false;
 exports.binary = false;
@@ -2845,7 +3028,7 @@ exports.dir = false;
 exports.date = null;
 exports.compression = null;
 
-},{}],17:[function(_dereq_,module,exports){
+},{}],18:[function(_dereq_,module,exports){
 'use strict';
 var USE_TYPEDARRAY = (typeof Uint8Array !== 'undefined') && (typeof Uint16Array !== 'undefined') && (typeof Uint32Array !== 'undefined');
 
@@ -2861,7 +3044,7 @@ exports.uncompress =  function(input) {
     return pako.inflateRaw(input);
 };
 
-},{"pako":30}],18:[function(_dereq_,module,exports){
+},{"pako":31}],19:[function(_dereq_,module,exports){
 'use strict';
 /**
 Usage:
@@ -2916,7 +3099,7 @@ JSZip.base64 = _dereq_('./base64');
 JSZip.compressions = _dereq_('./compressions');
 module.exports = JSZip;
 
-},{"./base64":12,"./compressions":14,"./defaults":16,"./load":19,"./object":22,"./support":25,"./utils":27}],19:[function(_dereq_,module,exports){
+},{"./base64":13,"./compressions":15,"./defaults":17,"./load":20,"./object":23,"./support":26,"./utils":28}],20:[function(_dereq_,module,exports){
 'use strict';
 var base64 = _dereq_('./base64');
 var ZipEntries = _dereq_('./zipEntries');
@@ -2942,7 +3125,7 @@ module.exports = function(data, options) {
     return this;
 };
 
-},{"./base64":12,"./zipEntries":28}],20:[function(_dereq_,module,exports){
+},{"./base64":13,"./zipEntries":29}],21:[function(_dereq_,module,exports){
 (function (Buffer){
 'use strict';
 module.exports = function(data, encoding){
@@ -2952,7 +3135,7 @@ module.exports.test = function(b){
     return Buffer.isBuffer(b);
 };
 }).call(this,_dereq_("buffer").Buffer)
-},{"buffer":77}],21:[function(_dereq_,module,exports){
+},{"buffer":81}],22:[function(_dereq_,module,exports){
 'use strict';
 var Uint8ArrayReader = _dereq_('./uint8ArrayReader');
 
@@ -2974,7 +3157,7 @@ NodeBufferReader.prototype.readData = function(size) {
 };
 module.exports = NodeBufferReader;
 
-},{"./uint8ArrayReader":26}],22:[function(_dereq_,module,exports){
+},{"./uint8ArrayReader":27}],23:[function(_dereq_,module,exports){
 'use strict';
 var support = _dereq_('./support');
 var utils = _dereq_('./utils');
@@ -3893,7 +4076,7 @@ var out = {
 };
 module.exports = out;
 
-},{"./base64":12,"./compressedObject":13,"./compressions":14,"./defaults":16,"./nodeBuffer":20,"./signature":23,"./support":25,"./utils":27}],23:[function(_dereq_,module,exports){
+},{"./base64":13,"./compressedObject":14,"./compressions":15,"./defaults":17,"./nodeBuffer":21,"./signature":24,"./support":26,"./utils":28}],24:[function(_dereq_,module,exports){
 'use strict';
 exports.LOCAL_FILE_HEADER = "PK\x03\x04";
 exports.CENTRAL_FILE_HEADER = "PK\x01\x02";
@@ -3902,7 +4085,7 @@ exports.ZIP64_CENTRAL_DIRECTORY_LOCATOR = "PK\x06\x07";
 exports.ZIP64_CENTRAL_DIRECTORY_END = "PK\x06\x06";
 exports.DATA_DESCRIPTOR = "PK\x07\x08";
 
-},{}],24:[function(_dereq_,module,exports){
+},{}],25:[function(_dereq_,module,exports){
 'use strict';
 var DataReader = _dereq_('./dataReader');
 var utils = _dereq_('./utils');
@@ -3940,7 +4123,7 @@ StringReader.prototype.readData = function(size) {
 };
 module.exports = StringReader;
 
-},{"./dataReader":15,"./utils":27}],25:[function(_dereq_,module,exports){
+},{"./dataReader":16,"./utils":28}],26:[function(_dereq_,module,exports){
 (function (Buffer){
 'use strict';
 exports.base64 = true;
@@ -3978,7 +4161,7 @@ else {
 }
 
 }).call(this,_dereq_("buffer").Buffer)
-},{"buffer":77}],26:[function(_dereq_,module,exports){
+},{"buffer":81}],27:[function(_dereq_,module,exports){
 'use strict';
 var DataReader = _dereq_('./dataReader');
 
@@ -4023,7 +4206,7 @@ Uint8ArrayReader.prototype.readData = function(size) {
 };
 module.exports = Uint8ArrayReader;
 
-},{"./dataReader":15}],27:[function(_dereq_,module,exports){
+},{"./dataReader":16}],28:[function(_dereq_,module,exports){
 'use strict';
 var support = _dereq_('./support');
 var compressions = _dereq_('./compressions');
@@ -4376,7 +4559,7 @@ exports.isRegExp = function (object) {
 };
 
 
-},{"./compressions":14,"./nodeBuffer":20,"./support":25}],28:[function(_dereq_,module,exports){
+},{"./compressions":15,"./nodeBuffer":21,"./support":26}],29:[function(_dereq_,module,exports){
 'use strict';
 var StringReader = _dereq_('./stringReader');
 var NodeBufferReader = _dereq_('./nodeBufferReader');
@@ -4574,7 +4757,7 @@ ZipEntries.prototype = {
 // }}} end of ZipEntries
 module.exports = ZipEntries;
 
-},{"./nodeBufferReader":21,"./signature":23,"./stringReader":24,"./support":25,"./uint8ArrayReader":26,"./utils":27,"./zipEntry":29}],29:[function(_dereq_,module,exports){
+},{"./nodeBufferReader":22,"./signature":24,"./stringReader":25,"./support":26,"./uint8ArrayReader":27,"./utils":28,"./zipEntry":30}],30:[function(_dereq_,module,exports){
 'use strict';
 var StringReader = _dereq_('./stringReader');
 var utils = _dereq_('./utils');
@@ -4827,7 +5010,7 @@ ZipEntry.prototype = {
 };
 module.exports = ZipEntry;
 
-},{"./compressedObject":13,"./object":22,"./stringReader":24,"./utils":27}],30:[function(_dereq_,module,exports){
+},{"./compressedObject":14,"./object":23,"./stringReader":25,"./utils":28}],31:[function(_dereq_,module,exports){
 // Top level file is just a mixin of submodules & constants
 'use strict';
 
@@ -4842,7 +5025,7 @@ var pako = {};
 assign(pako, deflate, inflate, constants);
 
 module.exports = pako;
-},{"./lib/deflate":31,"./lib/inflate":32,"./lib/utils/common":33,"./lib/zlib/constants":36}],31:[function(_dereq_,module,exports){
+},{"./lib/deflate":32,"./lib/inflate":33,"./lib/utils/common":34,"./lib/zlib/constants":37}],32:[function(_dereq_,module,exports){
 'use strict';
 
 
@@ -5204,7 +5387,7 @@ exports.Deflate = Deflate;
 exports.deflate = deflate;
 exports.deflateRaw = deflateRaw;
 exports.gzip = gzip;
-},{"./utils/common":33,"./utils/strings":34,"./zlib/deflate.js":38,"./zlib/messages":43,"./zlib/zstream":45}],32:[function(_dereq_,module,exports){
+},{"./utils/common":34,"./utils/strings":35,"./zlib/deflate.js":39,"./zlib/messages":44,"./zlib/zstream":46}],33:[function(_dereq_,module,exports){
 'use strict';
 
 
@@ -5570,7 +5753,7 @@ exports.inflate = inflate;
 exports.inflateRaw = inflateRaw;
 exports.ungzip  = inflate;
 
-},{"./utils/common":33,"./utils/strings":34,"./zlib/constants":36,"./zlib/gzheader":39,"./zlib/inflate.js":41,"./zlib/messages":43,"./zlib/zstream":45}],33:[function(_dereq_,module,exports){
+},{"./utils/common":34,"./utils/strings":35,"./zlib/constants":37,"./zlib/gzheader":40,"./zlib/inflate.js":42,"./zlib/messages":44,"./zlib/zstream":46}],34:[function(_dereq_,module,exports){
 'use strict';
 
 
@@ -5673,7 +5856,7 @@ exports.setTyped = function (on) {
 };
 
 exports.setTyped(TYPED_OK);
-},{}],34:[function(_dereq_,module,exports){
+},{}],35:[function(_dereq_,module,exports){
 // String encode/decode helpers
 'use strict';
 
@@ -5860,7 +6043,7 @@ exports.utf8border = function(buf, max) {
   return (pos + _utf8len[buf[pos]] > max) ? pos : max;
 };
 
-},{"./common":33}],35:[function(_dereq_,module,exports){
+},{"./common":34}],36:[function(_dereq_,module,exports){
 'use strict';
 
 // Note: adler32 takes 12% for level 0 and 2% for level 6.
@@ -5893,7 +6076,7 @@ function adler32(adler, buf, len, pos) {
 
 
 module.exports = adler32;
-},{}],36:[function(_dereq_,module,exports){
+},{}],37:[function(_dereq_,module,exports){
 module.exports = {
 
   /* Allowed flush values; see deflate() and inflate() below for details */
@@ -5941,7 +6124,7 @@ module.exports = {
   Z_DEFLATED:               8
   //Z_NULL:                 null // Use -1 or null inline, depending on var type
 };
-},{}],37:[function(_dereq_,module,exports){
+},{}],38:[function(_dereq_,module,exports){
 'use strict';
 
 // Note: we can't get significant speed boost here.
@@ -5983,7 +6166,7 @@ function crc32(crc, buf, len, pos) {
 
 
 module.exports = crc32;
-},{}],38:[function(_dereq_,module,exports){
+},{}],39:[function(_dereq_,module,exports){
 'use strict';
 
 var utils   = _dereq_('../utils/common');
@@ -7749,7 +7932,7 @@ exports.deflatePending = deflatePending;
 exports.deflatePrime = deflatePrime;
 exports.deflateTune = deflateTune;
 */
-},{"../utils/common":33,"./adler32":35,"./crc32":37,"./messages":43,"./trees":44}],39:[function(_dereq_,module,exports){
+},{"../utils/common":34,"./adler32":36,"./crc32":38,"./messages":44,"./trees":45}],40:[function(_dereq_,module,exports){
 'use strict';
 
 
@@ -7790,7 +7973,7 @@ function GZheader() {
 }
 
 module.exports = GZheader;
-},{}],40:[function(_dereq_,module,exports){
+},{}],41:[function(_dereq_,module,exports){
 'use strict';
 
 // See state defs from inflate.js
@@ -8117,7 +8300,7 @@ module.exports = function inflate_fast(strm, start) {
   return;
 };
 
-},{}],41:[function(_dereq_,module,exports){
+},{}],42:[function(_dereq_,module,exports){
 'use strict';
 
 
@@ -9621,7 +9804,7 @@ exports.inflateSync = inflateSync;
 exports.inflateSyncPoint = inflateSyncPoint;
 exports.inflateUndermine = inflateUndermine;
 */
-},{"../utils/common":33,"./adler32":35,"./crc32":37,"./inffast":40,"./inftrees":42}],42:[function(_dereq_,module,exports){
+},{"../utils/common":34,"./adler32":36,"./crc32":38,"./inffast":41,"./inftrees":43}],43:[function(_dereq_,module,exports){
 'use strict';
 
 
@@ -9948,7 +10131,7 @@ module.exports = function inflate_table(type, lens, lens_index, codes, table, ta
   return 0;
 };
 
-},{"../utils/common":33}],43:[function(_dereq_,module,exports){
+},{"../utils/common":34}],44:[function(_dereq_,module,exports){
 'use strict';
 
 module.exports = {
@@ -9962,7 +10145,7 @@ module.exports = {
   '-5':   'buffer error',        /* Z_BUF_ERROR     (-5) */
   '-6':   'incompatible version' /* Z_VERSION_ERROR (-6) */
 };
-},{}],44:[function(_dereq_,module,exports){
+},{}],45:[function(_dereq_,module,exports){
 'use strict';
 
 
@@ -11162,7 +11345,7 @@ exports._tr_stored_block = _tr_stored_block;
 exports._tr_flush_block  = _tr_flush_block;
 exports._tr_tally = _tr_tally;
 exports._tr_align = _tr_align;
-},{"../utils/common":33}],45:[function(_dereq_,module,exports){
+},{"../utils/common":34}],46:[function(_dereq_,module,exports){
 'use strict';
 
 
@@ -11192,7 +11375,7 @@ function ZStream() {
 }
 
 module.exports = ZStream;
-},{}],46:[function(_dereq_,module,exports){
+},{}],47:[function(_dereq_,module,exports){
 var O_READ = 'READ';
 var O_WRITE = 'WRITE';
 var O_CREATE = 'CREATE';
@@ -11274,7 +11457,7 @@ module.exports = {
   }
 };
 
-},{}],47:[function(_dereq_,module,exports){
+},{}],48:[function(_dereq_,module,exports){
 var MODE_FILE = _dereq_('./constants.js').MODE_FILE;
 
 module.exports = function DirectoryEntry(id, type) {
@@ -11282,7 +11465,7 @@ module.exports = function DirectoryEntry(id, type) {
   this.type = type || MODE_FILE;
 };
 
-},{"./constants.js":46}],48:[function(_dereq_,module,exports){
+},{"./constants.js":47}],49:[function(_dereq_,module,exports){
 (function (Buffer){
 // Adapt encodings to work with Buffer or Uint8Array, they expect the latter
 function decode(buf) {
@@ -11299,7 +11482,7 @@ module.exports = {
 };
 
 }).call(this,_dereq_("buffer").Buffer)
-},{"buffer":77}],49:[function(_dereq_,module,exports){
+},{"buffer":81}],50:[function(_dereq_,module,exports){
 var errors = {};
 [
   /**
@@ -11379,21 +11562,22 @@ var errors = {};
       err = e[1],
       message = e[2];
 
-  function ctor(m) {
+  function FilerError(m) {
+    this.name = err;
+    this.code = err;
+    this.errno = errno;
     this.message = m || message;
   }
-  var proto = ctor.prototype = new Error();
-  proto.errno = errno;
-  proto.code = err;
-  proto.constructor = ctor;
+  FilerError.prototype = Object.create(Error.prototype);
+  FilerError.prototype.constructor = FilerError;
 
   // We expose the error as both Errors.EINVAL and Errors[18]
-  errors[err] = errors[errno] = ctor;
+  errors[err] = errors[errno] = FilerError;
 });
 
 module.exports = errors;
 
-},{}],50:[function(_dereq_,module,exports){
+},{}],51:[function(_dereq_,module,exports){
 (function (Buffer){
 var _ = _dereq_('../../lib/nodash.js');
 
@@ -13484,7 +13668,7 @@ module.exports = {
 };
 
 }).call(this,_dereq_("buffer").Buffer)
-},{"../../lib/nodash.js":10,"../constants.js":46,"../directory-entry.js":47,"../encoding.js":48,"../errors.js":49,"../node.js":54,"../open-file-description.js":55,"../path.js":56,"../stats.js":65,"../super-node.js":66,"buffer":77}],51:[function(_dereq_,module,exports){
+},{"../../lib/nodash.js":11,"../constants.js":47,"../directory-entry.js":48,"../encoding.js":49,"../errors.js":50,"../node.js":55,"../open-file-description.js":56,"../path.js":57,"../stats.js":66,"../super-node.js":67,"buffer":81}],52:[function(_dereq_,module,exports){
 var _ = _dereq_('../../lib/nodash.js');
 
 var isNullPath = _dereq_('../path.js').isNull;
@@ -13819,7 +14003,7 @@ FileSystem.prototype.Shell = function(options) {
 
 module.exports = FileSystem;
 
-},{"../../lib/intercom.js":9,"../../lib/nodash.js":10,"../constants.js":46,"../errors.js":49,"../fs-watcher.js":52,"../path.js":56,"../providers/index.js":57,"../shared.js":61,"../shell/shell.js":64,"./implementation.js":50}],52:[function(_dereq_,module,exports){
+},{"../../lib/intercom.js":10,"../../lib/nodash.js":11,"../constants.js":47,"../errors.js":50,"../fs-watcher.js":53,"../path.js":57,"../providers/index.js":58,"../shared.js":62,"../shell/shell.js":65,"./implementation.js":51}],53:[function(_dereq_,module,exports){
 var EventEmitter = _dereq_('../lib/eventemitter.js');
 var Path = _dereq_('./path.js');
 var Intercom = _dereq_('../lib/intercom.js');
@@ -13883,7 +14067,7 @@ FSWatcher.prototype.constructor = FSWatcher;
 
 module.exports = FSWatcher;
 
-},{"../lib/eventemitter.js":8,"../lib/intercom.js":9,"./path.js":56}],53:[function(_dereq_,module,exports){
+},{"../lib/eventemitter.js":9,"../lib/intercom.js":10,"./path.js":57}],54:[function(_dereq_,module,exports){
 (function (Buffer){
 module.exports = {
   FileSystem: _dereq_('./filesystem/interface.js'),
@@ -13893,7 +14077,7 @@ module.exports = {
 };
 
 }).call(this,_dereq_("buffer").Buffer)
-},{"./errors.js":49,"./filesystem/interface.js":51,"./path.js":56,"buffer":77}],54:[function(_dereq_,module,exports){
+},{"./errors.js":50,"./filesystem/interface.js":52,"./path.js":57,"buffer":81}],55:[function(_dereq_,module,exports){
 var MODE_FILE = _dereq_('./constants.js').MODE_FILE;
 
 function Node(options) {
@@ -13948,7 +14132,7 @@ Node.create = function(options, callback) {
 
 module.exports = Node;
 
-},{"./constants.js":46}],55:[function(_dereq_,module,exports){
+},{"./constants.js":47}],56:[function(_dereq_,module,exports){
 module.exports = function OpenFileDescription(path, id, flags, position) {
   this.path = path;
   this.id = id;
@@ -13956,7 +14140,7 @@ module.exports = function OpenFileDescription(path, id, flags, position) {
   this.position = position;
 };
 
-},{}],56:[function(_dereq_,module,exports){
+},{}],57:[function(_dereq_,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -14182,7 +14366,7 @@ module.exports = {
   isNull: isNull
 };
 
-},{}],57:[function(_dereq_,module,exports){
+},{}],58:[function(_dereq_,module,exports){
 var IndexedDB = _dereq_('./indexeddb.js');
 var WebSQL = _dereq_('./websql.js');
 var Memory = _dereq_('./memory.js');
@@ -14219,7 +14403,7 @@ module.exports = {
   }())
 };
 
-},{"./indexeddb.js":58,"./memory.js":59,"./websql.js":60}],58:[function(_dereq_,module,exports){
+},{"./indexeddb.js":59,"./memory.js":60,"./websql.js":61}],59:[function(_dereq_,module,exports){
 (function (global){
 var FILE_SYSTEM_NAME = _dereq_('../constants.js').FILE_SYSTEM_NAME;
 var FILE_STORE_NAME = _dereq_('../constants.js').FILE_STORE_NAME;
@@ -14350,7 +14534,7 @@ IndexedDB.prototype.getReadWriteContext = function() {
 module.exports = IndexedDB;
 
 }).call(this,typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../constants.js":46,"../errors.js":49}],59:[function(_dereq_,module,exports){
+},{"../constants.js":47,"../errors.js":50}],60:[function(_dereq_,module,exports){
 var FILE_SYSTEM_NAME = _dereq_('../constants.js').FILE_SYSTEM_NAME;
 // NOTE: prefer setImmediate to nextTick for proper recursion yielding.
 // see https://github.com/js-platform/filer/pull/24
@@ -14441,7 +14625,7 @@ Memory.prototype.getReadWriteContext = function() {
 
 module.exports = Memory;
 
-},{"../../lib/async.js":7,"../constants.js":46}],60:[function(_dereq_,module,exports){
+},{"../../lib/async.js":8,"../constants.js":47}],61:[function(_dereq_,module,exports){
 (function (global){
 var FILE_SYSTEM_NAME = _dereq_('../constants.js').FILE_SYSTEM_NAME;
 var FILE_STORE_NAME = _dereq_('../constants.js').FILE_STORE_NAME;
@@ -14603,7 +14787,7 @@ WebSQL.prototype.getReadWriteContext = function() {
 module.exports = WebSQL;
 
 }).call(this,typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../constants.js":46,"../errors.js":49,"../shared.js":61}],61:[function(_dereq_,module,exports){
+},{"../constants.js":47,"../errors.js":50,"../shared.js":62}],62:[function(_dereq_,module,exports){
 function guid() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
     var r = Math.random()*16|0, v = c == 'x' ? r : (r&0x3|0x8);
@@ -14631,7 +14815,7 @@ module.exports = {
   nop: nop
 };
 
-},{}],62:[function(_dereq_,module,exports){
+},{}],63:[function(_dereq_,module,exports){
 var defaults = _dereq_('../constants.js').ENVIRONMENT;
 
 module.exports = function Environment(env) {
@@ -14648,7 +14832,7 @@ module.exports = function Environment(env) {
   };
 };
 
-},{"../constants.js":46}],63:[function(_dereq_,module,exports){
+},{"../constants.js":47}],64:[function(_dereq_,module,exports){
 var request = _dereq_('request');
 
 module.exports.download = function(uri, callback) {
@@ -14672,7 +14856,7 @@ module.exports.download = function(uri, callback) {
   });
 };
 
-},{"request":11}],64:[function(_dereq_,module,exports){
+},{"request":12}],65:[function(_dereq_,module,exports){
 var Path = _dereq_('../path.js');
 var Errors = _dereq_('../errors.js');
 var Environment = _dereq_('./environment.js');
@@ -15276,7 +15460,7 @@ Shell.prototype.zip = function(zipfile, paths, options, callback) {
 
 module.exports = Shell;
 
-},{"../../lib/async.js":7,"../encoding.js":48,"../errors.js":49,"../path.js":56,"./environment.js":62,"./network.js":63,"jszip":18}],65:[function(_dereq_,module,exports){
+},{"../../lib/async.js":8,"../encoding.js":49,"../errors.js":50,"../path.js":57,"./environment.js":63,"./network.js":64,"jszip":19}],66:[function(_dereq_,module,exports){
 var Constants = _dereq_('./constants.js');
 
 function Stats(fileNode, devName) {
@@ -15313,7 +15497,7 @@ function() {
 
 module.exports = Stats;
 
-},{"./constants.js":46}],66:[function(_dereq_,module,exports){
+},{"./constants.js":47}],67:[function(_dereq_,module,exports){
 var Constants = _dereq_('./constants.js');
 
 function SuperNode(options) {
@@ -15341,16 +15525,115 @@ SuperNode.create = function(options, callback) {
 
 module.exports = SuperNode;
 
-},{"./constants.js":46}],67:[function(_dereq_,module,exports){
+},{"./constants.js":47}],68:[function(_dereq_,module,exports){
+/**
+ * Utility functions for working with Conflicted Files.
+ */
+var Filer = _dereq_('./filer.js');
+var Path = Filer.Path;
+var constants = _dereq_('./constants.js');
+var fsUtils = _dereq_('./fs-utils.js');
+
+// Turn "/index.html" into "/index.html (Conflicted Copy 2014-07-23 12:00:00).html"
+function generateConflictedPath(fs, path, callback) {
+  var dirname = Path.dirname(path);
+  var basename = Path.basename(path);
+  var extname = Path.extname(path);
+
+  var now = new Date();
+  var dateStamp = now.getFullYear() + '-' +
+        now.getMonth() + '-' +
+        now.getDay() + ' ' +
+        now.getHours() + ':' +
+        now.getMinutes() + ':' +
+        now.getSeconds();
+  var conflictedCopy = ' (Conflicted Copy ' + dateStamp + ')';
+  var conflictedPath = Path.join(dirname, basename + conflictedCopy + extname);
+
+  // Copy the file using the conflicted filename. If there is
+  // already a conflicted file, replace it with this one.
+  fsUtils.forceCopy(fs, path, conflictedPath, function(err) {
+    if(err) {
+      return callback(err);
+    }
+
+    // Send the new path back on the callback
+    callback(null, conflictedPath);
+  });
+}
+
+function filenameContainsConflicted(path) {
+  // Look for path to be a conflicted copy, e.g.,
+  // /dir/index (Conflicted Copy 2014-07-23 12:00:00).html
+  return /\(Conflicted Copy \d{4}-\d{1,2}-\d{1,2} \d{1,2}:\d{1,2}:\d{1,2}\)/.test(path);
+}
+
+function isConflictedCopy(fs, path, callback) {
+  fs.getxattr(path, constants.attributes.conflict, function(err, value) {
+    if(err && err.code !== 'ENOATTR') {
+      return callback(err);
+    }
+
+    callback(null, !!value);
+  });
+}
+
+function makeConflictedCopy(fs, path, callback) {
+  fs.lstat(path, function(err, stats) {
+    if(err) {
+      return callback(err);
+    }
+
+    // If this is a dir, err now
+    if(stats.isDirectory()) {
+      return callback(new Filer.Errors.EPERM('conflicts not permitted on directories'));
+    }
+
+    // Otherwise, copy to a conflicted filename, and mark as makedrive-conflict
+    generateConflictedPath(fs, path, function(err, conflictedPath) {
+      fs.setxattr(conflictedPath, constants.attributes.conflict, true, function(err) {
+        if(err) {
+          return callback(err);
+        }
+
+        callback(null, conflictedPath);
+      });
+    });
+  });
+}
+
+function removeFileConflict(fs, path, callback) {
+  fs.removexattr(path, constants.attributes.conflict, function(err) {
+    if(err && err.code !== 'ENOATTR') {
+      return callback(err);
+    }
+
+    callback();
+  });
+}
+
+module.exports = {
+  filenameContainsConflicted: filenameContainsConflicted,
+  isConflictedCopy: isConflictedCopy,
+  makeConflictedCopy: makeConflictedCopy,
+  removeFileConflict: removeFileConflict
+};
+
+},{"./constants.js":69,"./filer.js":71,"./fs-utils.js":72}],69:[function(_dereq_,module,exports){
 module.exports = {
   rsyncDefaults: {
     size: 5,
     time: true,
     recursive: true
+  },
+
+  attributes: {
+    unsynced: 'makedrive-unsynced',
+    conflict: 'makedrive-conflict'
   }
 };
 
-},{}],68:[function(_dereq_,module,exports){
+},{}],70:[function(_dereq_,module,exports){
 /**
  * Functions to process lists of Node Diff objects (i.e.,
  * diffs of files, folders). A Node Diff object takes the
@@ -15430,10 +15713,121 @@ module.exports.deserialize = function(nodeDiffs) {
   return processFn(nodeDiffs, jsonToBuffer);
 };
 
-},{"./filer.js":69}],69:[function(_dereq_,module,exports){
+},{"./filer.js":71}],71:[function(_dereq_,module,exports){
 module.exports = _dereq_('../client/thirdparty/filer/src');
 
-},{"../client/thirdparty/filer/src":53}],70:[function(_dereq_,module,exports){
+},{"../client/thirdparty/filer/src":54}],72:[function(_dereq_,module,exports){
+/**
+ * Extra common fs operations we do throughout MakeDrive.
+ */
+var constants = _dereq_('./constants.js');
+
+// copy oldPath to newPath, deleting newPath if it exists
+function forceCopy(fs, oldPath, newPath, callback) {
+  fs.unlink(newPath, function(err) {
+    if(err && err.code !== 'ENOENT') {
+      return callback(err);
+    }
+
+    fs.readFile(oldPath, function(err, buf) {
+      if(err) {
+        return callback(err);
+      }
+
+      fs.writeFile(newPath, buf, callback);
+    });
+  });
+}
+
+// See if a given path a) exists, and whether it is marked unsynced.
+function isPathUnsynced(fs, path, callback) {
+  fs.getxattr(path, constants.attributes.unsynced, function(err, unsynced) {
+    // File doesn't exist locally at all
+    if(err && err.code === 'ENOENT') {
+      return callback(null, false);
+    }
+
+    // Deal with unexpected error
+    if(err && err.code !== 'ENOATTR') {
+      return callback(err);
+    }
+
+    callback(null, !!unsynced);
+  });
+}
+
+// Remove the unsynced metadata from a path
+function removeUnsynced(fs, path, callback) {
+  fs.removexattr(path, constants.attributes.unsynced, function(err) {
+    if(err && err.code !== 'ENOATTR') {
+      return callback(err);
+    }
+
+    callback();
+  });
+}
+function fremoveUnsynced(fs, fd, callback) {
+  fs.fremovexattr(fd, constants.attributes.unsynced, function(err) {
+    if(err && err.code !== 'ENOATTR') {
+      return callback(err);
+    }
+
+    callback();
+  });
+}
+
+// Set the unsynced metadata for a path
+function setUnsynced(fs, path, callback) {
+  fs.setxattr(path, constants.attributes.unsynced, Date.now(), function(err) {
+    if(err) {
+      return callback(err);
+    }
+
+    callback();
+  });
+}
+function fsetUnsynced(fs, fd, callback) {
+  fs.fsetxattr(fd, constants.attributes.unsynced, Date.now(), function(err) {
+    if(err) {
+      return callback(err);
+    }
+
+    callback();
+  });
+}
+
+// Get the unsynced metadata for a path
+function getUnsynced(fs, path, callback) {
+  fs.getxattr(path, constants.attributes.unsynced, function(err, value) {
+    if(err && err.code !== 'ENOATTR') {
+      return callback(err);
+    }
+
+    callback(null, value);
+  });
+}
+function fgetUnsynced(fs, fd, callback) {
+  fs.fgetxattr(fd, constants.attributes.unsynced, function(err, value) {
+    if(err && err.code !== 'ENOATTR') {
+      return callback(err);
+    }
+
+    callback(null, value);
+  });
+}
+
+module.exports = {
+  forceCopy: forceCopy,
+  isPathUnsynced: isPathUnsynced,
+  removeUnsynced: removeUnsynced,
+  fremoveUnsynced: fremoveUnsynced,
+  setUnsynced: setUnsynced,
+  fsetUnsynced: fsetUnsynced,
+  getUnsynced: getUnsynced,
+  fgetUnsynced: fgetUnsynced
+};
+
+},{"./constants.js":69}],73:[function(_dereq_,module,exports){
 // rsync.js
 // Implement rsync to sync between two Filer filesystems
 // Portions used from Node.js Anchor module
@@ -15442,15 +15836,18 @@ module.exports = _dereq_('../client/thirdparty/filer/src');
 // MIT Licensed
 // https://github.com/ttezel/anchor
 
-var Filer = _dereq_('./filer.js'),
-    Buffer = Filer.Buffer,
-    Path = Filer.Path,
-    Errors = Filer.Errors,
-    CryptoJS = _dereq_('crypto-js'),
-    async = _dereq_('async'),
-    _ = _dereq_('lodash'),
-    MD5 = _dereq_('MD5'),
-    rsync = {};
+var Filer = _dereq_('./filer.js');
+var Buffer = Filer.Buffer;
+var Path = Filer.Path;
+var fsUtils = _dereq_('./fs-utils.js');
+var Errors = Filer.Errors;
+var CryptoJS = _dereq_('crypto-js');
+var async = _dereq_('async');
+var _ = _dereq_('lodash');
+var MD5 = _dereq_('MD5');
+var rsync = {};
+var constants = _dereq_('./constants.js');
+var conflict = _dereq_('./conflict.js');
 
 // Rsync Options that can be passed are:
 // size       -   the size of each chunk of data in bytes that should be checksumed
@@ -15487,7 +15884,7 @@ function findCallback(callback, options) {
 
 // Validate the parameters sent to each rsync method
 function validateParams(fs, path) {
-  if(!fs || !(fs instanceof Filer.FileSystem)) {
+  if(!fs) {
     return new Errors.EINVAL('No filesystem provided');
   }
 
@@ -15735,15 +16132,27 @@ rsync.sourceList = function getSrcList(fs, path, options, callback) {
 
     // File or Link
     if(!stats.isDirectory()) {
-      var node = {
-        path: Path.basename(path),
-        size: stats.size,
-        type: stats.type,
-        modified: stats.mtime
-      };
+      // Make sure this isn't a conflicted copy before adding
+      // (we don't send these to the server in a sync)
+      conflict.isConflictedCopy(fs, path, function(err, conflicted) {
+        if(err) {
+          return callback(err);
+        }
 
-      sourceList.push(node);
-      return callback(null, sourceList);
+        if(!conflicted) {
+          var node = {
+            path: Path.basename(path),
+            size: stats.size,
+            type: stats.type,
+            modified: stats.mtime
+          };
+          sourceList.push(node);
+        }
+
+        callback(null, sourceList);
+      });
+
+      return;
     }
     // Directory
     fs.readdir(path, function(err, entries) {
@@ -15781,14 +16190,29 @@ rsync.sourceList = function getSrcList(fs, path, options, callback) {
           }
           // File or Link
           else {
-            sourceList.push(node);
-            callback();
+            // Make sure this isn't a conflicted copy before adding
+            // (we don't send these to the server in a sync)
+            conflict.isConflictedCopy(fs, name, function(err, conflicted) {
+              if(err) {
+                return callback(err);
+              }
+
+              if(!conflicted) {
+                sourceList.push(node);
+              }
+
+              callback();
+            });
           }
         });
       }
 
       async.eachSeries(entries, getSrcContents, function(err) {
-        callback(err, sourceList);
+        if(err) {
+          return callback(err);
+        }
+
+        callback(null, sourceList);
       });
     });
   });
@@ -16091,7 +16515,7 @@ rsync.patch = function(fs, path, diff, options, callback) {
 
   var paramError = validateParams(fs, path);
   var paths = {
-    synced: [], 
+    synced: [],
     failed: [],
     update: function(newPaths) {
       this.synced = this.synced.concat(newPaths.synced);
@@ -16115,7 +16539,11 @@ rsync.patch = function(fs, path, diff, options, callback) {
     callback(err, paths);
   }
 
-  // Remove the nodes in the patched directory that are no longer present in the source
+  // Remove the nodes in the patched directory that are no longer
+  // present in the source. The only exception to this is any file
+  // locally that hasn't been synced to the server yet (i.e.,
+  // we don't want to delete things in a downstream sync because they
+  // don't exist upstream yet, since an upstream sync will add them).
   function removeNodes(path, entryDiff, callback) {
     if(typeof entryDiff === 'function') {
       callback = entryDiff;
@@ -16136,13 +16564,26 @@ rsync.patch = function(fs, path, diff, options, callback) {
         deletedNodes = _.difference(destContents, srcContents);
       }
 
-      function unlink(item, callback) {
+      function maybeUnlink(item, callback) {
         var deletePath = Path.join(path, item);
-        paths.synced.push(deletePath);
-        fs.unlink(deletePath, callback);
+
+        // Make sure this file isn't unsynced before deleting
+        fsUtils.isPathUnsynced(fs, deletePath, function(err, unsynced) {
+          if(err) {
+            return handleError(err, callback);
+          }
+
+          if(unsynced) {
+            // Don't delete
+            return callback();
+          }
+
+          paths.synced.push(deletePath);
+          fs.unlink(deletePath, callback);
+        });
       }
 
-      async.eachSeries(deletedNodes, unlink, function(err) {
+      async.eachSeries(deletedNodes, maybeUnlink, function(err) {
         if(err) {
           return callback(err, paths);
         }
@@ -16222,26 +16663,57 @@ rsync.patch = function(fs, path, diff, options, callback) {
         }
       }
 
-      var buf = Buffer.concat(chunks);
-      fs.writeFile(syncPath, buf, function(err) {
+      // Before we alter the local file, make sure we don't
+      // need a conflicted copy before proceeding.
+      fsUtils.isPathUnsynced(fs, syncPath, function(err, unsynced) {
         if(err) {
           return handleError(err, callback);
         }
 
-        if(!options.time) {
-          paths.synced.push(syncPath);
-          return callback(null, paths);
+        function write() {
+          var buf = Buffer.concat(chunks);
+          fs.writeFile(syncPath, buf, function(err) {
+            if(err) {
+              return handleError(err, callback);
+            }
+
+            if(!options.time) {
+              paths.synced.push(syncPath);
+              return callback(null, paths);
+            }
+
+            // Updates the modified time of the node
+            fs.utimes(syncPath, entry.modified, entry.modified, function(err) {
+              if(err) {
+                return handleError(err, callback);
+              }
+
+              paths.synced.push(syncPath);
+              callback(null, paths);
+            });
+          });
         }
 
-        // Updates the modified time of the node
-        fs.utimes(syncPath, entry.modified, entry.modified, function(err) {
-          if(err) {
-            return handleError(err, callback);
-          }
+        if(unsynced) {
+          conflict.makeConflictedCopy(fs, syncPath, function(err) {
+            if(err) {
+              return handleError(err, callback);
+            }
 
-          paths.synced.push(syncPath);
-          callback(null, paths);
-        });
+            // Because we'll overwrite the file with upstream changes,
+            // remove the unsynced attribute (local changes are in
+            // the conflicted copy now).
+            fsUtils.removeUnsynced(fs, syncPath, function(err) {
+              if(err) {
+                return handleError(err, callback);
+              }
+
+              write();
+            });
+          });
+        } else {
+          write();
+        }
       });
     });
   }
@@ -16277,7 +16749,182 @@ rsync.patch = function(fs, path, diff, options, callback) {
 
 module.exports = rsync;
 
-},{"./filer.js":69,"MD5":72,"async":75,"crypto-js":89,"lodash":116}],71:[function(_dereq_,module,exports){
+},{"./conflict.js":68,"./constants.js":69,"./filer.js":71,"./fs-utils.js":72,"MD5":76,"async":79,"crypto-js":93,"lodash":120}],74:[function(_dereq_,module,exports){
+/**
+ * Sync path resolver is a library that provides
+ * functionality to determine 'syncable' paths
+ * It exposes two methods:
+ *
+ * resolve      - This method takes an array of paths as
+ *                an argument which represents the paths
+ *                that were modified in a Makedrive fs.
+ *                The array is populated with every path picked
+ *                up by watch events. This results in the array
+ *                including parent paths for files as well.
+ *                Resolve thus returns a single path which indicates
+ *                the most common path between every path that was modified
+ *                For example, if I created a file '/myfile.txt', the 'syncable'
+ *                path would be '/myfile.txt'. If I created another file as well,
+ *                '/myfile_2.txt', the 'syncable' path then becomes '/'.
+ *
+ * filterSynced - This method takes two arguments. The first is an array
+ *                populated with Makedrive watch events. The second is an
+ *                array of recently synced paths. This method returns a single
+ *                array representing the modified paths without including the
+ *                synced paths. However, the returned array will still have the
+ *                same format as if picked up by watch events.
+*/
+
+var pathResolver = {};
+var Path = _dereq_('./filer').Path;
+
+function getPathSegments(absPath) {
+  if(absPath !== '/') {
+    return getPathSegments(Path.dirname(absPath))
+    .concat(Path.basename(absPath));
+  }
+
+  return ['/'];
+}
+
+function cleanup(dirtyArray) {
+  var result = [];
+
+  dirtyArray.forEach(function(element, index, array) {
+    if(dirtyArray[index]) {
+      result.push(dirtyArray[index]);
+    }
+  });
+
+  return result;
+}
+
+// Constructs a 2-D variable length array
+// where each element in the first dimension
+// represents an array of paths determined by
+// the correlation between the index of the first
+// dimension in which the array of paths exists
+// and the number of '/'s in each path of that array
+// of paths
+// Holes in the 1-D array can exist anywhere. For e.g.,
+// [undefined, undefined, Array, Array] is possible
+function constructBuckets(pathList) {
+  var pathBucketArray = [];
+
+  function createBucketForList(pathElement, index, list) {
+    var depth;
+
+    if(pathElement === '/') {
+      depth = 0;
+    } else {
+      depth = pathElement.match(/\//g).length;
+    }
+
+    if(!pathBucketArray[depth]) {
+      pathBucketArray[depth] = [];
+    }
+
+    pathBucketArray[depth].push(pathElement);
+  }
+
+  pathList.forEach(createBucketForList);
+
+  pathBucketArray = cleanup(pathBucketArray);
+
+  return pathBucketArray;
+}
+
+function getCommonPathAncestor(path1, path2) {
+  path1 = getPathSegments(path1);
+  path2 = getPathSegments(path2);
+
+  for (var commonIndex = 0; commonIndex < path1.length && 
+    commonIndex < path2.length && 
+    path1[commonIndex] === path2[commonIndex]; commonIndex++);
+
+  commonIndex--;
+
+  return '/' + path1.slice(1, commonIndex + 1).join('/');
+}
+
+function getRegressedPath(pathList) {
+  var regressedPath = pathList[0];
+
+  for (var i = 1; i < pathList.length; i++) {
+    regressedPath = getCommonPathAncestor(regressedPath, pathList[i]);
+  }
+
+  return regressedPath;
+}
+
+// Paths is an array containing paths and their parent paths
+pathResolver.resolve = function(paths) {
+
+  if(!paths.length) {
+    return '/';
+  }
+
+  // A 2-D array containing paths organized in
+  // descending order according to their depths
+  var pathBucketList = constructBuckets(paths);
+  var regressedPath = '/';
+  var fullPath;
+  // Paths that were modified, arranged in descending
+  // order of their depth
+  var modifiedPaths = [];
+  var dirs, parentBucket;
+
+  // Construct a 1-D array of paths that were modified
+  // This is done to remove the paths that were added
+  // by fs.watch for parent node changes
+  for(var i = pathBucketList.length - 1; i >= 0; i--) {
+    for(var j = 0; pathBucketList[i] && j < pathBucketList[i].length; j++) {
+      fullPath = pathBucketList[i][j];
+      modifiedPaths.push(fullPath);
+
+      // Get the parent path and remove an entry of it
+      // from the corresponding bucket
+      dir = Path.dirname(fullPath);
+      parentBucket = pathBucketList[i-1];
+
+      if(parentBucket) {
+        parentIndex = parentBucket.indexOf(dir);
+
+        if(parentIndex >= 0) {
+          parentBucket.splice(parentIndex, 1);
+        }
+      }
+    }
+  }
+
+  regressedPath = getRegressedPath(modifiedPaths);
+
+  return regressedPath;
+};
+
+pathResolver.filterSynced = function(paths, syncedPaths) {
+  var repeatedPath, repeatedParentIndex;
+
+  for(var i = 0; i < syncedPaths.length; i++) {
+    repeatedPath = syncedPaths[i];
+    for(var j = 0; j < paths.length; j++) {
+      if(paths[j] == repeatedPath) {
+        paths.splice(j, 1);
+        repeatedParentIndex = paths.indexOf(Path.dirname(repeatedPath));
+        if(repeatedParentIndex >= 0) {
+          paths.splice(repeatedParentIndex, 1);
+        }
+        continue;
+      }
+    }
+  }
+
+  return paths;
+};
+
+module.exports = pathResolver;
+
+},{"./filer":71}],75:[function(_dereq_,module,exports){
 // Constructor
 function SyncMessage(type, name, content) {
   if(!isValidType(type)) {
@@ -16453,7 +17100,7 @@ SyncMessage.error = {
 
 module.exports = SyncMessage;
 
-},{}],72:[function(_dereq_,module,exports){
+},{}],76:[function(_dereq_,module,exports){
 (function (Buffer){
 (function(){
   var crypt = _dereq_('crypt'),
@@ -16617,7 +17264,7 @@ module.exports = SyncMessage;
 })();
 
 }).call(this,_dereq_("buffer").Buffer)
-},{"buffer":77,"charenc":73,"crypt":74}],73:[function(_dereq_,module,exports){
+},{"buffer":81,"charenc":77,"crypt":78}],77:[function(_dereq_,module,exports){
 var charenc = {
   // UTF-8 encoding
   utf8: {
@@ -16652,7 +17299,7 @@ var charenc = {
 
 module.exports = charenc;
 
-},{}],74:[function(_dereq_,module,exports){
+},{}],78:[function(_dereq_,module,exports){
 (function() {
   var base64map
       = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/',
@@ -16750,7 +17397,7 @@ module.exports = charenc;
   module.exports = crypt;
 })();
 
-},{}],75:[function(_dereq_,module,exports){
+},{}],79:[function(_dereq_,module,exports){
 (function (process){
 /*!
  * async
@@ -17877,7 +18524,7 @@ module.exports = charenc;
 }());
 
 }).call(this,_dereq_("FWaASH"))
-},{"FWaASH":80}],76:[function(_dereq_,module,exports){
+},{"FWaASH":84}],80:[function(_dereq_,module,exports){
 // Browser Request
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18290,7 +18937,7 @@ function b64_enc (data) {
     return enc;
 }
 
-},{}],77:[function(_dereq_,module,exports){
+},{}],81:[function(_dereq_,module,exports){
 /*!
  * The buffer module from node.js, for the browser.
  *
@@ -19448,7 +20095,7 @@ function assert (test, message) {
   if (!test) throw new Error(message || 'Failed assertion')
 }
 
-},{"base64-js":78,"ieee754":79}],78:[function(_dereq_,module,exports){
+},{"base64-js":82,"ieee754":83}],82:[function(_dereq_,module,exports){
 var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 ;(function (exports) {
@@ -19570,7 +20217,7 @@ var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 	exports.fromByteArray = uint8ToBase64
 }(typeof exports === 'undefined' ? (this.base64js = {}) : exports))
 
-},{}],79:[function(_dereq_,module,exports){
+},{}],83:[function(_dereq_,module,exports){
 exports.read = function(buffer, offset, isLE, mLen, nBytes) {
   var e, m,
       eLen = nBytes * 8 - mLen - 1,
@@ -19656,7 +20303,7 @@ exports.write = function(buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128;
 };
 
-},{}],80:[function(_dereq_,module,exports){
+},{}],84:[function(_dereq_,module,exports){
 // shim for using process in browser
 
 var process = module.exports = {};
@@ -19721,7 +20368,7 @@ process.chdir = function (dir) {
     throw new Error('process.chdir is not supported');
 };
 
-},{}],81:[function(_dereq_,module,exports){
+},{}],85:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -19949,7 +20596,7 @@ process.chdir = function (dir) {
 	return CryptoJS.AES;
 
 }));
-},{"./cipher-core":82,"./core":83,"./enc-base64":84,"./evpkdf":86,"./md5":91}],82:[function(_dereq_,module,exports){
+},{"./cipher-core":86,"./core":87,"./enc-base64":88,"./evpkdf":90,"./md5":95}],86:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -20825,7 +21472,7 @@ process.chdir = function (dir) {
 
 
 }));
-},{"./core":83}],83:[function(_dereq_,module,exports){
+},{"./core":87}],87:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -21571,7 +22218,7 @@ process.chdir = function (dir) {
 	return CryptoJS;
 
 }));
-},{}],84:[function(_dereq_,module,exports){
+},{}],88:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -21695,7 +22342,7 @@ process.chdir = function (dir) {
 	return CryptoJS.enc.Base64;
 
 }));
-},{"./core":83}],85:[function(_dereq_,module,exports){
+},{"./core":87}],89:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -21845,7 +22492,7 @@ process.chdir = function (dir) {
 	return CryptoJS.enc.Utf16;
 
 }));
-},{"./core":83}],86:[function(_dereq_,module,exports){
+},{"./core":87}],90:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -21978,7 +22625,7 @@ process.chdir = function (dir) {
 	return CryptoJS.EvpKDF;
 
 }));
-},{"./core":83,"./hmac":88,"./sha1":107}],87:[function(_dereq_,module,exports){
+},{"./core":87,"./hmac":92,"./sha1":111}],91:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22045,7 +22692,7 @@ process.chdir = function (dir) {
 	return CryptoJS.format.Hex;
 
 }));
-},{"./cipher-core":82,"./core":83}],88:[function(_dereq_,module,exports){
+},{"./cipher-core":86,"./core":87}],92:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22189,7 +22836,7 @@ process.chdir = function (dir) {
 
 
 }));
-},{"./core":83}],89:[function(_dereq_,module,exports){
+},{"./core":87}],93:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22208,7 +22855,7 @@ process.chdir = function (dir) {
 	return CryptoJS;
 
 }));
-},{"./aes":81,"./cipher-core":82,"./core":83,"./enc-base64":84,"./enc-utf16":85,"./evpkdf":86,"./format-hex":87,"./hmac":88,"./lib-typedarrays":90,"./md5":91,"./mode-cfb":92,"./mode-ctr":94,"./mode-ctr-gladman":93,"./mode-ecb":95,"./mode-ofb":96,"./pad-ansix923":97,"./pad-iso10126":98,"./pad-iso97971":99,"./pad-nopadding":100,"./pad-zeropadding":101,"./pbkdf2":102,"./rabbit":104,"./rabbit-legacy":103,"./rc4":105,"./ripemd160":106,"./sha1":107,"./sha224":108,"./sha256":109,"./sha3":110,"./sha384":111,"./sha512":112,"./tripledes":113,"./x64-core":114}],90:[function(_dereq_,module,exports){
+},{"./aes":85,"./cipher-core":86,"./core":87,"./enc-base64":88,"./enc-utf16":89,"./evpkdf":90,"./format-hex":91,"./hmac":92,"./lib-typedarrays":94,"./md5":95,"./mode-cfb":96,"./mode-ctr":98,"./mode-ctr-gladman":97,"./mode-ecb":99,"./mode-ofb":100,"./pad-ansix923":101,"./pad-iso10126":102,"./pad-iso97971":103,"./pad-nopadding":104,"./pad-zeropadding":105,"./pbkdf2":106,"./rabbit":108,"./rabbit-legacy":107,"./rc4":109,"./ripemd160":110,"./sha1":111,"./sha224":112,"./sha256":113,"./sha3":114,"./sha384":115,"./sha512":116,"./tripledes":117,"./x64-core":118}],94:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22285,7 +22932,7 @@ process.chdir = function (dir) {
 	return CryptoJS.lib.WordArray;
 
 }));
-},{"./core":83}],91:[function(_dereq_,module,exports){
+},{"./core":87}],95:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22554,7 +23201,7 @@ process.chdir = function (dir) {
 	return CryptoJS.MD5;
 
 }));
-},{"./core":83}],92:[function(_dereq_,module,exports){
+},{"./core":87}],96:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22633,7 +23280,7 @@ process.chdir = function (dir) {
 	return CryptoJS.mode.CFB;
 
 }));
-},{"./cipher-core":82,"./core":83}],93:[function(_dereq_,module,exports){
+},{"./cipher-core":86,"./core":87}],97:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22750,7 +23397,7 @@ process.chdir = function (dir) {
 	return CryptoJS.mode.CTRGladman;
 
 }));
-},{"./cipher-core":82,"./core":83}],94:[function(_dereq_,module,exports){
+},{"./cipher-core":86,"./core":87}],98:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22809,7 +23456,7 @@ process.chdir = function (dir) {
 	return CryptoJS.mode.CTR;
 
 }));
-},{"./cipher-core":82,"./core":83}],95:[function(_dereq_,module,exports){
+},{"./cipher-core":86,"./core":87}],99:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22850,7 +23497,7 @@ process.chdir = function (dir) {
 	return CryptoJS.mode.ECB;
 
 }));
-},{"./cipher-core":82,"./core":83}],96:[function(_dereq_,module,exports){
+},{"./cipher-core":86,"./core":87}],100:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22905,7 +23552,7 @@ process.chdir = function (dir) {
 	return CryptoJS.mode.OFB;
 
 }));
-},{"./cipher-core":82,"./core":83}],97:[function(_dereq_,module,exports){
+},{"./cipher-core":86,"./core":87}],101:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22955,7 +23602,7 @@ process.chdir = function (dir) {
 	return CryptoJS.pad.Ansix923;
 
 }));
-},{"./cipher-core":82,"./core":83}],98:[function(_dereq_,module,exports){
+},{"./cipher-core":86,"./core":87}],102:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23000,7 +23647,7 @@ process.chdir = function (dir) {
 	return CryptoJS.pad.Iso10126;
 
 }));
-},{"./cipher-core":82,"./core":83}],99:[function(_dereq_,module,exports){
+},{"./cipher-core":86,"./core":87}],103:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23041,7 +23688,7 @@ process.chdir = function (dir) {
 	return CryptoJS.pad.Iso97971;
 
 }));
-},{"./cipher-core":82,"./core":83}],100:[function(_dereq_,module,exports){
+},{"./cipher-core":86,"./core":87}],104:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23072,7 +23719,7 @@ process.chdir = function (dir) {
 	return CryptoJS.pad.NoPadding;
 
 }));
-},{"./cipher-core":82,"./core":83}],101:[function(_dereq_,module,exports){
+},{"./cipher-core":86,"./core":87}],105:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23118,7 +23765,7 @@ process.chdir = function (dir) {
 	return CryptoJS.pad.ZeroPadding;
 
 }));
-},{"./cipher-core":82,"./core":83}],102:[function(_dereq_,module,exports){
+},{"./cipher-core":86,"./core":87}],106:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23264,7 +23911,7 @@ process.chdir = function (dir) {
 	return CryptoJS.PBKDF2;
 
 }));
-},{"./core":83,"./hmac":88,"./sha1":107}],103:[function(_dereq_,module,exports){
+},{"./core":87,"./hmac":92,"./sha1":111}],107:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23455,7 +24102,7 @@ process.chdir = function (dir) {
 	return CryptoJS.RabbitLegacy;
 
 }));
-},{"./cipher-core":82,"./core":83,"./enc-base64":84,"./evpkdf":86,"./md5":91}],104:[function(_dereq_,module,exports){
+},{"./cipher-core":86,"./core":87,"./enc-base64":88,"./evpkdf":90,"./md5":95}],108:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23648,7 +24295,7 @@ process.chdir = function (dir) {
 	return CryptoJS.Rabbit;
 
 }));
-},{"./cipher-core":82,"./core":83,"./enc-base64":84,"./evpkdf":86,"./md5":91}],105:[function(_dereq_,module,exports){
+},{"./cipher-core":86,"./core":87,"./enc-base64":88,"./evpkdf":90,"./md5":95}],109:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23788,7 +24435,7 @@ process.chdir = function (dir) {
 	return CryptoJS.RC4;
 
 }));
-},{"./cipher-core":82,"./core":83,"./enc-base64":84,"./evpkdf":86,"./md5":91}],106:[function(_dereq_,module,exports){
+},{"./cipher-core":86,"./core":87,"./enc-base64":88,"./evpkdf":90,"./md5":95}],110:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -24056,7 +24703,7 @@ process.chdir = function (dir) {
 	return CryptoJS.RIPEMD160;
 
 }));
-},{"./core":83}],107:[function(_dereq_,module,exports){
+},{"./core":87}],111:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -24207,7 +24854,7 @@ process.chdir = function (dir) {
 	return CryptoJS.SHA1;
 
 }));
-},{"./core":83}],108:[function(_dereq_,module,exports){
+},{"./core":87}],112:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -24288,7 +24935,7 @@ process.chdir = function (dir) {
 	return CryptoJS.SHA224;
 
 }));
-},{"./core":83,"./sha256":109}],109:[function(_dereq_,module,exports){
+},{"./core":87,"./sha256":113}],113:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -24488,7 +25135,7 @@ process.chdir = function (dir) {
 	return CryptoJS.SHA256;
 
 }));
-},{"./core":83}],110:[function(_dereq_,module,exports){
+},{"./core":87}],114:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -24812,7 +25459,7 @@ process.chdir = function (dir) {
 	return CryptoJS.SHA3;
 
 }));
-},{"./core":83,"./x64-core":114}],111:[function(_dereq_,module,exports){
+},{"./core":87,"./x64-core":118}],115:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -24896,7 +25543,7 @@ process.chdir = function (dir) {
 	return CryptoJS.SHA384;
 
 }));
-},{"./core":83,"./sha512":112,"./x64-core":114}],112:[function(_dereq_,module,exports){
+},{"./core":87,"./sha512":116,"./x64-core":118}],116:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -25220,7 +25867,7 @@ process.chdir = function (dir) {
 	return CryptoJS.SHA512;
 
 }));
-},{"./core":83,"./x64-core":114}],113:[function(_dereq_,module,exports){
+},{"./core":87,"./x64-core":118}],117:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -25991,7 +26638,7 @@ process.chdir = function (dir) {
 	return CryptoJS.TripleDES;
 
 }));
-},{"./cipher-core":82,"./core":83,"./enc-base64":84,"./evpkdf":86,"./md5":91}],114:[function(_dereq_,module,exports){
+},{"./cipher-core":86,"./core":87,"./enc-base64":88,"./evpkdf":90,"./md5":95}],118:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -26296,7 +26943,7 @@ process.chdir = function (dir) {
 	return CryptoJS;
 
 }));
-},{"./core":83}],115:[function(_dereq_,module,exports){
+},{"./core":87}],119:[function(_dereq_,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -26601,7 +27248,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],116:[function(_dereq_,module,exports){
+},{}],120:[function(_dereq_,module,exports){
 (function (global){
 /**
  * @license
