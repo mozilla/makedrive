@@ -1,3 +1,9 @@
+/**
+ * An extended Filer FileSystem with wrapped methods
+ * for writing that manage file metadata (xattribs)
+ * reflecting sync state.
+ */
+
 var Filer = require('../../lib/filer.js');
 var fsUtils = require('../../lib/fs-utils.js');
 var conflict = require('../../lib/conflict.js');
