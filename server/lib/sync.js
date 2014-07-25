@@ -53,7 +53,7 @@ function handleRequest(data) {
   }
 
   function handleDiffRequest() {
-    if(!data.content.checksums) {
+    if(!data.content || !data.content.checksums) {
       that.updateLastContact();
       return that.socket.send(SyncMessage.error.content.stringify());
     }
@@ -90,7 +90,7 @@ function handleRequest(data) {
   }
 
   function handleChecksumRequest() {
-    if(!data.content.srcList || !data.content.path) {
+    if(!data.content || !data.content.srcList || !data.content.path) {
       that.updateLastContact();
       return that.socket.send(SyncMessage.error.content.stringify());
     }
@@ -139,7 +139,7 @@ function handleResponse(data) {
   var response;
 
   function handleDiffResponse() {
-    if(!data.content.diffs) {
+    if(!data.content || !data.content.diffs) {
       return that.socket.send(SyncMessage.error.content.stringify());
     }
 
