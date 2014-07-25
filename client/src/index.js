@@ -24,6 +24,10 @@
  * every call to MakeDrive.fs(). In some cases it is necessary to have
  * multiple instances.  Using forceCreate=true does this.
  *
+ * - interval=<Number> - by default, the filesystem syncs every minute if
+ * auto syncing is turned on otherwise the interval between syncs can be
+ * specified in ms.
+ *
  * Various bits of Filer are available on MakeDrive, including:
  *
  * - MakeDrive.Buffer
@@ -104,8 +108,10 @@ function createFS(options) {
 
   // Auto-sync handles
   var watcher;
-  var syncInterval;
+  var autoSync;
   var syncPaths = [];
+  var syncInterval = options.interval|0;
+  syncInterval = syncInterval > 0 ? syncInterval : 60 * 1000;
 
   // State of the sync connection
   sync.SYNC_DISCONNECTED = 0;
@@ -118,26 +124,28 @@ function createFS(options) {
   sync.state = sync.SYNC_DISCONNECTED;
 
   // Turn on auto-syncing if its not already on
-  sync.auto = function() {
+  sync.auto = function(interval) {
     if(watcher) {
       return;
     }
+
+    syncInterval = interval|0 > 0 ? interval|0 : 60 * 1000;
 
     watcher = _fs.watch('/', {recursive: true}, function(event, filename) {
       syncPaths.push(filename);
     });
 
-    if(syncInterval) {
-      clearInterval(syncInterval);
+    if(autoSync) {
+      clearInterval(autoSync);
     }
 
-    syncInterval = setInterval(function() {
+    autoSync = setInterval(function() {
       var pathToSync = '/';
       if(syncPaths.length) {
         pathToSync = syncPathResolver.resolve(syncPaths);
         sync.request(pathToSync);
       }
-    }, 60 * 1000);
+    }, syncInterval);
   };
 
   // Turn off auto-syncing and turn on manual syncing
@@ -145,8 +153,8 @@ function createFS(options) {
     if(watcher) {
       watcher.close();
       watcher = null;
-      clearInterval(syncInterval);
-      syncInterval = null;
+      clearInterval(autoSync);
+      autoSync = null;
     }
   };
 
@@ -314,9 +322,9 @@ function createFS(options) {
       watcher.close();
       watcher = null;
     }
-    if(syncInterval) {
-      clearInterval(syncInterval);
-      syncInterval = null;
+    if(autoSync) {
+      clearInterval(autoSync);
+      autoSync = null;
     }
 
     sync.onDisconnected();
