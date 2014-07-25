@@ -131,7 +131,7 @@ function createFS(options) {
 
     syncInterval = interval|0 > 0 ? interval|0 : 60 * 1000;
 
-    watcher = _fs.watch('/', {recursive: true}, function(event, filename) {
+    watcher = fs.watch('/', {recursive: true}, function(event, filename) {
       syncPaths.push(filename);
     });
 
