@@ -97,17 +97,28 @@ function handleResponse(syncManager, data) {
     diffs = deserializeDiff(diffs);
     session.path = data.content.path;
 
-    rsync.patch(fs, session.path, diffs, rsyncOptions, function(err) {
+    rsync.patch(fs, session.path, diffs, rsyncOptions, function(err, paths) {
       if (err) {
         return onError(syncManager, err);
       }
 
-      session.step = steps.SYNCED;
+      var size = rsyncOptions.size || 5;
 
-      var message = SyncMessage.response.patch;
-      socket.send(message.stringify());
-      sync.onCompleted();
+      rsync.pathChecksums(fs, paths.synced, size, function(err, checksums) {
+        if(err) {
+          return onError(syncManager, err);
+        }
+
+        var message = SyncMessage.response.patch;
+        message.content = {checksums: checksums, size: size};
+        socket.send(message.stringify());
+      });
     });
+  }
+
+  function handleVerificationResponse() {
+    session.step = steps.SYNCED;
+    sync.onCompleted();
   }
 
   if(data.is.sync) {
@@ -119,6 +130,9 @@ function handleResponse(syncManager, data) {
   } else if(data.is.diffs && session.is.ready && session.is.patch) {
     // DOWNSTREAM - PATCH
     handlePatchResponse();
+  } else if(data.is.verification && session.is.ready && session.is.patch) {
+    // DOWNSTREAM - PATCH VERIFICATION
+    handleVerificationResponse();
   } else {
     onError(syncManager, new Error(data.content));
   }
@@ -130,8 +144,10 @@ function handleError(syncManager, data) {
   var socket = syncManager.socket;
 
   // DOWNSTREAM - ERROR
-  if((data.is.srclist && session.is.synced && session.is.ready) ||
-      (data.is.diffs && session.is.patch && (session.is.ready || session.is.syncing)) ) {
+  if((((data.is.srclist && session.is.synced) || 
+        (data.is.verification && session.is.synced)) &&
+       session.is.ready) ||
+      (data.is.diffs && session.is.patch && (session.is.ready || session.is.syncing))) {
     session.state = states.READY;
     session.step = steps.SYNCED;
 

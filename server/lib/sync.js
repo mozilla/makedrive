@@ -155,10 +155,23 @@ function handleResponse(data) {
   }
 
   function handlePatchResponse() {
-    // TODO: Figure out how to make sure that the client actually patched successfully
-    // before changing the server's state to allow upstream syncs from that client
-    // https://github.com/mozilla/makedrive/issues/32
-    that.state = Sync.LISTENING;
+    if(!data.content || !data.content.checksums) {
+      return that.socket.send(SyncMessage.error.content.stringify());
+    }
+
+    var checksums = data.content.checksums;
+    var size = data.content.size || 5;
+
+    rsync.compareContents(that.fs, checksums, size, function(err, equal) {
+      if(equal) {
+        that.state = Sync.LISTENING;
+        response = SyncMessage.response.verification;
+      } else {
+        response = SyncMessage.error.verification;
+      }
+
+      that.socket.send(response.stringify());
+    });
   }
 
   if (data.is.reset) {

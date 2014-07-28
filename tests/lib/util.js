@@ -356,15 +356,35 @@ var downstreamSyncSteps = {
       cb = customAssertions;
       customAssertions = null;
     }
-    rsync.patch(fs, data.path, data.diffs, rsyncOptions, function(err) {
-      if(err){
-        cb(err);
+
+    socketPackage.socket.removeListener("message", socketPackage.onMessage);
+    socketPackage.socket.once("message", function(message) {
+      // Reattach the original listener
+      socketPackage.socket.once("message", socketPackage.onMessage);
+
+      if(!customAssertions) {
+        message = toSyncMessage(message);
+        expect(message).to.exist;
+        expect(message).to.deep.equal(SyncMessage.response.verification);
+        return cb(null, data);
       }
+      customAssertions(message, cb);
+    });
 
-      var patchResponse = SyncMessage.response.patch;
-      socketPackage.socket.send(patchResponse.stringify());
+    rsync.patch(fs, data.path, data.diffs, rsyncOptions, function(err, paths) {
+      expect(err, "[Rsync patch error: \"" + err + "\"]").not.to.exist;
 
-      cb(null, data);
+      var size = rsyncOptions.size || 5;
+
+      rsync.pathChecksums(fs, paths.synced, size, function(err, checksums) {
+        expect(err, "[Rsync path checksum error: \"" + err + "\"]").not.to.exist;
+        expect(checksums).to.exist;
+
+        var patchResponse = SyncMessage.response.patch;
+        patchResponse.content = {checksums: checksums, size: size};
+
+        socketPackage.socket.send(patchResponse.stringify());
+      });
     });
   }
 };

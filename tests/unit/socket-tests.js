@@ -264,7 +264,7 @@ describe('[Upstream Syncing with Websockets]', function(){
 
         util.completeDownstreamSync(result.username, result.token, function(err, syncData, fs, socketPackage) {
           // Authorize a user, open a socket, authorize and complete a downstream sync
-          util.upstreamSyncSteps.requestSync(socketPackage, function(message, cb) {
+          util.upstreamSyncSteps.requestSync(socketPackage, syncData, function(message, cb) {
             message = util.toSyncMessage(message);
 
             expect(message).to.exist;
@@ -272,7 +272,7 @@ describe('[Upstream Syncing with Websockets]', function(){
             expect(message.name).to.equal(SyncMessage.SYNC);
 
             setTimeout(function() {
-              util.upstreamSyncSteps.requestSync(socketPackage, function(message2, cb2) {
+              util.upstreamSyncSteps.requestSync(socketPackage, syncData, function(message2, cb2) {
                 message2 = util.toSyncMessage(message2);
 
                 expect(message2).to.exist;
@@ -303,7 +303,7 @@ describe('[Upstream Syncing with Websockets]', function(){
 
             util.completeDownstreamSync(result2.username, result2.token, function(err, syncData2, fs2, socketPackage2) {
               // Start an upstream sync with the first client of the user
-              util.upstreamSyncSteps.requestSync(socketPackage, function(message, cb) {
+              util.upstreamSyncSteps.requestSync(socketPackage, syncData2, function(message, cb) {
                 message = util.toSyncMessage(message);
 
                 expect(message).to.exist;
@@ -313,7 +313,7 @@ describe('[Upstream Syncing with Websockets]', function(){
                 // After it's confirmed to be started, wait half the time before the lock should be broken and
                 // get the second client of the same user to initiate an upstream sync
                 setTimeout(function() {
-                  util.upstreamSyncSteps.requestSync(socketPackage2, function(message2, cb2) {
+                  util.upstreamSyncSteps.requestSync(socketPackage2, syncData2, function(message2, cb2) {
                     message2 = util.toSyncMessage(message2);
 
                     expect(message2).to.exist;
@@ -346,7 +346,7 @@ describe('[Upstream Syncing with Websockets]', function(){
 
             util.completeDownstreamSync(result2.username, result2.token, function(err, syncData2, fs2, socketPackage2) {
               // Start an upstream sync with the first client of the user
-              util.upstreamSyncSteps.requestSync(socketPackage, function(message, cb) {
+              util.upstreamSyncSteps.requestSync(socketPackage, syncData2, function(message, cb) {
                 message = util.toSyncMessage(message);
 
                 expect(message).to.exist;
@@ -355,7 +355,7 @@ describe('[Upstream Syncing with Websockets]', function(){
 
                 // After it's confirmed to be started, wait half the time before the lock should be broken and
                 // get the second client of the same user to initiate an upstream sync
-                util.upstreamSyncSteps.requestSync(socketPackage2, function(message2, cb2) {
+                util.upstreamSyncSteps.requestSync(socketPackage2, syncData2, function(message2, cb2) {
                   message2 = util.toSyncMessage(message2);
 
                   expect(message2).to.exist;
