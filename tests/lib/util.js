@@ -361,13 +361,13 @@ var downstreamSyncSteps = {
       var patchResponse = SyncMessage.response.patch;
       socketPackage.socket.send(patchResponse.stringify());
 
-      cb();
+      cb(data);
     });
   }
 };
 
 var upstreamSyncSteps = {
-  requestSync: function(socketPackage, customAssertions, cb) {
+  requestSync: function(socketPackage, data, customAssertions, cb) {
     if (!cb) {
       cb = customAssertions;
       customAssertions = null;
@@ -385,7 +385,7 @@ var upstreamSyncSteps = {
         expect(message.type).to.equal(SyncMessage.RESPONSE);
         expect(message.name, "[SyncMessage Type error. SyncMessage.content was: " + message.content + "]").to.equal(SyncMessage.SYNC);
 
-        return cb();
+        return cb(data);
       }
 
       customAssertions(message, cb);
@@ -533,20 +533,41 @@ function prepareDownstreamSync(finalStep, username, token, cb){
   });
 }
 
-/**
- * Takes an fs instance and creates all the files and dirs
- * in layout.  A layout is a flat representation of files/dirs
- * and looks like this:
- *
- * {
- *   "/path/to/file": "contents of file",
- *   "/path/to/dir": null,
- *   "/path/to/dir/file": <Buffer>
- * }
- *
- * Files are paths with contents (non-null), and empty dirs are
- * marked with null.
- */
+function prepareUpstreamSync(finalStep, username, token, cb){
+  if (typeof cb !== "function") {
+    cb = token;
+    token = username;
+    username = finalStep;
+    finalStep = null;
+  }
+
+  completeDownstreamSync(username, token, function(data, fs, socketPackage) { debugger
+    // Complete required sync steps
+    if (!finalStep) {
+      return cb(data, fs, socketPackage);
+    }
+    upstreamSyncSteps.requestSync(socketPackage, data, function(data1) {
+      if (finalStep == "requestSync") {
+        return cb(data1, fs, socketPackage);
+      }
+      upstreamSyncSteps.generateChecksums(socketPackage, data1, fs, function(data2) {
+        if (finalStep == "generateChecksums") {
+          return cb(data2, fs, socketPackage);
+        }
+        upstreamSyncSteps.patchServerFilesystem(socketPackage, data2, fs, function(data3) {
+          cb(data3, fs, socketPackage);
+        });
+      });
+    });
+  });
+}
+
+function completeDownstreamSync(username, token, cb) {
+  prepareDownstreamSync("patch", username, token, function(data, fs, socketPackage) {
+    cb(data, fs, socketPackage);
+  });
+}
+
 function createFilesystemLayout(fs, layout, callback) {
   var paths = Object.keys(layout);
   var sh = fs.Shell();
@@ -823,41 +844,6 @@ function ensureRemoteFilesystem(layout, jar, callback) {
       return callback(err);
     }
     ensureRemoteFilesystemContents(layout, jar, callback);
-  });
-}
-
-function prepareUpstreamSync(finalStep, username, token, cb){
-  if (typeof cb !== "function") {
-    cb = token;
-    token = username;
-    username = finalStep;
-    finalStep = null;
-  }
-
-  completeDownstreamSync(username, token, function(data, fs, socketPackage) {
-    // Complete required sync steps
-    if (!finalStep) {
-      return cb(data, fs, socketPackage);
-    }
-    upstreamSyncSteps.requestSync(socketPackage, fs, function(data1) {
-      if (finalStep == "requestSync") {
-        return cb(data1, fs, socketPackage);
-      }
-      upstreamSyncSteps.generateChecksums(socketPackage, data1, fs, function(data2) {
-        if (finalStep == "generateChecksums") {
-          return cb(data2, fs, socketPackage);
-        }
-        upstreamSyncSteps.patchServerFilesystem(socketPackage, data2, fs, function(data3) {
-          cb(data3, fs, socketPackage);
-        });
-      });
-    });
-  });
-}
-
-function completeDownstreamSync(username, token, cb) {
-  prepareDownstreamSync("patch", username, token, function(data, fs, socketPackage) {
-    cb(data, fs, socketPackage);
   });
 }
 

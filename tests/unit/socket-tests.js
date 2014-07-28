@@ -169,6 +169,42 @@ describe('[Downstream Syncing with Websockets]', function(){
        });
      });
    });
+   it('should return an ERROR type message named DIFFS when faulty checksums are sent', function(done) {
+     util.authenticatedConnection({ done: done }, function( err, result ) {
+       expect(err).not.to.exist;
+
+       util.prepareDownstreamSync(result.username, result.token, function(syncData, fs, socketPackage) {
+         var diffRequest = SyncMessage.request.diffs;
+         diffRequest.content = {
+           checksums: "jargon"
+         };
+         util.sendSyncMessage(socketPackage, diffRequest, function(msg) {
+           msg = util.toSyncMessage(msg);
+
+           expect(msg.type, "[Message type error: \"" + (msg.content && msg.content.error) +"\"]" ).to.equal(SyncMessage.ERROR);
+           expect(msg.name).to.equal(SyncMessage.DIFFS);
+           expect(msg.content).to.exist;
+           expect(msg.content.diffs).to.not.exist;
+           util.cleanupSockets(result.done, socketPackage);
+         });
+       });
+     });
+   });
+   it('should return an SyncMessage with error content when no checksums are sent', function(done) {
+     util.authenticatedConnection({ done: done }, function( err, result ) {
+       expect(err).not.to.exist;
+
+       util.prepareDownstreamSync(result.username, result.token, function(syncData, fs, socketPackage) {
+         var diffRequest = SyncMessage.request.diffs;
+         util.sendSyncMessage(socketPackage, diffRequest, function(msg) {
+           msg = util.toSyncMessage(msg);
+
+           expect(msg).to.eql(SyncMessage.error.content);
+           util.cleanupSockets(result.done, socketPackage);
+         });
+       });
+     });
+   });
  });
 
  describe('Patch the client filesystem', function() {
@@ -220,7 +256,7 @@ describe('[Downstream Syncing with Websockets]', function(){
 });
 
 describe('[Upstream Syncing with Websockets]', function(){
-  describe('[The server]', function() {
+  describe('The server', function() {
     it('(same client) should unlock a sync after ' + env.get('CLIENT_TIMEOUT_MS') + ' MS of inactivity after a client begins an upstream sync', function(done) {
       // Authorize a user, open a socket, authorize and complete a downstream sync
       util.authenticatedConnection({ done: done }, function( err, result ) {
@@ -339,5 +375,70 @@ describe('[Upstream Syncing with Websockets]', function(){
       });
     });
   });
-});
+  describe('Request checksums', function() {
+    it('should return a CONTENT error SyncMessage if srcList isn\'t passed', function(done) {
+      // Authorize a user, open a socket, authorize and complete a downstream sync
+      util.authenticatedConnection({ done: done }, function( err, result ) {
+        expect(err).not.to.exist;
 
+        util.prepareUpstreamSync('requestSync', result.username, result.token, function(syncData, fs, socketPackage) {
+          var requestChksumMsg = SyncMessage.request.chksum;
+          requestChksumMsg.content = {
+            path: syncData.path
+          };
+          socketPackage.socket.send(requestChksumMsg.stringify());
+
+          util.sendSyncMessage(socketPackage, requestChksumMsg, function(msg) {
+            msg = util.toSyncMessage(msg);
+
+            expect(msg).to.deep.equal(SyncMessage.error.content);
+
+            util.cleanupSockets(result.done, socketPackage);
+          });
+        });
+      });
+    });
+    it('should return a CONTENT error SyncMessage if path isn\'t passed', function(done) {
+      // Authorize a user, open a socket, authorize and complete a downstream sync
+      util.authenticatedConnection({ done: done }, function( err, result ) {
+        expect(err).not.to.exist;
+
+        util.prepareUpstreamSync('requestSync', result.username, result.token, function(syncData, fs, socketPackage) {
+          var requestChksumMsg = SyncMessage.request.chksum;
+          requestChksumMsg.content = {
+            srcList: syncData.srcList
+          };
+          socketPackage.socket.send(requestChksumMsg.stringify());
+
+          util.sendSyncMessage(socketPackage, requestChksumMsg, function(msg) {
+            msg = util.toSyncMessage(msg);
+
+            expect(msg).to.deep.equal(SyncMessage.error.content);
+
+            util.cleanupSockets(result.done, socketPackage);
+          });
+        });
+      });
+    });
+    it('should return a CONTENT error SyncMessage if no data is passed', function(done) {
+      // Authorize a user, open a socket, authorize and complete a downstream sync
+      util.authenticatedConnection({ done: done }, function( err, result ) {
+        expect(err).not.to.exist;
+
+        util.prepareUpstreamSync('requestSync', result.username, result.token, function(syncData, fs, socketPackage) {
+          var requestChksumMsg = SyncMessage.request.chksum;
+          requestChksumMsg.content = {};
+          socketPackage.socket.send(requestChksumMsg.stringify());
+
+          util.sendSyncMessage(socketPackage, requestChksumMsg, function(msg) {
+            msg = util.toSyncMessage(msg);
+
+            expect(msg).to.deep.equal(SyncMessage.error.content);
+
+            util.cleanupSockets(result.done, socketPackage);
+          });
+        });
+      });
+    });
+  })
+});
