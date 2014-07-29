@@ -287,7 +287,8 @@ describe('Test util.js', function(){
       util.authenticatedConnection({done: done}, function(err, result) {
         var username = util.username();
 
-        util.prepareDownstreamSync(username, result.token, function(syncData, fs, socketPackage) {
+        util.prepareDownstreamSync(username, result.token, function(err, syncData, fs, socketPackage) {
+          expect(err).to.not.exist;
           expect(fs instanceof FileSystem).to.equal.true;
           util.cleanupSockets(result.done, socketPackage);
         });
@@ -298,7 +299,7 @@ describe('Test util.js', function(){
       util.authenticatedConnection({ done: done }, function(err, result) {
         var username = util.username();
 
-        util.prepareDownstreamSync(username, result.token, function(syncData, fs, socketPackage) {
+        util.prepareDownstreamSync(username, result.token, function(err, syncData, fs, socketPackage) {
           util.downstreamSyncSteps.generateDiffs(socketPackage, syncData, fs, function(message, cb) {
             message = util.toSyncMessage(message);
 
@@ -319,7 +320,7 @@ describe('Test util.js', function(){
     it('util.prepareDownstreamSync should complete the generateDiffs step automatically when passed \'generateDiffs\' as the finalStep', function(done) {
       util.authenticatedConnection({ done: done }, function(err, result) {
         var username = util.username();
-        util.prepareDownstreamSync("generateDiffs", username, result.token, function(syncData, fs, socketPackage) {
+        util.prepareDownstreamSync("generateDiffs", username, result.token, function(err, syncData, fs, socketPackage) {
           expect(syncData.diffs).to.exist;
 
           util.cleanupSockets(result.done, socketPackage);
@@ -331,8 +332,8 @@ describe('Test util.js', function(){
       util.authenticatedConnection({ done: done }, function(err, result) {
         var username = util.username();
 
-        util.prepareDownstreamSync("generateDiffs", username, result.token, function(syncData, fs, socketPackage) {
-          util.downstreamSyncSteps.patchClientFilesystem(socketPackage, syncData, fs, function(data) {
+        util.prepareDownstreamSync("generateDiffs", username, result.token, function(err, syncData, fs, socketPackage) {
+          util.downstreamSyncSteps.patchClientFilesystem(socketPackage, syncData, fs, function(err, data) {
             expect(data).to.exist;
             expect(data.path).to.exist;
 
@@ -348,7 +349,7 @@ describe('Test util.js', function(){
       util.authenticatedConnection({ done: done }, function(err, result) {
         var username = util.username();
 
-        util.prepareDownstreamSync("patchClientFilesystem", username, result.token, function(syncData, fs, socketPackage) {
+        util.prepareDownstreamSync("patchClientFilesystem", username, result.token, function(err, syncData, fs, socketPackage) {
           expect(syncData).to.exist;
           expect(syncData.path).to.exist;
 
@@ -365,9 +366,8 @@ describe('Test util.js', function(){
       util.authenticatedConnection({done: done}, function(err, result) {
         var username = util.username();
 
-        util.prepareUpstreamSync(username, result.token, function(syncData, fs, socketPackage) {
+        util.prepareUpstreamSync(username, result.token, function(err, syncData, fs, socketPackage) {
           expect(fs instanceof FileSystem).to.equal.true;
-
           util.upstreamSyncSteps.requestSync(socketPackage, function(message, cb) {
             message = util.toSyncMessage(message);
 
@@ -387,7 +387,8 @@ describe('Test util.js', function(){
       util.authenticatedConnection({done: done}, function(err, result) {
         var username = util.username();
 
-        util.prepareUpstreamSync(username, result.token, function(syncData, fs, socketPackage) {
+        util.prepareUpstreamSync(username, result.token, function(err, syncData, fs, socketPackage) {
+          expect(err).to.not.exist;
           expect(fs instanceof FileSystem).to.equal.true;
           expect(syncData).to.exist;
           expect(syncData.path).to.exist;
