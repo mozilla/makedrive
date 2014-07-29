@@ -127,14 +127,17 @@ function handleResponse(syncManager, data) {
 function handleError(syncManager, data) {
   var sync = syncManager.sync;
   var session = syncManager.session;
+  var socket = syncManager.socket;
 
   // DOWNSTREAM - ERROR
-  if(((data.is.srclist && session.is.synced) ||
-      (data.is.diffs && session.is.synced)) &&
-     session.is.ready) {
-    // TODO: handle what to do to reinitiate downstream sync
-    // https://github.com/mozilla/makedrive/issues/107
-    onError(syncManager, new Error('Could not sync filesystem from server'));
+  if((data.is.srclist && session.is.synced && session.is.ready) ||
+      (data.is.diffs && session.is.patch && (session.is.ready || session.is.syncing)) ) {
+    session.state = states.READY;
+    session.step = steps.SYNCED;
+
+    var message = SyncMessage.request.reset;
+    socket.send(message.stringify());
+    onError(syncManager, new Error('Could not sync filesystem from server... trying again'));
   } else if(data.is.locked && session.is.ready && session.is.synced) {
     // UPSTREAM - LOCK
     onError(syncManager, new Error('Current sync in progress! Try again later!'));

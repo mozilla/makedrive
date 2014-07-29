@@ -32,22 +32,7 @@ function handleRequest(data) {
   var that = this;
   var response;
 
-  function sendSrcList() {
-    var that = this;
-    rsync.sourceList(that.fs, '/', rsyncOptions, function(err, srcList) {
-      if(err) {
-        response = SyncMessage.error.srclist;
-        response.content = {error: err};
-      } else {
-        response = SyncMessage.request.chksum;
-        response.content = {srcList: srcList, path: '/'};
-      }
-      that.updateLastContact();
-      that.socket.send(response.stringify());
-    });
-  }
-
-  function resetUpstream() {
+  function handleUpstreamReset() {
     that.end();
     that.state = Sync.LISTENING;
   }
@@ -117,10 +102,8 @@ function handleRequest(data) {
   // Check if a sync is in progress, removing the lock if necessary
   that.clearUpstreamSync();
 
-  if(data.is.reset && that.state === Sync.OUT_OF_DATE) {
-    sendSrcList();
-  } else if(data.is.reset && that.state !== Sync.OUT_OF_DATE) {
-    resetUpstream();
+  if(data.is.reset && that.state !== Sync.OUT_OF_DATE) {
+    handleUpstreamReset();
   } else if(data.is.diffs && that.state === Sync.OUT_OF_DATE) {
     handleDiffRequest();
   } else if(data.is.sync && that.state === Sync.LISTENING) {
@@ -137,6 +120,20 @@ function handleRequest(data) {
 function handleResponse(data) {
   var that = this;
   var response;
+
+  function handleDownstreamReset() {
+    rsync.sourceList(that.fs, '/', rsyncOptions, function(err, srcList) {
+      if(err) {
+        response = SyncMessage.error.srclist;
+        response.content = {error: err};
+      } else {
+        response = SyncMessage.request.chksum;
+        response.content = {srcList: srcList, path: '/'};
+      }
+      that.updateLastContact();
+      that.socket.send(response.stringify());
+    });
+  }
 
   function handleDiffResponse() {
     if(!data.content || !data.content.diffs) {
@@ -164,7 +161,9 @@ function handleResponse(data) {
     that.state = Sync.LISTENING;
   }
 
-  if(data.is.diffs && that.state === Sync.PATCH) {
+  if (data.is.reset) {
+    handleDownstreamReset();
+  } else if(data.is.diffs && that.state === Sync.PATCH) {
     handleDiffResponse();
   } else if(data.is.patch && that.state === Sync.OUT_OF_DATE) {
     handlePatchResponse();
