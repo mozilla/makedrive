@@ -165,8 +165,10 @@ describe('Test util.js', function(){
     it('util.openSocket should open a socket connection with default handlers if none are provided', function(done){
       util.authenticatedConnection({ done: done }, function(err, result) {
         var socketPackage = util.openSocket();
-
-        expect(socketPackage.socket instanceof ws).to.be.true;
+        expect(socketPackage.socket).to.exist;
+        expect(socketPackage.socket.readyState).to.exist;
+        expect(socketPackage.socket.url).to.exist;
+        expect(socketPackage.socket._events).to.exist;
         expect(typeof socketPackage.onOpen).to.deep.equal("function");
         expect(typeof socketPackage.onClose).to.deep.equal("function");
         expect(typeof socketPackage.onError).to.deep.equal("function");
@@ -193,7 +195,10 @@ describe('Test util.js', function(){
           onMessage: onMessage
         });
 
-        expect(socketPackage.socket instanceof ws).to.be.true;
+        expect(socketPackage.socket).to.exist;
+        expect(socketPackage.socket.readyState).to.exist;
+        expect(socketPackage.socket.url).to.exist;
+        expect(socketPackage.socket._events).to.exist;
         expect(socketPackage.onOpen).to.deep.equal(onOpen);
         expect(socketPackage.onClose).to.deep.equal(onClose);
         expect(socketPackage.onError).to.deep.equal(onError);
@@ -289,7 +294,10 @@ describe('Test util.js', function(){
 
         util.prepareDownstreamSync(username, result.token, function(err, syncData, fs, socketPackage) {
           expect(err).to.not.exist;
-          expect(fs instanceof FileSystem).to.equal.true;
+          expect(fs).to.exist;
+          expect(fs.name).to.exist;
+          expect(fs.watch).to.exist;
+          expect(fs.provider).to.exist;
           util.cleanupSockets(result.done, socketPackage);
         });
       });
@@ -367,7 +375,10 @@ describe('Test util.js', function(){
         var username = util.username();
 
         util.prepareUpstreamSync(username, result.token, function(err, syncData, fs, socketPackage) {
-          expect(fs instanceof FileSystem).to.equal.true;
+          expect(fs).to.exist;
+          expect(fs.name).to.exist;
+          expect(fs.watch).to.exist;
+          expect(fs.provider).to.exist;
           util.upstreamSyncSteps.requestSync(socketPackage, function(message, cb) {
             message = util.toSyncMessage(message);
 
@@ -389,7 +400,10 @@ describe('Test util.js', function(){
 
         util.prepareUpstreamSync(username, result.token, function(err, syncData, fs, socketPackage) {
           expect(err).to.not.exist;
-          expect(fs instanceof FileSystem).to.equal.true;
+          expect(fs).to.exist;
+          expect(fs.name).to.exist;
+          expect(fs.watch).to.exist;
+          expect(fs.provider).to.exist;
           expect(syncData).to.exist;
           expect(syncData.path).to.exist;
 
