@@ -332,14 +332,16 @@ var downstreamSyncSteps = {
         expect(message.content.path).to.exist;
         data.diffs = diffHelper.deserialize(message.content.diffs);
 
-        return cb(data);
+        return cb(null, data);
       }
 
       customAssertions(message, cb);
     });
 
     rsync.checksums(fs, path, srcList, rsyncOptions, function( err, checksums ) {
-      expect(err).to.be.null;
+      if(err){
+        cb(err);
+      }
 
       var diffRequest = SyncMessage.request.diffs;
       diffRequest.content = {
@@ -354,14 +356,15 @@ var downstreamSyncSteps = {
       cb = customAssertions;
       customAssertions = null;
     }
-
     rsync.patch(fs, data.path, data.diffs, rsyncOptions, function(err) {
-      expect(err, "[Rsync patch error: \"" + err + "\"]").not.to.exist;
+      if(err){
+        cb(err);
+      }
 
       var patchResponse = SyncMessage.response.patch;
       socketPackage.socket.send(patchResponse.stringify());
 
-      cb(data);
+      cb(null, data);
     });
   }
 };
@@ -454,7 +457,9 @@ var upstreamSyncSteps = {
     });
 
     rsync.diff(fs, path, checksums, rsyncOptions, function( err, diffs ) {
-      expect(err).to.be.null;
+      if(err){
+        return cb(err);
+      }
 
       var patchResponse = SyncMessage.response.patch;
       patchResponse.content = {
@@ -512,14 +517,20 @@ function prepareDownstreamSync(finalStep, username, token, cb){
 
           // Complete required sync steps
           if (!finalStep) {
-            return cb(downstreamData, fs, socketPackage);
+            return cb(null, downstreamData, fs, socketPackage);
           }
-          downstreamSyncSteps.generateDiffs(socketPackage, downstreamData, fs, function(data1) {
-            if (finalStep == "generateDiffs") {
-              return cb(data1, fs, socketPackage);
+          downstreamSyncSteps.generateDiffs(socketPackage, downstreamData, fs, function(err, data1) {
+            if(err){
+              return cb(err);
             }
-            downstreamSyncSteps.patchClientFilesystem(socketPackage, data1, fs, function(data2) {
-              cb(data2, fs, socketPackage);
+            if (finalStep == "generateDiffs") {
+              return cb(null, data1, fs, socketPackage);
+            }
+            downstreamSyncSteps.patchClientFilesystem(socketPackage, data1, fs, function(err, data2) {
+              if(err){
+                return cb(err);
+              }
+              cb(null, data2, fs, socketPackage);
             });
           });
         });
@@ -541,11 +552,15 @@ function prepareUpstreamSync(finalStep, username, token, cb){
     finalStep = null;
   }
 
-  completeDownstreamSync(username, token, function(data, fs, socketPackage) { debugger
+  completeDownstreamSync(username, token, function(err, data, fs, socketPackage) {
+    if(err){
+      return cb(err);
+    }
     // Complete required sync steps
     if (!finalStep) {
-      return cb(data, fs, socketPackage);
+      return cb(null, data, fs, socketPackage);
     }
+
     upstreamSyncSteps.requestSync(socketPackage, data, function(data1) {
       if (finalStep == "requestSync") {
         return cb(data1, fs, socketPackage);
@@ -554,8 +569,11 @@ function prepareUpstreamSync(finalStep, username, token, cb){
         if (finalStep == "generateChecksums") {
           return cb(data2, fs, socketPackage);
         }
-        upstreamSyncSteps.patchServerFilesystem(socketPackage, data2, fs, function(data3) {
-          cb(data3, fs, socketPackage);
+        upstreamSyncSteps.patchServerFilesystem(socketPackage, data2, fs, function(err, data3) {
+          if(err){
+            return cb(err);
+          }
+          cb(null, data3, fs, socketPackage);
         });
       });
     });
@@ -563,8 +581,11 @@ function prepareUpstreamSync(finalStep, username, token, cb){
 }
 
 function completeDownstreamSync(username, token, cb) {
-  prepareDownstreamSync("patch", username, token, function(data, fs, socketPackage) {
-    cb(data, fs, socketPackage);
+  prepareDownstreamSync("patch", username, token, function(err, data, fs, socketPackage) {
+    if(err){
+      cb(err);
+    }
+    cb(null, data, fs, socketPackage);
   });
 }
 
@@ -643,21 +664,18 @@ function ensureFilesystemLayout(fs, layout, callback) {
   // Start by creating the layout, then compare a deep ls()
   var fs2 = new Filer.FileSystem({provider: new Filer.FileSystem.providers.Memory(uniqueUsername())});
   createFilesystemLayout(fs2, layout, function(err) {
-    expect(err).not.to.exist;
     if(err) {
       return callback(err);
     }
 
     var sh = fs.Shell();
     sh.ls('/', {recursive: true}, function(err, fsListing) {
-      expect(err).not.to.exist;
       if(err) {
         return callback(err);
       }
 
       var sh2 = fs2.Shell();
       sh2.ls('/', {recursive: true}, function(err, fs2Listing) {
-        expect(err).not.to.exist;
         if(err) {
           return callback(err);
         }
@@ -682,14 +700,12 @@ function ensureRemoteFilesystemLayout(layout, jar, callback) {
   // Start by creating the layout, then compare a deep ls()
   var layoutFS = new Filer.FileSystem({provider: new Filer.FileSystem.providers.Memory(uniqueUsername())});
   createFilesystemLayout(layoutFS, layout, function(err) {
-    expect(err).not.to.exist;
     if(err) {
       return callback(err);
     }
 
     var sh = layoutFS.Shell();
     sh.ls('/', {recursive: true}, function(err, layoutFSListing) {
-      expect(err).not.to.exist;
       if(err) {
         return callback(err);
       }
@@ -722,7 +738,6 @@ function ensureFilesystemContents(fs, layout, callback) {
   function ensureFileContents(filename, expectedContents, callback) {
     var encoding = Buffer.isBuffer(expectedContents) ? null : 'utf8';
     fs.readFile(filename, encoding, function(err, actualContents) {
-      expect(err).not.to.exist;
       if(err) {
         return callback(err);
       }
@@ -734,7 +749,6 @@ function ensureFilesystemContents(fs, layout, callback) {
 
   function ensureEmptyDir(dirname, callback) {
     fs.stat(dirname, function(err, stats) {
-      expect(err).not.to.exist;
       if(err) {
         return callback(err);
       }
@@ -743,7 +757,6 @@ function ensureFilesystemContents(fs, layout, callback) {
 
       // Also make sure it's empty
       fs.readdir(dirname, function(err, entries) {
-        expect(err).not.to.exist;
         if(err) {
           return callback(err);
         }
