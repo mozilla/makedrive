@@ -154,7 +154,7 @@ describe('[Downstream Syncing with Websockets]', function(){
      util.authenticatedConnection({ done: done }, function( err, result ) {
        expect(err).not.to.exist;
 
-       util.prepareDownstreamSync(result.username, result.token, function(syncData, fs, socketPackage) {
+       util.prepareDownstreamSync(result.username, result.token, function(err, syncData, fs, socketPackage) {
          util.downstreamSyncSteps.generateDiffs(socketPackage, syncData, fs, function(msg, cb) {
            msg = util.toSyncMessage(msg);
 
@@ -173,7 +173,7 @@ describe('[Downstream Syncing with Websockets]', function(){
      util.authenticatedConnection({ done: done }, function( err, result ) {
        expect(err).not.to.exist;
 
-       util.prepareDownstreamSync(result.username, result.token, function(syncData, fs, socketPackage) {
+       util.prepareDownstreamSync(result.username, result.token, function(err, syncData, fs, socketPackage) {
          var diffRequest = SyncMessage.request.diffs;
          diffRequest.content = {
            checksums: "jargon"
@@ -194,7 +194,7 @@ describe('[Downstream Syncing with Websockets]', function(){
      util.authenticatedConnection({ done: done }, function( err, result ) {
        expect(err).not.to.exist;
 
-       util.prepareDownstreamSync(result.username, result.token, function(syncData, fs, socketPackage) {
+       util.prepareDownstreamSync(result.username, result.token, function(err, syncData, fs, socketPackage) {
          var diffRequest = SyncMessage.request.diffs;
          util.sendSyncMessage(socketPackage, diffRequest, function(msg) {
            msg = util.toSyncMessage(msg);
@@ -212,7 +212,7 @@ describe('[Downstream Syncing with Websockets]', function(){
      util.authenticatedConnection({ done: done }, function( err, result ) {
        expect(err).not.to.exist;
 
-       util.prepareDownstreamSync('generateDiffs', result.username, result.token, function(syncData, fs, socketPackage) {
+       util.prepareDownstreamSync('generateDiffs', result.username, result.token, function(err, syncData, fs, socketPackage) {
          util.downstreamSyncSteps.patchClientFilesystem(socketPackage, syncData, fs, function(msg, cb) {
            msg = util.toSyncMessage(msg);
            var startSyncMsg = SyncMessage.request.sync;
@@ -236,7 +236,7 @@ describe('[Downstream Syncing with Websockets]', function(){
      util.authenticatedConnection({ done: done }, function( err, result ) {
        expect(err).not.to.exist;
 
-       util.prepareDownstreamSync(result.username, result.token, function(data, fs, socketPackage) {
+       util.prepareDownstreamSync(result.username, result.token, function(err, data, fs, socketPackage) {
          var startSyncMsg = SyncMessage.request.sync;
          util.sendSyncMessage(socketPackage, startSyncMsg, function(msg){
            var msg = util.toSyncMessage(msg);
@@ -262,7 +262,7 @@ describe('[Upstream Syncing with Websockets]', function(){
       util.authenticatedConnection({ done: done }, function( err, result ) {
         expect(err).not.to.exist;
 
-        util.completeDownstreamSync(result.username, result.token, function(syncData, fs, socketPackage) {
+        util.completeDownstreamSync(result.username, result.token, function(err, syncData, fs, socketPackage) {
           // Authorize a user, open a socket, authorize and complete a downstream sync
           util.upstreamSyncSteps.requestSync(socketPackage, function(message, cb) {
             message = util.toSyncMessage(message);
@@ -296,12 +296,12 @@ describe('[Upstream Syncing with Websockets]', function(){
       util.authenticatedConnection({ done: done }, function( err, result ) {
         expect(err).not.to.exist;
 
-        util.completeDownstreamSync(result.username, result.token, function(syncData, fs, socketPackage) {
+        util.completeDownstreamSync(result.username, result.token, function(err, syncData, fs, socketPackage) {
           // Authorize a second client for the same user, open a socket, authorize and complete a downstream sync
           util.authenticatedConnection({ username: result.username }, function(err2, result2) {
             expect(err2).not.to.exist;
 
-            util.completeDownstreamSync(result2.username, result2.token, function(syncData2, fs2, socketPackage2) {
+            util.completeDownstreamSync(result2.username, result2.token, function(err, syncData2, fs2, socketPackage2) {
               // Start an upstream sync with the first client of the user
               util.upstreamSyncSteps.requestSync(socketPackage, function(message, cb) {
                 message = util.toSyncMessage(message);
@@ -339,12 +339,12 @@ describe('[Upstream Syncing with Websockets]', function(){
       util.authenticatedConnection({ done: done }, function( err, result ) {
         expect(err).not.to.exist;
 
-        util.completeDownstreamSync(result.username, result.token, function(syncData, fs, socketPackage) {
+        util.completeDownstreamSync(result.username, result.token, function(err, syncData, fs, socketPackage) {
           // Authorize a second client for the same user, open a socket, authorize and complete a downstream sync
           util.authenticatedConnection({ username: result.username }, function(err2, result2) {
             expect(err2).not.to.exist;
 
-            util.completeDownstreamSync(result2.username, result2.token, function(syncData2, fs2, socketPackage2) {
+            util.completeDownstreamSync(result2.username, result2.token, function(err, syncData2, fs2, socketPackage2) {
               // Start an upstream sync with the first client of the user
               util.upstreamSyncSteps.requestSync(socketPackage, function(message, cb) {
                 message = util.toSyncMessage(message);
@@ -440,5 +440,5 @@ describe('[Upstream Syncing with Websockets]', function(){
         });
       });
     });
-  })
+  });
 });
