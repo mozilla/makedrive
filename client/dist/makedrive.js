@@ -220,7 +220,7 @@ function createFS(options) {
     // Bail if we're already connected
     if(sync.state !== sync.SYNC_DISCONNECTED &&
        sync.state !== sync.ERROR) {
-      // TODO: https://github.com/mozilla/makedrive/issues/117
+      console.error("MakeDrive: Attempted to connect to \"" + url + "\", but a connection already exists!");
       return;
     }
 
@@ -345,7 +345,7 @@ function createFS(options) {
     // Bail if we're not already connected
     if(sync.state === sync.SYNC_DISCONNECTED ||
        sync.state === sync.ERROR) {
-      // TODO: https://github.com/mozilla/makedrive/issues/117
+      console.error("MakeDrive: Attempted to disconnect, but no server connection exists!");
       return;
     }
 
