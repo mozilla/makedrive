@@ -46,12 +46,12 @@ module.exports = function createRoutes( app, webmakerAuth ) {
   }
 
   /**
-   * Server a path as JSON (for APIs) from a user's Filer filesystem
+   * Serve a path as JSON (for APIs) from a user's Filer filesystem
    */
   setupWWWRoutes('/j/*', {json: true});
 
   /**
-   * Server a path from a user's Filer filesystem
+   * Serve a path from a user's Filer filesystem
    */
   setupWWWRoutes('/p/*', null);
 
