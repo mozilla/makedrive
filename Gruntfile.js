@@ -13,6 +13,8 @@ var PROMPT_CONFIRM_CONFIG = 'confirmation',
 module.exports = function(grunt) {
   require('time-grunt')(grunt);
   require('jit-grunt')(grunt, {
+    'checkBranch': 'grunt-npm',
+    'npm-publish': 'grunt-npm',
     express: 'grunt-express-server'
   });
   grunt.initConfig({
