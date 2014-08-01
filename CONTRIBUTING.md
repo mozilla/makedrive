@@ -48,6 +48,34 @@ to the `AUTHORS` file.
 The user *must* be on their local `master` branch before running any form of `grunt publish`, or else the task will fail loudly.
 
 =======
+
+## The `SyncMessage` Protocol
+In order to thoroughly control and validate the syncing process, a protocol based on "SyncMessages" has been created. Each `SyncMessage` has three properties - name, type, and content. Sync message types are broken down
+into 3 categories:
+
+- `REQUEST` - A query from either client-to-server (upstream) or server-to-client (downstream) for necessary sync step data.
+- `RESPONSE` - A message to be sent back from either upstream or downstream with appropriate data that corresponds to the current sync step.
+- `ERROR` - An acknowledgement of any fault or mishap that occurs at any time during the syncing process.
+
+To generate a `SyncMessage`, use the format `SyncMessage.TYPE.NAME`. To set its content, use the sync message's `content` property. To check the nature of the sync message, use `.is.NAME` OR `.is.TYPE`.
+
+The constants attributed to a `SyncMessage` are as follows:
+
+Name&nbsp;(`SyncMessage.NAME`) | Properties (Type) | Details
+------ | ------------- | -------------------------
+`SRCLIST` | `SyncMessage.ERROR` | A faulty or nonexistent source list has been passed
+`SYNC` | `SyncMessage.REQUEST` <br> `SyncMessage.RESPONSE` | A request to the server to initiate a sync. The response from the server confirms that a sync can begin
+`CHKSUM` | `SyncMessage.REQUEST` <br> `SyncMessage.ERROR`  | A request for checksums from the server. The error signifies either faulty or nonexistent checksums being passed
+`DIFFS` | `SyncMessage.REQUEST` <br> `SyncMessage.RESPONSE` <br> `SyncMessage.ERROR` | A request for file diffs from either upstream or downstream. The response contains the file diffs. The error signifies either faulty or nonexistent diffs
+`PATCH` | `SyncMessage.RESPONSE` <br> `SyncMessage.ERROR` | The `PATCH` step in the syncing process signifies that the `DIFFS` have been applied to the filesystem
+`RESET` | `SyncMessage.REQUEST` | A call to the server to restart the sync process
+`VERIFICATION` | `SyncMessage.RESPONSE` <br> `SyncMessage.ERROR` | Used to verify an `rsync.patch`'s success
+`LOCKED` | `SyncMessage.ERROR` | A sync has been requested whilst another sync is already in progress
+`AUTHZ` | `SyncMessage.RESPONSE` | Valid session data has been received and the security of the WebSocket connection has been verified
+`IMPL` | `SyncMessage.ERROR` | Implementation error
+`INFRMT` | `SyncMessage.ERROR` | "Message must be formatted as a sync message"
+`INCONT` | `SyncMessage.ERROR` | "Invalid content provided"
+
 ## Tests
 
 Tests are writting using [Mocha](http://visionmedia.github.io/mocha/) and [Chai](http://chaijs.com/api/bdd/).
