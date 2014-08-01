@@ -81,7 +81,7 @@ var fs = MakeDrive.fs({
   memory: true,
   forceCreate: true
   // etc.
-});`
+});
 ```
 A number of configuration options can be passed to the `fs()` function.
 These include:
