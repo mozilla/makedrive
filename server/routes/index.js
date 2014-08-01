@@ -21,7 +21,8 @@ module.exports = function createRoutes( app, webmakerAuth ) {
   */
   var angularConfig = {
     accountSettingsUrl: env.get('LOGIN') + '/account',
-    loginURL: env.get('LOGIN' )
+    loginURL: env.get('LOGIN' ),
+    socketURL: env.get('SOCKET_URL')
   };
 
   app.get( "/angular-config.js", function( req, res ) {
