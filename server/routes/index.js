@@ -31,14 +31,25 @@ module.exports = function createRoutes( app, webmakerAuth ) {
   }
 
   /**
-   * Serve a path as JSON (for APIs) from a user's Filer filesystem
-   */
-  setupWWWRoutes('/j/*', {json: true});
-
-  /**
    * Serve a path from a user's Filer filesystem
    */
-  setupWWWRoutes('/p/*', null);
+  if(env.get('ENABLE_PATH_ROUTE')) {
+    setupWWWRoutes('/p/*');
+  }
+
+  /**
+   * Serve a path as JSON (for APIs) from a user's Filer filesystem
+   */
+  if(env.get('ENABLE_JSON_ROUTE')) {
+    setupWWWRoutes('/j/*', {json: true});
+  }
+
+  /**
+   * Serve a path as a .zip (for export) from a user's Filer filesystem
+   */
+  if(env.get('ENABLE_ZIP_ROUTE')) {
+    setupWWWRoutes('/z/*', {zip: true});
+  }
 
   app.get( "/api/sync", middleware.crossOriginHandler, middleware.authenticationHandler, function( req, res ) {
     var username = req.params.username;

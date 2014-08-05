@@ -17,16 +17,7 @@ function write(content, contentType, res, status) {
  * Send an Apache-style 404
  */
 function handle404(url, res) {
-  var html = '<!DOCTYPE html>' +
-        '<html><head>' +
-        '<title>404 Not Found</title>' +
-        '</head><body>' +
-        '<h1>Not Found</h1>' +
-        '<p>The requested URL ' + url + ' was not found on this server.</p>' +
-        '<hr>' +
-        '<address>MakeDrive/' + version + ' (Web) Server</address>' +
-        '</body></html>';
-  write(html, 'text/html', res, 404);
+  util.standard404(url, res);
 }
 
 /**

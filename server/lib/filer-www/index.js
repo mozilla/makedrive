@@ -5,6 +5,7 @@
 var filesystem = require('../filesystem.js');
 var DefaultHandler = require('./default-handler.js');
 var JSONHandler = require('./json-handler.js');
+var ZIPHandler = require('./zip-handler.js');
 
 function FilerWebServer(username, res, options) {
   options = options || {};
@@ -17,6 +18,8 @@ function FilerWebServer(username, res, options) {
   // Pick the appropriate handler type to create
   if(options.json) {
     this.handler = new JSONHandler(fs, res);
+  } else if(options.zip) {
+    this.handler = new ZIPHandler(fs, res);
   } else {
     this.handler = new DefaultHandler(fs, res);
   }

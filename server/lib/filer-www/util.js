@@ -1,3 +1,5 @@
+var version = require('../../../package.json').version;
+
 function formatDate(d) {
   // 20-Apr-2004 17:14
   return d.getDay() + '-' +
@@ -41,9 +43,24 @@ function isImage(ext) {
     ext === '.ico';
 }
 
+function standard404(url, res) {
+  var html = '<!DOCTYPE html>' +
+        '<html><head>' +
+        '<title>404 Not Found</title>' +
+        '</head><body>' +
+        '<h1>Not Found</h1>' +
+        '<p>The requested URL ' + url + ' was not found on this server.</p>' +
+        '<hr>' +
+        '<address>MakeDrive/' + version + ' (Web) Server</address>' +
+        '</body></html>';
+  res.header({'Content-Type': 'text/html'});
+  res.send(404, html);
+}
+
 module.exports = {
   formatDate: formatDate,
   formatSize: formatSize,
   isMedia: isMedia,
-  isImage: isImage
+  isImage: isImage,
+  standard404: standard404
 };
