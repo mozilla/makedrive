@@ -9,9 +9,8 @@ var fsUtils = require('../../lib/fs-utils.js');
 var conflict = require('../../lib/conflict.js');
 var constants = require('../../lib/constants.js');
 
-function SyncFileSystem(options) {
+function SyncFileSystem(fs) {
   var self = this;
-  var fs = new Filer.FileSystem(options);
 
   // The following non-modifying fs operations can be run as normal,
   // and are simply forwarded to the fs instance. NOTE: we have

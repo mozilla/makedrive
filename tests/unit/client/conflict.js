@@ -9,7 +9,8 @@ describe('MakeDrive Client Conflicts', function(){
   var fs;
 
   beforeEach(function(done) {
-    fs = new SyncFileSystem({provider: new Filer.FileSystem.providers.Memory(util.username())});
+    var _fs = new Filer.FileSystem({provider: new Filer.FileSystem.providers.Memory(util.username())});
+    fs = new SyncFileSystem(_fs);
 
     // Write one dir and one file
     fs.mkdir('/dir', function(err) {

@@ -102,9 +102,12 @@ function createFS(options) {
   }
 
   // Our fs instance is a modified Filer fs, with extra sync awareness
-  // for conflict mediation, etc.
-  var fs = new SyncFileSystem({provider: provider});
+  // for conflict mediation, etc.  We keep an internal reference to the
+  // raw Filer fs, and use the SyncFileSystem instance externally.
+  var _fs = new Filer.FileSystem({provider: provider});
+  var fs = new SyncFileSystem(_fs);
   var sync = fs.sync = new EventEmitter();
+  var manager;
 
   // Auto-sync handles
   var watcher;
@@ -179,7 +182,7 @@ function createFS(options) {
     // Make sure the path exists, otherwise use root dir
     fs.exists(path, function(exists) {
       path = exists ? path : '/';
-      sync.manager.syncPath(path);
+      manager.syncPath(path);
     });
   };
 
@@ -193,7 +196,7 @@ function createFS(options) {
     }
 
     // Also bail if we already have a SyncManager
-    if(sync.manager) {
+    if(manager) {
       return;
     }
 
@@ -234,9 +237,11 @@ function createFS(options) {
     }
 
     function connect(token) {
-      // Try to connect to provided server URL
-      sync.manager = new SyncManager(sync, fs);
-      sync.manager.init(url, token, function(err) {
+      // Try to connect to provided server URL. Use the raw Filer fs
+      // instance for all rsync operations on the filesystem, so that we
+      // can untangle changes done by user vs. sync code.
+      manager = new SyncManager(sync, _fs);
+      manager.init(url, token, function(err) {
         if(err) {
           sync.onError(err);
           return;
@@ -245,8 +250,9 @@ function createFS(options) {
         // In a browser, try to clean-up after ourselves when window goes away
         if("onbeforeunload" in global) {
           sync.cleanupFn = function() {
-            if(sync && sync.manager) {
-              sync.manager.close();
+            if(manager) {
+              manager.close();
+              manager = null;
             }
           };
           global.addEventListener('beforeunload', sync.cleanupFn);
@@ -306,10 +312,6 @@ function createFS(options) {
       sync.cleanupFn = null;
     }
 
-    // Do a proper shutdown
-    sync.manager.close();
-    sync.manager = null;
-
     // Bail if we're not already connected
     if(sync.state === sync.SYNC_DISCONNECTED ||
        sync.state === sync.ERROR) {
@@ -317,6 +319,11 @@ function createFS(options) {
       return;
     }
 
+    // Do a proper shutdown
+    if(manager) {
+      manager.close();
+      manager = null;
+    }
     // Stop watching for fs changes, stop auto-sync'ing
     if(watcher) {
       watcher.close();
