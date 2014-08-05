@@ -57,8 +57,8 @@ angular.module('makedriveApp')
       }
     }
   ])
-  .controller('init', ['getList', '$window', '$scope', 'config',
-    function(getList, $window, $scope, config) {
+  .controller('init', ['getList', '$window', '$scope', 'param',
+    function(getList, $window, $scope, param) {
       var fs = $window.MakeDrive.fs({
         manual: true
       });
@@ -67,7 +67,7 @@ angular.module('makedriveApp')
         getList();
         console.log('server has connected');
       });
-      sync.connect(config.socketURL);
+      sync.connect(param('makedrive'));
 
       sync.on('completed', function() {
         getList();

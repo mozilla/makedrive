@@ -1,7 +1,7 @@
 angular
   .module('webmakerAngular.login', [])
-  .factory('webmakerLoginService', ['$rootScope', '$window', 'config',
-    function webmakerLoginService($rootScope, $window, config) {
+  .factory('webmakerLoginService', ['$rootScope', '$window',
+    function webmakerLoginService($rootScope, $window) {
 
       // This is needed to apply scope changes for events that happen in
       // async callbacks.

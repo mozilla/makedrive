@@ -1,12 +1,10 @@
 angular
   .module('makedriveApp.services', [])
-  .constant('config', window.angularConfig)
   .factory('getList', [
     '$rootScope',
     '$http',
-    'config',
     '$window',
-    function($rootScope, $http, config, $window) {
+    function($rootScope, $http, $window) {
       var fs = $window.MakeDrive.fs({
         manual: true
       });
@@ -121,5 +119,18 @@ angular
           });
       }
       return getListing;
+    }
+  ])
+  .factory('param', ['$window',
+    function ($window) {
+      getParam = function(name) {
+        var results = new RegExp('[\?&]' + name + '=([^&#]*)').exec($window.location.href);
+        if (results == null) {
+          return null;
+        } else {
+          return results[1] || 0;
+        }
+      }
+      return getParam;
     }
   ]);

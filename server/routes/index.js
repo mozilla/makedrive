@@ -14,22 +14,6 @@ module.exports = function createRoutes( app, webmakerAuth ) {
     res.send( "MakeDrive: https://wiki.mozilla.org/Webmaker/MakeDrive" );
   });
 
-
-  /*
-     This angular configuration and WebmakerAuth route
-     is being use for our demo page only.
-  */
-  var angularConfig = {
-    accountSettingsUrl: env.get('LOGIN') + '/account',
-    loginURL: env.get('LOGIN' ),
-    socketURL: env.get('SOCKET_URL')
-  };
-
-  app.get( "/angular-config.js", function( req, res ) {
-    res.setHeader( "Content-type", "text/javascript" );
-    res.send( "window.angularConfig = " + JSON.stringify( angularConfig ) );
-  });
-
   app.post( "/verify", webmakerAuth.handlers.verify );
   app.post( "/authenticate", webmakerAuth.handlers.authenticate );
   app.post( "/create", webmakerAuth.handlers.create );
