@@ -6,13 +6,10 @@
     <!-- Force the latest IE version, in various cases when it may fall back to IE7 mode. But It is invalid html. -->
     <!-- <meta http-equiv="X-UA-Compatible" content="IE=edge"> -->
     <title>Webmaker MakeDrive Demo</title>
-    <meta name="description" content="">
+    <meta name="description" content="Mozilla MakeDrive Demo">
     <meta name="viewport" content="width=device-width">
     <meta name="keywords" content="Mozilla MakeDrive" />
-    <link rel="stylesheet" type="text/css" href="/vendors/makerstrap/dist/makerstrap.complete.min.css" />
-    <link rel="stylesheet" type="text/css" href="styles.css" />
-    <link rel="stylesheet" href="/vendors/jstree/dist/themes/default/style.min.css" />
-    <link rel="stylesheet" href="/vendors/angular-ui/build/angular-ui.min.css" />
+    <link rel="stylesheet" type="text/css" href="assets/css/main.css" />
     <script type='text/javascript' src='../dist/makedrive.js'></script>
 
   </head>
@@ -23,7 +20,12 @@
       <!-- Sidebar -->
       <div id="sidebar-wrapper" >
         <ul class="sidebar-nav">
-          <li class="sidebar-brand">
+          <li class="sidebar-brand" ng-controller="make">
+            <a ng-click="mkfile(path)"><i class="fa fa-file-o save"></i></a>
+            <a ng-click="open()"><i class="fa fa-folder-open-o save" ></i></a>
+            <a ng-disabled="canSave" ng-click="save()"><i class="fa fa-floppy-o save" ng-class="{'canSave': !canSave }"></i></a>
+            <a ng-disabled="selectedPath" ng-click="delete()"><i class="fa fa-trash-o save" ng-class="{'canSave': !selectedPath }"></i></a>
+            <a ng-disabled="canSave" ng-click="rename()"><i class="fa fa-pencil save" ng-class="{'canSave': !canSave }"></i></a>
           </li>
           <li>
             <div id="jstree"></div>
@@ -61,7 +63,7 @@
           <span class="fa fa-check"></span>
             Sync completed!
         </div>
-        <div class="alert alert-danger">
+        <div id="error" class="alert alert-danger">
           <span class="fa fa-times"></span>
             Oops! You have an error in your sync process: {{error}}
         </div>
@@ -75,19 +77,6 @@
                 <i ng-click="toggle()" title="show/hide sidebar" ng-hide="toggled" class="fa fa-arrow-circle-left" ng-cloak></i>
                 <i ng-click="toggle()" title="show/hide sidebar" ng-show="toggled" class="fa fa-arrow-circle-right" ng-cloak></i>
               </span>
-
-              <form name="myForm">
-                <div class="col-lg-9">
-                  <div class="input-group">
-                    <span class="input-group-addon">/</span>
-                    <input ng-model="path" type="text" class="form-control" placeholder="path/to/file/or/folder">
-                  </div>
-                </div>
-                <div class="col-lg-3">
-                  <button class="btn btn-default pull-right" ng-controller="mkfile" ng-click="mkfile(path)">Create file</button>
-                  <button class="btn btn-default pull-right" ng-controller="mkdir" ng-click="mkdirp(path)">Create directory</button>
-                </div>
-              </form>
             </div>
           </div>
           <div class="row">

@@ -13,7 +13,9 @@
     "jstree": "~3.0.2",
     "webmaker-auth-client": "~0.1.11",
     "angular-bootstrap": "~0.11.0",
-    "angular-ui": "~0.4.0"
+    "angular-ui": "~0.4.0",
+    "filer-dialogs": "git://github.com/ScottDowne/open-dialog.git#77f88127",
+    "font-awesome": "~4.1.0"
   },
   "version": "0.0.27",
   "resolutions": {

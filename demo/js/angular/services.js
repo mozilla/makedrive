@@ -5,24 +5,33 @@ angular
     '$http',
     '$window',
     function($rootScope, $http, $window) {
+      var Make = {};
+      $rootScope.canSave = false;
       var fs = $window.MakeDrive.fs({
         manual: true
       });
       var sh = $window.MakeDrive.fs().Shell();
       var sync = fs.sync;
-
+      var Path = $window.MakeDrive.Path;
+      var currentPath;
       function getContent(data) {
         var listing = [];
-        data.map(function(content) {
+        data.map(function(content, index) {
+          if(index != 0) {
+            currentPath = "/";
+          }
+          currentPath = Path.join(currentPath || "/", content.path);
           var node;
           if (content.type !== "DIRECTORY") {
             node = {
               text: content.path,
-              icon: "/demo/assets/document.png"
+              icon: "/demo/assets/icons/document.png",
+              id: currentPath
             };
           } else {
             node = {
-              text: content.path
+              text: content.path,
+              id: currentPath
             };
           }
           if (content.contents) {
@@ -38,7 +47,9 @@ angular
           if (e) {
             return;
           }
-          if (!stat.isDirectory()) {
+          if (!stat.isDirectory() && $rootScope.selectedPath) {
+            $rootScope.canSave = true;
+            $rootScope.$apply();
             fs.readFile($rootScope.selectedPath, 'utf8', function(e, data) {
               if (e) {
                 return;
@@ -46,27 +57,29 @@ angular
                 $window.editor.setValue(data);
               }
             });
+          } else {
+            $rootScope.canSave = false;
+            $rootScope.$apply();
           }
         });
       }
 
-      function remove() {
+      Make.remove = function() {
         fs.stat($rootScope.selectedPath, function(e, stat) {
           if (!stat.isDirectory()) {
             fs.unlink($rootScope.selectedPath, function(e) {
-              if (e) {
-                alert(e);
-              }
-              sync.request('/');
-
+              $rootScope.selectedPath = null;
+              $rootScope.canSave = false;
+              $rootScope.$apply();
+              sync.request();
             });
           } else {
             sh.rm($rootScope.selectedPath, {
               recursive: true
             }, function(e) {
-              if (e) {
-                alert(e);
-              }
+              $rootScope.selectedPath = null;
+              $rootScope.canSave = false;
+              $rootScope.$apply();
               sync.request('/');
             });
           }
@@ -75,19 +88,6 @@ angular
 
       function createTree(data) {
         $("#jstree").jstree({
-          "plugins": ["contextmenu"],
-          "contextmenu": {
-            "items": function($node) {
-              return {
-                "Delete": {
-                  "label": "Delete",
-                  "action": function(obj) {
-                    remove();
-                  }
-                }
-              };
-            }
-          },
           'core': {
             'multiple': false,
             'data': [{
@@ -100,14 +100,13 @@ angular
             }]
           }
         }).bind("select_node.jstree", function(e, data) {
-          var Path = $window.MakeDrive.Path;
           $rootScope.selectedPath = Path.normalize(data.instance.get_path(data.node).join('/'));
           openFile();
         });
         jQuery.jstree.reference("#jstree").refresh();
       }
 
-      getListing = function() {
+      Make.getListing = function() {
         if(jQuery.jstree.reference("#jstree")) {
           jQuery.jstree.reference("#jstree").destroy();
         }
@@ -118,7 +117,7 @@ angular
             createTree(newListing);
           });
       }
-      return getListing;
+      return Make;
     }
   ])
   .factory('param', ['$window',

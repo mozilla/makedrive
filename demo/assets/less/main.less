@@ -1,3 +1,19 @@
+@import "../../../client/vendors/font-awesome/less/font-awesome";
+@import "../../../client/vendors/makerstrap/less/makerstrap";
+@import "/vendors/jstree/dist/themes/default/style.min.css";
+@import "/vendors/makedrive-dialogs/style/style.css";
+
+
+i.save {
+  padding-left: 20px;
+  color: black;
+  cursor: pointer;
+}
+
+i.canSave {
+  color: gray;
+}
+
 #editor {
   top: 0;
   left: 0;
@@ -88,9 +104,12 @@ html, body {
     border-right: 1px solid black;
 }
 
-#jstree > ul {
-  color: #000;
-  font-weight: 300;
+#jstree {
+  padding-top: 10px;
+  ul {
+    color: #000;
+    font-weight: 300;
+  }
 }
 
 #wrapper.toggled #sidebar-wrapper {
@@ -98,7 +117,6 @@ html, body {
 }
 
 #page-content-wrapper {
-    padding-top: 20px;
     width: 100%;
 }
 
@@ -119,9 +137,10 @@ html, body {
 }
 
 .sidebar-nav > .sidebar-brand {
-    height: 65px;
+    height: 52px;
     font-size: 18px;
     line-height: 60px;
+    border-bottom: 1px solid gray;
 }
 
 @media(max-width:768px) {

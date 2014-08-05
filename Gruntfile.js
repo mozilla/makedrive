@@ -58,6 +58,7 @@ module.exports = function(grunt) {
             'client/vendors/ace-builds/src-min/mode-javascript.js',
             'client/vendors/jstree/dist/jstree.min.js',
             'client/vendors/webmaker-auth-client/dist/webmaker-auth-client.min.js',
+            'client/vendors/filer-dialogs/filer-dialogs.js',
             // angular dependencies
             'client/vendors/angular/angular.js',
             'client/vendors/angular-route/angular-route.min.js',
@@ -75,6 +76,22 @@ module.exports = function(grunt) {
         files: {
           'demo/js/compiled/app.min.js': ['demo/js/angular/*.js']
         },
+      }
+    },
+
+    less: {
+      dist: {
+        options: {
+          compile: true,
+          compress: true,
+          modifyVars: {
+            'fa-font-path': "'/vendors/font-awesome/fonts'",
+            'makerstrap-bower-path': "'client/vendors'"
+          }
+        },
+        files: {
+          'demo/assets/css/main.css': ['demo/assets/less/main.less']
+        }
       }
     },
 
@@ -172,6 +189,13 @@ module.exports = function(grunt) {
           spawn: false
         }
       },
+      less: {
+        files: ['demo/assets/less/*'],
+        tasks: ['less:dist'],
+        options: {
+          spawn: false
+        }
+      },
       node: {
         files: ['server/*.js', 'server/**/*.js'],
         tasks: ['express:dev'],
@@ -196,8 +220,8 @@ module.exports = function(grunt) {
   grunt.registerTask( "default", [ "test" ] );
   grunt.registerTask( "init", [ "exec:update_submodule", "exec:npm_install_submodule" ] );
   grunt.registerTask( "build", [ "init", "clean", "browserify:makedriveClient", "uglify" ] );
-  grunt.registerTask( "install", [ "uglify:dependencies", "uglify:angular_app" ] );
-  grunt.registerTask( "dev", [ "uglify:angular_app", "express:dev", "watch" ] );
+  grunt.registerTask( "install", [ "less", "uglify:dependencies", "uglify:angular_app" ] );
+  grunt.registerTask( "dev", [ "less", "uglify:angular_app", "express:dev", "watch" ] );
 
   // Complex multi-tasks
   grunt.registerTask('publish', 'Publish MakeDrive as a new version to NPM, bower and github.', function(patchLevel) {
