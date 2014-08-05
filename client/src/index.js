@@ -80,7 +80,7 @@
 var SyncManager = require('./sync-manager.js');
 var SyncFileSystem = require('./sync-filesystem.js');
 var Filer = require('../../lib/filer.js');
-var syncPathResolver = require('../../lib/sync-path-resolver');
+var resolvePath = require('../../lib/sync-path-resolver').resolve;
 var EventEmitter = require('events').EventEmitter;
 var request = require('request');
 
@@ -110,11 +110,8 @@ function createFS(options) {
   var manager;
 
   // Auto-sync handles
-  var watcher;
   var autoSync;
-  var syncPaths = [];
-  var syncInterval = options.interval|0;
-  syncInterval = syncInterval > 0 ? syncInterval : 60 * 1000;
+  var pathCache;
 
   // State of the sync connection
   sync.SYNC_DISCONNECTED = 0;
@@ -128,40 +125,27 @@ function createFS(options) {
 
   // Turn on auto-syncing if its not already on
   sync.auto = function(interval) {
-    if(watcher) {
-      return;
-    }
-
-    syncInterval = interval|0 > 0 ? interval|0 : 60 * 1000;
-
-    watcher = fs.watch('/', {recursive: true}, function(event, filename) {
-      syncPaths.push(filename);
-    });
+    var syncInterval = interval|0 > 0 ? interval|0 : 60 * 1000;
 
     if(autoSync) {
       clearInterval(autoSync);
     }
 
-    autoSync = setInterval(function() {
-      var pathToSync = '/';
-      if(syncPaths.length) {
-        pathToSync = syncPathResolver.resolve(syncPaths);
-        sync.request(pathToSync);
-      }
-    }, syncInterval);
+    autoSync = setInterval(sync.request, syncInterval);
   };
 
   // Turn off auto-syncing and turn on manual syncing
   sync.manual = function() {
-    if(watcher) {
-      watcher.close();
-      watcher = null;
+    if(autoSync) {
       clearInterval(autoSync);
       autoSync = null;
     }
   };
 
   sync.onError = function(err) {
+    // Regress to the path that needed to be synced but failed 
+    // (likely because of a sync LOCK)
+    fs.pathToSync = pathCache;
     sync.state = sync.SYNC_ERROR;
     sync.emit('error', err);
   };
@@ -171,19 +155,23 @@ function createFS(options) {
     sync.emit('disconnected');
   };
 
-  // Request that a sync begin for the specified path (optional).
-  sync.request = function(path) {
+  // Request that a sync begin.
+  sync.request = function() {
     // If we're not connected (or are already syncing), ignore this request
     if(sync.state !== sync.SYNC_CONNECTED) {
       // TODO: https://github.com/mozilla/makedrive/issues/115
       return;
     }
 
-    // Make sure the path exists, otherwise use root dir
-    fs.exists(path, function(exists) {
-      path = exists ? path : '/';
-      manager.syncPath(path);
-    });
+    // If there were no changes to the filesystem, ignore this request
+    if(!fs.pathToSync) {
+      return;
+    }
+
+    // Cache the path that needs to be synced for error recovery
+    pathCache = fs.pathToSync;
+    fs.pathToSync = null;
+    manager.syncPath(pathCache);
   };
 
   // Try to connect to the server.
@@ -211,14 +199,12 @@ function createFS(options) {
         sync.emit('syncing');
       };
 
-      sync.onCompleted = function(paths) {
+      sync.onCompleted = function() {
         // If changes happened to the files that needed to be synced
         // during the sync itself, they will be overwritten
         // https://github.com/mozilla/makedrive/issues/129 and
         // https://github.com/mozilla/makedrive/issues/3
-        if(paths && watcher) {
-          syncPaths = syncPathResolver.filterSynced(syncPaths, paths.synced);
-        }
+
         sync.state = sync.SYNC_CONNECTED;
         sync.emit('completed');
       };
@@ -233,7 +219,7 @@ function createFS(options) {
         return;
       }
 
-      sync.auto();
+      sync.auto(options.interval);
     }
 
     function connect(token) {
@@ -324,14 +310,12 @@ function createFS(options) {
       manager.close();
       manager = null;
     }
-    // Stop watching for fs changes, stop auto-sync'ing
-    if(watcher) {
-      watcher.close();
-      watcher = null;
-    }
+
+    // Stop auto-syncing
     if(autoSync) {
       clearInterval(autoSync);
       autoSync = null;
+      fs.pathToSync = null;
     }
 
     sync.onDisconnected();

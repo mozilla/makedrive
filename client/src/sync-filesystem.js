@@ -9,9 +9,22 @@ var Shell = require('../../lib/filer-shell.js');
 var fsUtils = require('../../lib/fs-utils.js');
 var conflict = require('../../lib/conflict.js');
 var constants = require('../../lib/constants.js');
+var resolvePath = require('../../lib/sync-path-resolver.js').resolve;
 
 function SyncFileSystem(fs) {
   var self = this;
+  var pathToSync;
+  // Manage path resolution for sync path
+  Object.defineProperty(self, 'pathToSync', {
+    get: function() { return pathToSync; },
+    set: function(path) {
+      if(path) {
+        pathToSync = resolvePath(pathToSync, path);
+      } else {
+        pathToSync = null;
+      }
+    }
+  });
 
   // The following non-modifying fs operations can be run as normal,
   // and are simply forwarded to the fs instance. NOTE: we have
@@ -56,6 +69,13 @@ function SyncFileSystem(fs) {
          default:
            pathOrFD = args[0];
            break;
+       }
+
+       // Check to see if it is a path or an open file descriptor
+       // TODO: Deal with a case of fs.open for a path with a write flag
+       // https://github.com/mozilla/makedrive/issues/210
+       if(!fs.openFiles[pathOrFD]) {
+        self.pathToSync = pathOrFD;
        }
 
        // Figure out which function to use when setting the xattribute

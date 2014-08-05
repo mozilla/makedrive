@@ -75,7 +75,7 @@ describe('MakeDrive Client API', function(){
           // Write a file and try to sync
           util.createFilesystemLayout(fs, layout, function(err) {
             expect(err).not.to.exist;
-            sync.request('/');
+            sync.request();
           });
         });
 
