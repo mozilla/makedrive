@@ -51,7 +51,7 @@ describe('MakeDrive Client - sync many dirs, many files', function(){
         util.createFilesystemLayout(fs, layout, function(err) {
           expect(err).not.to.exist;
 
-          sync.request('/');
+          sync.request();
         });
       });
 

@@ -170,14 +170,10 @@ function createFS(options) {
       return;
     }
 
-    // Make sure the path exists, otherwise use root dir
-    fs.exists(needsSync, function(exists) {
-      path = exists ? path : '/';
-      // Cache the path that needs to be synced for error recovery
-      cache.path = path;
-      delete fs.needsSync;
-      manager.syncPath(path);
-    });
+    // Cache the path that needs to be synced for error recovery
+    cache.path = needsSync;
+    delete fs.needsSync;
+    manager.syncPath(needsSync);
   };
 
   // Try to connect to the server.
