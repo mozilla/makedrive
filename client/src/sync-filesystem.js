@@ -8,6 +8,7 @@ var Filer = require('../../lib/filer.js');
 var fsUtils = require('../../lib/fs-utils.js');
 var conflict = require('../../lib/conflict.js');
 var constants = require('../../lib/constants.js');
+var resolvePath = require('../../lib/sync-path-resolver.js').resolve;
 
 function SyncFileSystem(fs) {
   var self = this;
@@ -55,6 +56,10 @@ function SyncFileSystem(fs) {
          default:
            pathOrFD = args[0];
            break;
+       }
+
+       if(!fs.openFiles[pathOrFD]) {
+        self.needsSync = resolvePath(self.needsSync, pathOrFD);
        }
 
        // Figure out which function to use when setting the xattribute
