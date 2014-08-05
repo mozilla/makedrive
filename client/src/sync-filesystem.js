@@ -5,6 +5,7 @@
  */
 
 var Filer = require('../../lib/filer.js');
+var Shell = require('../../lib/filer-shell.js');
 var fsUtils = require('../../lib/fs-utils.js');
 var conflict = require('../../lib/conflict.js');
 var constants = require('../../lib/constants.js');
@@ -113,9 +114,14 @@ function SyncFileSystem(fs) {
     });
   };
 
-  // Expose fs.Shell()
+  // Expose fs.Shell() but use wrapped sync filesystem instance vs fs.
+  // This is a bit brittle, but since Filer doesn't expose the Shell()
+  // directly, we deal with it by doing a deep require into Filer's code
+  // ourselves. The other down side of this is that we're now including
+  // the Shell code twice (once in filer.js, once here). We need to
+  // optimize this when we look at making MakeDrive smaller.
   self.Shell = function(options) {
-    return fs.Shell(options);
+    return new Shell(self, options);
   };
 
   // Expose extra operations for checking whether path/fd is unsynced
