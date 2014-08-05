@@ -396,7 +396,7 @@ MakeDrive.Path = Filer.Path;
 MakeDrive.Errors = Filer.Errors;
 
 }).call(this,typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../../lib/filer.js":71,"../../lib/sync-path-resolver":74,"./sync-filesystem.js":4,"./sync-manager.js":5,"events":119,"request":80}],3:[function(_dereq_,module,exports){
+},{"../../lib/filer.js":72,"../../lib/sync-path-resolver":75,"./sync-filesystem.js":4,"./sync-manager.js":5,"events":120,"request":81}],3:[function(_dereq_,module,exports){
 var SyncMessage = _dereq_('../../lib/syncmessage');
 var rsync = _dereq_('../../lib/rsync');
 var rsyncOptions = _dereq_('../../lib/constants').rsyncDefaults;
@@ -587,7 +587,7 @@ function handleMessage(syncManager, data) {
 
 module.exports = handleMessage;
 
-},{"../../lib/constants":69,"../../lib/diff":70,"../../lib/rsync":73,"../../lib/syncmessage":75,"./sync-states":6,"./sync-steps":7}],4:[function(_dereq_,module,exports){
+},{"../../lib/constants":69,"../../lib/diff":70,"../../lib/rsync":74,"../../lib/syncmessage":76,"./sync-states":6,"./sync-steps":7}],4:[function(_dereq_,module,exports){
 /**
  * An extended Filer FileSystem with wrapped methods
  * for writing that manage file metadata (xattribs)
@@ -595,6 +595,7 @@ module.exports = handleMessage;
  */
 
 var Filer = _dereq_('../../lib/filer.js');
+var Shell = _dereq_('../../lib/filer-shell.js');
 var fsUtils = _dereq_('../../lib/fs-utils.js');
 var conflict = _dereq_('../../lib/conflict.js');
 var constants = _dereq_('../../lib/constants.js');
@@ -703,9 +704,14 @@ function SyncFileSystem(fs) {
     });
   };
 
-  // Expose fs.Shell()
+  // Expose fs.Shell() but use wrapped sync filesystem instance vs fs.
+  // This is a bit brittle, but since Filer doesn't expose the Shell()
+  // directly, we deal with it by doing a deep require into Filer's code
+  // ourselves. The other down side of this is that we're now including
+  // the Shell code twice (once in filer.js, once here). We need to
+  // optimize this when we look at making MakeDrive smaller.
   self.Shell = function(options) {
-    return fs.Shell(options);
+    return new Shell(self, options);
   };
 
   // Expose extra operations for checking whether path/fd is unsynced
@@ -719,7 +725,7 @@ function SyncFileSystem(fs) {
 
 module.exports = SyncFileSystem;
 
-},{"../../lib/conflict.js":68,"../../lib/constants.js":69,"../../lib/filer.js":71,"../../lib/fs-utils.js":72}],5:[function(_dereq_,module,exports){
+},{"../../lib/conflict.js":68,"../../lib/constants.js":69,"../../lib/filer-shell.js":71,"../../lib/filer.js":72,"../../lib/fs-utils.js":73}],5:[function(_dereq_,module,exports){
 var SyncMessage = _dereq_( '../../lib/syncmessage' ),
     messageHandler = _dereq_('./message-handler'),
     states = _dereq_('./sync-states'),
@@ -855,7 +861,7 @@ SyncManager.prototype.close = function() {
 
 module.exports = SyncManager;
 
-},{"../../lib/syncmessage":75,"./message-handler":3,"./sync-states":6,"./sync-steps":7,"ws":1}],6:[function(_dereq_,module,exports){
+},{"../../lib/syncmessage":76,"./message-handler":3,"./sync-states":6,"./sync-steps":7,"ws":1}],6:[function(_dereq_,module,exports){
 module.exports = {
   SYNCING: "SYNC IN PROGRESS",
   READY: "READY",
@@ -1839,7 +1845,7 @@ module.exports = {
 }());
 
 }).call(this,_dereq_("FWaASH"))
-},{"FWaASH":84}],9:[function(_dereq_,module,exports){
+},{"FWaASH":85}],9:[function(_dereq_,module,exports){
 // Based on https://github.com/diy/intercom.js/blob/master/lib/events.js
 // Copyright 2012 DIY Co Apache License, Version 2.0
 // http://www.apache.org/licenses/LICENSE-2.0
@@ -2819,7 +2825,7 @@ function b64_enc (data) {
 module.exports = request;
 
 }).call(this,_dereq_("buffer").Buffer)
-},{"buffer":81}],13:[function(_dereq_,module,exports){
+},{"buffer":82}],13:[function(_dereq_,module,exports){
 'use strict';
 // private property
 var _keyStr = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
@@ -3160,7 +3166,7 @@ module.exports.test = function(b){
     return Buffer.isBuffer(b);
 };
 }).call(this,_dereq_("buffer").Buffer)
-},{"buffer":81}],22:[function(_dereq_,module,exports){
+},{"buffer":82}],22:[function(_dereq_,module,exports){
 'use strict';
 var Uint8ArrayReader = _dereq_('./uint8ArrayReader');
 
@@ -4186,7 +4192,7 @@ else {
 }
 
 }).call(this,_dereq_("buffer").Buffer)
-},{"buffer":81}],27:[function(_dereq_,module,exports){
+},{"buffer":82}],27:[function(_dereq_,module,exports){
 'use strict';
 var DataReader = _dereq_('./dataReader');
 
@@ -11507,7 +11513,7 @@ module.exports = {
 };
 
 }).call(this,_dereq_("buffer").Buffer)
-},{"buffer":81}],50:[function(_dereq_,module,exports){
+},{"buffer":82}],50:[function(_dereq_,module,exports){
 var errors = {};
 [
   /**
@@ -13693,7 +13699,7 @@ module.exports = {
 };
 
 }).call(this,_dereq_("buffer").Buffer)
-},{"../../lib/nodash.js":11,"../constants.js":47,"../directory-entry.js":48,"../encoding.js":49,"../errors.js":50,"../node.js":55,"../open-file-description.js":56,"../path.js":57,"../stats.js":66,"../super-node.js":67,"buffer":81}],52:[function(_dereq_,module,exports){
+},{"../../lib/nodash.js":11,"../constants.js":47,"../directory-entry.js":48,"../encoding.js":49,"../errors.js":50,"../node.js":55,"../open-file-description.js":56,"../path.js":57,"../stats.js":66,"../super-node.js":67,"buffer":82}],52:[function(_dereq_,module,exports){
 var _ = _dereq_('../../lib/nodash.js');
 
 var isNullPath = _dereq_('../path.js').isNull;
@@ -14102,7 +14108,7 @@ module.exports = {
 };
 
 }).call(this,_dereq_("buffer").Buffer)
-},{"./errors.js":50,"./filesystem/interface.js":52,"./path.js":57,"buffer":81}],55:[function(_dereq_,module,exports){
+},{"./errors.js":50,"./filesystem/interface.js":52,"./path.js":57,"buffer":82}],55:[function(_dereq_,module,exports){
 var MODE_FILE = _dereq_('./constants.js').MODE_FILE;
 
 function Node(options) {
@@ -15652,7 +15658,7 @@ module.exports = {
   removeFileConflict: removeFileConflict
 };
 
-},{"./constants.js":69,"./filer.js":71,"./fs-utils.js":72}],69:[function(_dereq_,module,exports){
+},{"./constants.js":69,"./filer.js":72,"./fs-utils.js":73}],69:[function(_dereq_,module,exports){
 module.exports = {
   rsyncDefaults: {
     size: 5,
@@ -15746,10 +15752,15 @@ module.exports.deserialize = function(nodeDiffs) {
   return processFn(nodeDiffs, jsonToBuffer);
 };
 
-},{"./filer.js":71}],71:[function(_dereq_,module,exports){
+},{"./filer.js":72}],71:[function(_dereq_,module,exports){
+// Filer doesn't expose the Shell() ctor directly, so provide a shortcut.
+// See client/src/sync-filesystem.js
+module.exports = _dereq_('../client/thirdparty/filer/src/shell/shell.js');
+
+},{"../client/thirdparty/filer/src/shell/shell.js":65}],72:[function(_dereq_,module,exports){
 module.exports = _dereq_('../client/thirdparty/filer/src');
 
-},{"../client/thirdparty/filer/src":54}],72:[function(_dereq_,module,exports){
+},{"../client/thirdparty/filer/src":54}],73:[function(_dereq_,module,exports){
 /**
  * Extra common fs operations we do throughout MakeDrive.
  */
@@ -15860,7 +15871,7 @@ module.exports = {
   fgetUnsynced: fgetUnsynced
 };
 
-},{"./constants.js":69}],73:[function(_dereq_,module,exports){
+},{"./constants.js":69}],74:[function(_dereq_,module,exports){
 // rsync.js
 // Implement rsync to sync between two Filer filesystems
 // Portions used from Node.js Anchor module
@@ -16882,7 +16893,7 @@ rsync.compareContents = function(fs, checksums, chunkSize, callback) {
 
 module.exports = rsync;
 
-},{"./conflict.js":68,"./constants.js":69,"./filer.js":71,"./fs-utils.js":72,"MD5":76,"async":79,"crypto-js":93,"lodash":120}],74:[function(_dereq_,module,exports){
+},{"./conflict.js":68,"./constants.js":69,"./filer.js":72,"./fs-utils.js":73,"MD5":77,"async":80,"crypto-js":94,"lodash":121}],75:[function(_dereq_,module,exports){
 /**
  * Sync path resolver is a library that provides
  * functionality to determine 'syncable' paths
@@ -17057,7 +17068,7 @@ pathResolver.filterSynced = function(paths, syncedPaths) {
 
 module.exports = pathResolver;
 
-},{"./filer":71}],75:[function(_dereq_,module,exports){
+},{"./filer":72}],76:[function(_dereq_,module,exports){
 // Constructor
 function SyncMessage(type, name, content) {
   if(!isValidType(type)) {
@@ -17252,7 +17263,7 @@ SyncMessage.error = {
 
 module.exports = SyncMessage;
 
-},{}],76:[function(_dereq_,module,exports){
+},{}],77:[function(_dereq_,module,exports){
 (function (Buffer){
 (function(){
   var crypt = _dereq_('crypt'),
@@ -17416,7 +17427,7 @@ module.exports = SyncMessage;
 })();
 
 }).call(this,_dereq_("buffer").Buffer)
-},{"buffer":81,"charenc":77,"crypt":78}],77:[function(_dereq_,module,exports){
+},{"buffer":82,"charenc":78,"crypt":79}],78:[function(_dereq_,module,exports){
 var charenc = {
   // UTF-8 encoding
   utf8: {
@@ -17451,7 +17462,7 @@ var charenc = {
 
 module.exports = charenc;
 
-},{}],78:[function(_dereq_,module,exports){
+},{}],79:[function(_dereq_,module,exports){
 (function() {
   var base64map
       = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/',
@@ -17549,7 +17560,7 @@ module.exports = charenc;
   module.exports = crypt;
 })();
 
-},{}],79:[function(_dereq_,module,exports){
+},{}],80:[function(_dereq_,module,exports){
 (function (process){
 /*!
  * async
@@ -18676,9 +18687,420 @@ module.exports = charenc;
 }());
 
 }).call(this,_dereq_("FWaASH"))
-},{"FWaASH":84}],80:[function(_dereq_,module,exports){
-module.exports=_dereq_(12)
-},{"buffer":81}],81:[function(_dereq_,module,exports){
+},{"FWaASH":85}],81:[function(_dereq_,module,exports){
+// Browser Request
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+var XHR = XMLHttpRequest
+if (!XHR) throw new Error('missing XMLHttpRequest')
+
+module.exports = request
+request.log = {
+  'trace': noop, 'debug': noop, 'info': noop, 'warn': noop, 'error': noop
+}
+
+var DEFAULT_TIMEOUT = 3 * 60 * 1000 // 3 minutes
+
+//
+// request
+//
+
+function request(options, callback) {
+  // The entry-point to the API: prep the options object and pass the real work to run_xhr.
+  if(typeof callback !== 'function')
+    throw new Error('Bad callback given: ' + callback)
+
+  if(!options)
+    throw new Error('No options given')
+
+  var options_onResponse = options.onResponse; // Save this for later.
+
+  if(typeof options === 'string')
+    options = {'uri':options};
+  else
+    options = JSON.parse(JSON.stringify(options)); // Use a duplicate for mutating.
+
+  options.onResponse = options_onResponse // And put it back.
+
+  if (options.verbose) request.log = getLogger();
+
+  if(options.url) {
+    options.uri = options.url;
+    delete options.url;
+  }
+
+  if(!options.uri && options.uri !== "")
+    throw new Error("options.uri is a required argument");
+
+  if(typeof options.uri != "string")
+    throw new Error("options.uri must be a string");
+
+  var unsupported_options = ['proxy', '_redirectsFollowed', 'maxRedirects', 'followRedirect']
+  for (var i = 0; i < unsupported_options.length; i++)
+    if(options[ unsupported_options[i] ])
+      throw new Error("options." + unsupported_options[i] + " is not supported")
+
+  options.callback = callback
+  options.method = options.method || 'GET';
+  options.headers = options.headers || {};
+  options.body    = options.body || null
+  options.timeout = options.timeout || request.DEFAULT_TIMEOUT
+
+  if(options.headers.host)
+    throw new Error("Options.headers.host is not supported");
+
+  if(options.json) {
+    options.headers.accept = options.headers.accept || 'application/json'
+    if(options.method !== 'GET')
+      options.headers['content-type'] = 'application/json'
+
+    if(typeof options.json !== 'boolean')
+      options.body = JSON.stringify(options.json)
+    else if(typeof options.body !== 'string')
+      options.body = JSON.stringify(options.body)
+  }
+
+  // If onResponse is boolean true, call back immediately when the response is known,
+  // not when the full request is complete.
+  options.onResponse = options.onResponse || noop
+  if(options.onResponse === true) {
+    options.onResponse = callback
+    options.callback = noop
+  }
+
+  // XXX Browsers do not like this.
+  //if(options.body)
+  //  options.headers['content-length'] = options.body.length;
+
+  // HTTP basic authentication
+  if(!options.headers.authorization && options.auth)
+    options.headers.authorization = 'Basic ' + b64_enc(options.auth.username + ':' + options.auth.password);
+
+  return run_xhr(options)
+}
+
+var req_seq = 0
+function run_xhr(options) {
+  var xhr = new XHR
+    , timed_out = false
+    , is_cors = is_crossDomain(options.uri)
+    , supports_cors = ('withCredentials' in xhr)
+
+  req_seq += 1
+  xhr.seq_id = req_seq
+  xhr.id = req_seq + ': ' + options.method + ' ' + options.uri
+  xhr._id = xhr.id // I know I will type "_id" from habit all the time.
+
+  if(is_cors && !supports_cors) {
+    var cors_err = new Error('Browser does not support cross-origin request: ' + options.uri)
+    cors_err.cors = 'unsupported'
+    return options.callback(cors_err, xhr)
+  }
+
+  xhr.timeoutTimer = setTimeout(too_late, options.timeout)
+  function too_late() {
+    timed_out = true
+    var er = new Error('ETIMEDOUT')
+    er.code = 'ETIMEDOUT'
+    er.duration = options.timeout
+
+    request.log.error('Timeout', { 'id':xhr._id, 'milliseconds':options.timeout })
+    return options.callback(er, xhr)
+  }
+
+  // Some states can be skipped over, so remember what is still incomplete.
+  var did = {'response':false, 'loading':false, 'end':false}
+
+  xhr.onreadystatechange = on_state_change
+  xhr.open(options.method, options.uri, true) // asynchronous
+  if(is_cors)
+    xhr.withCredentials = !! options.withCredentials
+  xhr.send(options.body)
+  return xhr
+
+  function on_state_change(event) {
+    if(timed_out)
+      return request.log.debug('Ignoring timed out state change', {'state':xhr.readyState, 'id':xhr.id})
+
+    request.log.debug('State change', {'state':xhr.readyState, 'id':xhr.id, 'timed_out':timed_out})
+
+    if(xhr.readyState === XHR.OPENED) {
+      request.log.debug('Request started', {'id':xhr.id})
+      for (var key in options.headers)
+        xhr.setRequestHeader(key, options.headers[key])
+    }
+
+    else if(xhr.readyState === XHR.HEADERS_RECEIVED)
+      on_response()
+
+    else if(xhr.readyState === XHR.LOADING) {
+      on_response()
+      on_loading()
+    }
+
+    else if(xhr.readyState === XHR.DONE) {
+      on_response()
+      on_loading()
+      on_end()
+    }
+  }
+
+  function on_response() {
+    if(did.response)
+      return
+
+    did.response = true
+    request.log.debug('Got response', {'id':xhr.id, 'status':xhr.status})
+    clearTimeout(xhr.timeoutTimer)
+    xhr.statusCode = xhr.status // Node request compatibility
+
+    // Detect failed CORS requests.
+    if(is_cors && xhr.statusCode == 0) {
+      var cors_err = new Error('CORS request rejected: ' + options.uri)
+      cors_err.cors = 'rejected'
+
+      // Do not process this request further.
+      did.loading = true
+      did.end = true
+
+      return options.callback(cors_err, xhr)
+    }
+
+    options.onResponse(null, xhr)
+  }
+
+  function on_loading() {
+    if(did.loading)
+      return
+
+    did.loading = true
+    request.log.debug('Response body loading', {'id':xhr.id})
+    // TODO: Maybe simulate "data" events by watching xhr.responseText
+  }
+
+  function on_end() {
+    if(did.end)
+      return
+
+    did.end = true
+    request.log.debug('Request done', {'id':xhr.id})
+
+    xhr.body = xhr.responseText
+    if(options.json) {
+      try        { xhr.body = JSON.parse(xhr.responseText) }
+      catch (er) { return options.callback(er, xhr)        }
+    }
+
+    options.callback(null, xhr, xhr.body)
+  }
+
+} // request
+
+request.withCredentials = false;
+request.DEFAULT_TIMEOUT = DEFAULT_TIMEOUT;
+
+//
+// defaults
+//
+
+request.defaults = function(options, requester) {
+  var def = function (method) {
+    var d = function (params, callback) {
+      if(typeof params === 'string')
+        params = {'uri': params};
+      else {
+        params = JSON.parse(JSON.stringify(params));
+      }
+      for (var i in options) {
+        if (params[i] === undefined) params[i] = options[i]
+      }
+      return method(params, callback)
+    }
+    return d
+  }
+  var de = def(request)
+  de.get = def(request.get)
+  de.post = def(request.post)
+  de.put = def(request.put)
+  de.head = def(request.head)
+  return de
+}
+
+//
+// HTTP method shortcuts
+//
+
+var shortcuts = [ 'get', 'put', 'post', 'head' ];
+shortcuts.forEach(function(shortcut) {
+  var method = shortcut.toUpperCase();
+  var func   = shortcut.toLowerCase();
+
+  request[func] = function(opts) {
+    if(typeof opts === 'string')
+      opts = {'method':method, 'uri':opts};
+    else {
+      opts = JSON.parse(JSON.stringify(opts));
+      opts.method = method;
+    }
+
+    var args = [opts].concat(Array.prototype.slice.apply(arguments, [1]));
+    return request.apply(this, args);
+  }
+})
+
+//
+// CouchDB shortcut
+//
+
+request.couch = function(options, callback) {
+  if(typeof options === 'string')
+    options = {'uri':options}
+
+  // Just use the request API to do JSON.
+  options.json = true
+  if(options.body)
+    options.json = options.body
+  delete options.body
+
+  callback = callback || noop
+
+  var xhr = request(options, couch_handler)
+  return xhr
+
+  function couch_handler(er, resp, body) {
+    if(er)
+      return callback(er, resp, body)
+
+    if((resp.statusCode < 200 || resp.statusCode > 299) && body.error) {
+      // The body is a Couch JSON object indicating the error.
+      er = new Error('CouchDB error: ' + (body.error.reason || body.error.error))
+      for (var key in body)
+        er[key] = body[key]
+      return callback(er, resp, body);
+    }
+
+    return callback(er, resp, body);
+  }
+}
+
+//
+// Utility
+//
+
+function noop() {}
+
+function getLogger() {
+  var logger = {}
+    , levels = ['trace', 'debug', 'info', 'warn', 'error']
+    , level, i
+
+  for(i = 0; i < levels.length; i++) {
+    level = levels[i]
+
+    logger[level] = noop
+    if(typeof console !== 'undefined' && console && console[level])
+      logger[level] = formatted(console, level)
+  }
+
+  return logger
+}
+
+function formatted(obj, method) {
+  return formatted_logger
+
+  function formatted_logger(str, context) {
+    if(typeof context === 'object')
+      str += ' ' + JSON.stringify(context)
+
+    return obj[method].call(obj, str)
+  }
+}
+
+// Return whether a URL is a cross-domain request.
+function is_crossDomain(url) {
+  var rurl = /^([\w\+\.\-]+:)(?:\/\/([^\/?#:]*)(?::(\d+))?)?/
+
+  // jQuery #8138, IE may throw an exception when accessing
+  // a field from window.location if document.domain has been set
+  var ajaxLocation
+  try { ajaxLocation = location.href }
+  catch (e) {
+    // Use the href attribute of an A element since IE will modify it given document.location
+    ajaxLocation = document.createElement( "a" );
+    ajaxLocation.href = "";
+    ajaxLocation = ajaxLocation.href;
+  }
+
+  var ajaxLocParts = rurl.exec(ajaxLocation.toLowerCase()) || []
+    , parts = rurl.exec(url.toLowerCase() )
+
+  var result = !!(
+    parts &&
+    (  parts[1] != ajaxLocParts[1]
+    || parts[2] != ajaxLocParts[2]
+    || (parts[3] || (parts[1] === "http:" ? 80 : 443)) != (ajaxLocParts[3] || (ajaxLocParts[1] === "http:" ? 80 : 443))
+    )
+  )
+
+  //console.debug('is_crossDomain('+url+') -> ' + result)
+  return result
+}
+
+// MIT License from http://phpjs.org/functions/base64_encode:358
+function b64_enc (data) {
+    // Encodes string using MIME base64 algorithm
+    var b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+    var o1, o2, o3, h1, h2, h3, h4, bits, i = 0, ac = 0, enc="", tmp_arr = [];
+
+    if (!data) {
+        return data;
+    }
+
+    // assume utf8 data
+    // data = this.utf8_encode(data+'');
+
+    do { // pack three octets into four hexets
+        o1 = data.charCodeAt(i++);
+        o2 = data.charCodeAt(i++);
+        o3 = data.charCodeAt(i++);
+
+        bits = o1<<16 | o2<<8 | o3;
+
+        h1 = bits>>18 & 0x3f;
+        h2 = bits>>12 & 0x3f;
+        h3 = bits>>6 & 0x3f;
+        h4 = bits & 0x3f;
+
+        // use hexets to index into b64, and append result to encoded string
+        tmp_arr[ac++] = b64.charAt(h1) + b64.charAt(h2) + b64.charAt(h3) + b64.charAt(h4);
+    } while (i < data.length);
+
+    enc = tmp_arr.join('');
+
+    switch (data.length % 3) {
+        case 1:
+            enc = enc.slice(0, -2) + '==';
+        break;
+        case 2:
+            enc = enc.slice(0, -1) + '=';
+        break;
+    }
+
+    return enc;
+}
+
+},{}],82:[function(_dereq_,module,exports){
 /*!
  * The buffer module from node.js, for the browser.
  *
@@ -18695,35 +19117,22 @@ exports.INSPECT_MAX_BYTES = 50
 Buffer.poolSize = 8192
 
 /**
- * If `TYPED_ARRAY_SUPPORT`:
+ * If `Buffer._useTypedArrays`:
  *   === true    Use Uint8Array implementation (fastest)
- *   === false   Use Object implementation (most compatible, even IE6)
- *
- * Browsers that support typed arrays are IE 10+, Firefox 4+, Chrome 7+, Safari 5.1+,
- * Opera 11.6+, iOS 4.2+.
- *
- * Note:
- *
- * - Implementation must support adding new properties to `Uint8Array` instances.
- *   Firefox 4-29 lacked support, fixed in Firefox 30+.
- *   See: https://bugzilla.mozilla.org/show_bug.cgi?id=695438.
- *
- *  - Chrome 9-10 is missing the `TypedArray.prototype.subarray` function.
- *
- *  - IE10 has a broken `TypedArray.prototype.subarray` function which returns arrays of
- *    incorrect length in some situations.
- *
- * We detect these buggy browsers and set `TYPED_ARRAY_SUPPORT` to `false` so they will
- * get the Object implementation, which is slower but will work correctly.
+ *   === false   Use Object implementation (compatible down to IE6)
  */
-var TYPED_ARRAY_SUPPORT = (function () {
+Buffer._useTypedArrays = (function () {
+  // Detect if browser supports Typed Arrays. Supported browsers are IE 10+, Firefox 4+,
+  // Chrome 7+, Safari 5.1+, Opera 11.6+, iOS 4.2+. If the browser does not support adding
+  // properties to `Uint8Array` instances, then that's the same as no `Uint8Array` support
+  // because we need to be able to add all the node Buffer API methods. This is an issue
+  // in Firefox 4-29. Now fixed: https://bugzilla.mozilla.org/show_bug.cgi?id=695438
   try {
     var buf = new ArrayBuffer(0)
     var arr = new Uint8Array(buf)
     arr.foo = function () { return 42 }
-    return 42 === arr.foo() && // typed array instances can be augmented
-        typeof arr.subarray === 'function' && // chrome 9-10 lack `subarray`
-        new Uint8Array(1).subarray(1, 1).byteLength === 0 // ie10 has broken `subarray`
+    return 42 === arr.foo() &&
+        typeof arr.subarray === 'function' // Chrome 9-10 lack `subarray`
   } catch (e) {
     return false
   }
@@ -18747,23 +19156,23 @@ function Buffer (subject, encoding, noZero) {
 
   var type = typeof subject
 
+  if (encoding === 'base64' && type === 'string') {
+    subject = base64clean(subject)
+  }
+
   // Find the length
   var length
   if (type === 'number')
-    length = subject > 0 ? subject >>> 0 : 0
-  else if (type === 'string') {
-    if (encoding === 'base64')
-      subject = base64clean(subject)
+    length = coerce(subject)
+  else if (type === 'string')
     length = Buffer.byteLength(subject, encoding)
-  } else if (type === 'object' && subject !== null) { // assume object is array-like
-    if (subject.type === 'Buffer' && isArray(subject.data))
-      subject = subject.data
-    length = +subject.length > 0 ? Math.floor(+subject.length) : 0
-  } else
+  else if (type === 'object')
+    length = coerce(subject.length) // assume that object is array-like
+  else
     throw new Error('First argument needs to be a number, array or string.')
 
   var buf
-  if (TYPED_ARRAY_SUPPORT) {
+  if (Buffer._useTypedArrays) {
     // Preferred: Return an augmented `Uint8Array` instance for best performance
     buf = Buffer._augment(new Uint8Array(length))
   } else {
@@ -18774,7 +19183,7 @@ function Buffer (subject, encoding, noZero) {
   }
 
   var i
-  if (TYPED_ARRAY_SUPPORT && typeof subject.byteLength === 'number') {
+  if (Buffer._useTypedArrays && typeof subject.byteLength === 'number') {
     // Speed optimization -- use set if we're copying from a typed array
     buf._set(subject)
   } else if (isArrayish(subject)) {
@@ -18788,7 +19197,7 @@ function Buffer (subject, encoding, noZero) {
     }
   } else if (type === 'string') {
     buf.write(subject, 0, encoding)
-  } else if (type === 'number' && !TYPED_ARRAY_SUPPORT && !noZero) {
+  } else if (type === 'number' && !Buffer._useTypedArrays && !noZero) {
     for (i = 0; i < length; i++) {
       buf[i] = 0
     }
@@ -18820,7 +19229,7 @@ Buffer.isEncoding = function (encoding) {
 }
 
 Buffer.isBuffer = function (b) {
-  return !!(b != null && b._isBuffer)
+  return !!(b !== null && b !== undefined && b._isBuffer)
 }
 
 Buffer.byteLength = function (str, encoding) {
@@ -19095,7 +19504,7 @@ Buffer.prototype.copy = function (target, target_start, start, end) {
 
   var len = end - start
 
-  if (len < 100 || !TYPED_ARRAY_SUPPORT) {
+  if (len < 100 || !Buffer._useTypedArrays) {
     for (var i = 0; i < len; i++) {
       target[i + target_start] = this[i + start]
     }
@@ -19167,29 +19576,10 @@ function utf16leSlice (buf, start, end) {
 
 Buffer.prototype.slice = function (start, end) {
   var len = this.length
-  start = ~~start
-  end = end === undefined ? len : ~~end
+  start = clamp(start, len, 0)
+  end = clamp(end, len, len)
 
-  if (start < 0) {
-    start += len;
-    if (start < 0)
-      start = 0
-  } else if (start > len) {
-    start = len
-  }
-
-  if (end < 0) {
-    end += len
-    if (end < 0)
-      end = 0
-  } else if (end > len) {
-    end = len
-  }
-
-  if (end < start)
-    end = start
-
-  if (TYPED_ARRAY_SUPPORT) {
+  if (Buffer._useTypedArrays) {
     return Buffer._augment(this.subarray(start, end))
   } else {
     var sliceLen = end - start
@@ -19648,7 +20038,7 @@ Buffer.prototype.inspect = function () {
  */
 Buffer.prototype.toArrayBuffer = function () {
   if (typeof Uint8Array !== 'undefined') {
-    if (TYPED_ARRAY_SUPPORT) {
+    if (Buffer._useTypedArrays) {
       return (new Buffer(this)).buffer
     } else {
       var buf = new Uint8Array(this.length)
@@ -19739,6 +20129,25 @@ function base64clean (str) {
 function stringtrim (str) {
   if (str.trim) return str.trim()
   return str.replace(/^\s+|\s+$/g, '')
+}
+
+// slice(start, end)
+function clamp (index, len, defaultValue) {
+  if (typeof index !== 'number') return defaultValue
+  index = ~~index;  // Coerce to integer.
+  if (index >= len) return len
+  if (index >= 0) return index
+  index += len
+  if (index >= 0) return index
+  return 0
+}
+
+function coerce (length) {
+  // Coerce length to a number (possibly NaN), round up
+  // in case it's fractional (e.g. 123.456) then do a
+  // double negate to coerce a NaN to 0. Easy, right?
+  length = ~~Math.ceil(+length)
+  return length < 0 ? 0 : length
 }
 
 function isArray (subject) {
@@ -19849,7 +20258,7 @@ function assert (test, message) {
   if (!test) throw new Error(message || 'Failed assertion')
 }
 
-},{"base64-js":82,"ieee754":83}],82:[function(_dereq_,module,exports){
+},{"base64-js":83,"ieee754":84}],83:[function(_dereq_,module,exports){
 var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 ;(function (exports) {
@@ -19971,7 +20380,7 @@ var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 	exports.fromByteArray = uint8ToBase64
 }(typeof exports === 'undefined' ? (this.base64js = {}) : exports))
 
-},{}],83:[function(_dereq_,module,exports){
+},{}],84:[function(_dereq_,module,exports){
 exports.read = function(buffer, offset, isLE, mLen, nBytes) {
   var e, m,
       eLen = nBytes * 8 - mLen - 1,
@@ -20057,7 +20466,7 @@ exports.write = function(buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128;
 };
 
-},{}],84:[function(_dereq_,module,exports){
+},{}],85:[function(_dereq_,module,exports){
 // shim for using process in browser
 
 var process = module.exports = {};
@@ -20122,7 +20531,7 @@ process.chdir = function (dir) {
     throw new Error('process.chdir is not supported');
 };
 
-},{}],85:[function(_dereq_,module,exports){
+},{}],86:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -20350,7 +20759,7 @@ process.chdir = function (dir) {
 	return CryptoJS.AES;
 
 }));
-},{"./cipher-core":86,"./core":87,"./enc-base64":88,"./evpkdf":90,"./md5":95}],86:[function(_dereq_,module,exports){
+},{"./cipher-core":87,"./core":88,"./enc-base64":89,"./evpkdf":91,"./md5":96}],87:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -21226,7 +21635,7 @@ process.chdir = function (dir) {
 
 
 }));
-},{"./core":87}],87:[function(_dereq_,module,exports){
+},{"./core":88}],88:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -21972,7 +22381,7 @@ process.chdir = function (dir) {
 	return CryptoJS;
 
 }));
-},{}],88:[function(_dereq_,module,exports){
+},{}],89:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22096,7 +22505,7 @@ process.chdir = function (dir) {
 	return CryptoJS.enc.Base64;
 
 }));
-},{"./core":87}],89:[function(_dereq_,module,exports){
+},{"./core":88}],90:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22246,7 +22655,7 @@ process.chdir = function (dir) {
 	return CryptoJS.enc.Utf16;
 
 }));
-},{"./core":87}],90:[function(_dereq_,module,exports){
+},{"./core":88}],91:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22379,7 +22788,7 @@ process.chdir = function (dir) {
 	return CryptoJS.EvpKDF;
 
 }));
-},{"./core":87,"./hmac":92,"./sha1":111}],91:[function(_dereq_,module,exports){
+},{"./core":88,"./hmac":93,"./sha1":112}],92:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22446,7 +22855,7 @@ process.chdir = function (dir) {
 	return CryptoJS.format.Hex;
 
 }));
-},{"./cipher-core":86,"./core":87}],92:[function(_dereq_,module,exports){
+},{"./cipher-core":87,"./core":88}],93:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22590,7 +22999,7 @@ process.chdir = function (dir) {
 
 
 }));
-},{"./core":87}],93:[function(_dereq_,module,exports){
+},{"./core":88}],94:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22609,7 +23018,7 @@ process.chdir = function (dir) {
 	return CryptoJS;
 
 }));
-},{"./aes":85,"./cipher-core":86,"./core":87,"./enc-base64":88,"./enc-utf16":89,"./evpkdf":90,"./format-hex":91,"./hmac":92,"./lib-typedarrays":94,"./md5":95,"./mode-cfb":96,"./mode-ctr":98,"./mode-ctr-gladman":97,"./mode-ecb":99,"./mode-ofb":100,"./pad-ansix923":101,"./pad-iso10126":102,"./pad-iso97971":103,"./pad-nopadding":104,"./pad-zeropadding":105,"./pbkdf2":106,"./rabbit":108,"./rabbit-legacy":107,"./rc4":109,"./ripemd160":110,"./sha1":111,"./sha224":112,"./sha256":113,"./sha3":114,"./sha384":115,"./sha512":116,"./tripledes":117,"./x64-core":118}],94:[function(_dereq_,module,exports){
+},{"./aes":86,"./cipher-core":87,"./core":88,"./enc-base64":89,"./enc-utf16":90,"./evpkdf":91,"./format-hex":92,"./hmac":93,"./lib-typedarrays":95,"./md5":96,"./mode-cfb":97,"./mode-ctr":99,"./mode-ctr-gladman":98,"./mode-ecb":100,"./mode-ofb":101,"./pad-ansix923":102,"./pad-iso10126":103,"./pad-iso97971":104,"./pad-nopadding":105,"./pad-zeropadding":106,"./pbkdf2":107,"./rabbit":109,"./rabbit-legacy":108,"./rc4":110,"./ripemd160":111,"./sha1":112,"./sha224":113,"./sha256":114,"./sha3":115,"./sha384":116,"./sha512":117,"./tripledes":118,"./x64-core":119}],95:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22686,7 +23095,7 @@ process.chdir = function (dir) {
 	return CryptoJS.lib.WordArray;
 
 }));
-},{"./core":87}],95:[function(_dereq_,module,exports){
+},{"./core":88}],96:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -22955,7 +23364,7 @@ process.chdir = function (dir) {
 	return CryptoJS.MD5;
 
 }));
-},{"./core":87}],96:[function(_dereq_,module,exports){
+},{"./core":88}],97:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23034,7 +23443,7 @@ process.chdir = function (dir) {
 	return CryptoJS.mode.CFB;
 
 }));
-},{"./cipher-core":86,"./core":87}],97:[function(_dereq_,module,exports){
+},{"./cipher-core":87,"./core":88}],98:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23151,7 +23560,7 @@ process.chdir = function (dir) {
 	return CryptoJS.mode.CTRGladman;
 
 }));
-},{"./cipher-core":86,"./core":87}],98:[function(_dereq_,module,exports){
+},{"./cipher-core":87,"./core":88}],99:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23210,7 +23619,7 @@ process.chdir = function (dir) {
 	return CryptoJS.mode.CTR;
 
 }));
-},{"./cipher-core":86,"./core":87}],99:[function(_dereq_,module,exports){
+},{"./cipher-core":87,"./core":88}],100:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23251,7 +23660,7 @@ process.chdir = function (dir) {
 	return CryptoJS.mode.ECB;
 
 }));
-},{"./cipher-core":86,"./core":87}],100:[function(_dereq_,module,exports){
+},{"./cipher-core":87,"./core":88}],101:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23306,7 +23715,7 @@ process.chdir = function (dir) {
 	return CryptoJS.mode.OFB;
 
 }));
-},{"./cipher-core":86,"./core":87}],101:[function(_dereq_,module,exports){
+},{"./cipher-core":87,"./core":88}],102:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23356,7 +23765,7 @@ process.chdir = function (dir) {
 	return CryptoJS.pad.Ansix923;
 
 }));
-},{"./cipher-core":86,"./core":87}],102:[function(_dereq_,module,exports){
+},{"./cipher-core":87,"./core":88}],103:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23401,7 +23810,7 @@ process.chdir = function (dir) {
 	return CryptoJS.pad.Iso10126;
 
 }));
-},{"./cipher-core":86,"./core":87}],103:[function(_dereq_,module,exports){
+},{"./cipher-core":87,"./core":88}],104:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23442,7 +23851,7 @@ process.chdir = function (dir) {
 	return CryptoJS.pad.Iso97971;
 
 }));
-},{"./cipher-core":86,"./core":87}],104:[function(_dereq_,module,exports){
+},{"./cipher-core":87,"./core":88}],105:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23473,7 +23882,7 @@ process.chdir = function (dir) {
 	return CryptoJS.pad.NoPadding;
 
 }));
-},{"./cipher-core":86,"./core":87}],105:[function(_dereq_,module,exports){
+},{"./cipher-core":87,"./core":88}],106:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23519,7 +23928,7 @@ process.chdir = function (dir) {
 	return CryptoJS.pad.ZeroPadding;
 
 }));
-},{"./cipher-core":86,"./core":87}],106:[function(_dereq_,module,exports){
+},{"./cipher-core":87,"./core":88}],107:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23665,7 +24074,7 @@ process.chdir = function (dir) {
 	return CryptoJS.PBKDF2;
 
 }));
-},{"./core":87,"./hmac":92,"./sha1":111}],107:[function(_dereq_,module,exports){
+},{"./core":88,"./hmac":93,"./sha1":112}],108:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -23856,7 +24265,7 @@ process.chdir = function (dir) {
 	return CryptoJS.RabbitLegacy;
 
 }));
-},{"./cipher-core":86,"./core":87,"./enc-base64":88,"./evpkdf":90,"./md5":95}],108:[function(_dereq_,module,exports){
+},{"./cipher-core":87,"./core":88,"./enc-base64":89,"./evpkdf":91,"./md5":96}],109:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -24049,7 +24458,7 @@ process.chdir = function (dir) {
 	return CryptoJS.Rabbit;
 
 }));
-},{"./cipher-core":86,"./core":87,"./enc-base64":88,"./evpkdf":90,"./md5":95}],109:[function(_dereq_,module,exports){
+},{"./cipher-core":87,"./core":88,"./enc-base64":89,"./evpkdf":91,"./md5":96}],110:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -24189,7 +24598,7 @@ process.chdir = function (dir) {
 	return CryptoJS.RC4;
 
 }));
-},{"./cipher-core":86,"./core":87,"./enc-base64":88,"./evpkdf":90,"./md5":95}],110:[function(_dereq_,module,exports){
+},{"./cipher-core":87,"./core":88,"./enc-base64":89,"./evpkdf":91,"./md5":96}],111:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -24457,7 +24866,7 @@ process.chdir = function (dir) {
 	return CryptoJS.RIPEMD160;
 
 }));
-},{"./core":87}],111:[function(_dereq_,module,exports){
+},{"./core":88}],112:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -24608,7 +25017,7 @@ process.chdir = function (dir) {
 	return CryptoJS.SHA1;
 
 }));
-},{"./core":87}],112:[function(_dereq_,module,exports){
+},{"./core":88}],113:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -24689,7 +25098,7 @@ process.chdir = function (dir) {
 	return CryptoJS.SHA224;
 
 }));
-},{"./core":87,"./sha256":113}],113:[function(_dereq_,module,exports){
+},{"./core":88,"./sha256":114}],114:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -24889,7 +25298,7 @@ process.chdir = function (dir) {
 	return CryptoJS.SHA256;
 
 }));
-},{"./core":87}],114:[function(_dereq_,module,exports){
+},{"./core":88}],115:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -25213,7 +25622,7 @@ process.chdir = function (dir) {
 	return CryptoJS.SHA3;
 
 }));
-},{"./core":87,"./x64-core":118}],115:[function(_dereq_,module,exports){
+},{"./core":88,"./x64-core":119}],116:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -25297,7 +25706,7 @@ process.chdir = function (dir) {
 	return CryptoJS.SHA384;
 
 }));
-},{"./core":87,"./sha512":116,"./x64-core":118}],116:[function(_dereq_,module,exports){
+},{"./core":88,"./sha512":117,"./x64-core":119}],117:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -25621,7 +26030,7 @@ process.chdir = function (dir) {
 	return CryptoJS.SHA512;
 
 }));
-},{"./core":87,"./x64-core":118}],117:[function(_dereq_,module,exports){
+},{"./core":88,"./x64-core":119}],118:[function(_dereq_,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -26392,7 +26801,7 @@ process.chdir = function (dir) {
 	return CryptoJS.TripleDES;
 
 }));
-},{"./cipher-core":86,"./core":87,"./enc-base64":88,"./evpkdf":90,"./md5":95}],118:[function(_dereq_,module,exports){
+},{"./cipher-core":87,"./core":88,"./enc-base64":89,"./evpkdf":91,"./md5":96}],119:[function(_dereq_,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -26697,7 +27106,7 @@ process.chdir = function (dir) {
 	return CryptoJS;
 
 }));
-},{"./core":87}],119:[function(_dereq_,module,exports){
+},{"./core":88}],120:[function(_dereq_,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -27002,7 +27411,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],120:[function(_dereq_,module,exports){
+},{}],121:[function(_dereq_,module,exports){
 (function (global){
 /**
  * @license
