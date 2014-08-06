@@ -2,13 +2,13 @@ var uuid = require('node-uuid');
 var env = require('./environment');
 
 /**
- * This module creates and tracks session objects representing
- * an analogue to sessions authenticated with Webmaker-Auth.
- * Each session object can have secure tokens generated for it
+ * This module creates and tracks transaction objects representing
+ * an analogue to individual HTTP requests made using sessions authenticated with Webmaker-Auth.
+ * Each transaction object can have secure tokens generated for it
  * to be used to prove a user's identity when opening a
- * websocket connection for a particular session.
+ * websocket connection for a particular transaction.
  *
- * createSessionTracker(username)
+ * createTransactionTracker(username)
  *   - Creates an array to store tokens for a particular
  *     user session, and returns the UUID representing it.
  *
@@ -29,19 +29,18 @@ var env = require('./environment');
 var authTable = {};
 var TOKEN_TIMEOUT_MS = env.get("TOKEN_TIMEOUT_MS") || 60000; // Default to 60 sec
 
-function createSessionTracker(username, sessionId) {
+function createTransactionTracker(username, sessionId) { debugger;
   if (!authTable[username]) {
     authTable[username] = {};
   }
 
-  if(!sessionId) {
-    sessionId = uuid.v4();
-  }
+  sessionId = uuid.v4();
+
   authTable[username][sessionId] = [];
   return sessionId;
 }
 
-function generateTokenForSession(username, sessionId) {
+function generateTokenForSession(username, sessionId) { debugger;
   var sessionData = authTable[username][sessionId];
   var token = uuid.v4();
 
@@ -63,7 +62,7 @@ function authorizeToken(token) {
       index;
 
   // Token isn't valid?
-  if (username === null) {
+  if (username === null) { debugger;
     return null;
   }
 
@@ -73,7 +72,7 @@ function authorizeToken(token) {
     session = authTable[username][id];
     index = session.indexOf(token);
 
-    if (index >= 0) {
+    if (index >= 0) { debugger
       session.splice(index, 1);
       return  {
         username: username,
@@ -84,7 +83,7 @@ function authorizeToken(token) {
   return null;
 }
 
-function purgeSession(sessionId) {
+function purgeSession(sessionId) { debugger;
   var sessionData = authTable[sessionId];
 
   if (sessionData) {
@@ -109,7 +108,7 @@ function getUsernameByToken(token) {
 }
 
 module.exports = {
-  createSessionTracker: createSessionTracker,
+  createTransactionTracker: createTransactionTracker,
   generateTokenForSession: generateTokenForSession,
   authorizeToken: authorizeToken,
   purgeSession: purgeSession,
