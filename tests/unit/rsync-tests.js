@@ -1605,5 +1605,42 @@ describe('[Rsync Verification Tests]', function() {
         });
       });
     });
+
+    it('should create a non-existent directory if the directory path is used to sync', function (done) {
+      fs.mkdir('/dir', function (err) {
+        expect(err).to.not.exist;
+        fs.mkdir('/dir/dir2', function (err) {
+          expect(err).to.not.exist;
+          rsync.sourceList(fs, '/dir', OPTION_REC_SIZE, function (err, srcList) {
+            expect(err).to.not.exist;
+            expect(srcList).to.exist;
+            rsync.checksums(fs2, '/dir', srcList, OPTION_REC_SIZE, function (err, checksums) {
+              expect(err).to.not.exist;
+              expect(checksums).to.exist;
+              rsync.diff(fs, '/dir', checksums, OPTION_REC_SIZE, function (err, diffs) {
+                expect(err).to.not.exist;
+                expect(diffs).to.exist;
+                rsync.patch(fs2, '/dir', diffs, OPTION_REC_SIZE, function (err, paths) {
+                  expect(err).to.not.exist;
+                  expect(paths).to.exist;
+                  expect(paths.synced).to.have.members(['/dir/dir2']);
+                  fs2.stat('/dir', function (err, stats) {
+                    expect(err).to.not.exist;
+                    expect(stats).to.exist;
+                    expect(stats.isDirectory()).to.be.true;
+                    fs2.stat('/dir/dir2', function (err, stats) {
+                      expect(err).to.not.exist;
+                      expect(stats).to.exist;
+                      expect(stats.isDirectory()).to.be.true;
+                      done();
+                    });
+                  });
+                });
+              });
+            });
+          });
+        });
+      });
+    });
   });
 });
