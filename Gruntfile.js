@@ -144,7 +144,7 @@ module.exports = function(grunt) {
         stderr: true
       },
       run_mocha: {
-        command: './node_modules/.bin/mocha --timeout 60000 --recursive --reporter spec ./tests',
+        command: './node_modules/.bin/mocha --timeout 70000 --recursive --reporter spec ./tests',
         stdout: true,
         stderr: true
       }
