@@ -53,9 +53,9 @@ module.exports = function createRoutes( app, webmakerAuth ) {
 
   app.get( "/api/sync", middleware.crossOriginHandler, middleware.authenticationHandler, function( req, res ) {
     var username = req.params.username;
-    var id = req.params.sessionId;
+    var token = websocketAuth.generateTokenForClient(username);
 
-    res.json(200, websocketAuth.generateTokenForSession(username, id));
+    res.json(200, token);
   });
 
   app.get( "/healthcheck", function( req, res ) {

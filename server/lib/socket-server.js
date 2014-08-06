@@ -30,12 +30,12 @@ module.exports = function( server ) {
 
       // Authorize user
       var token = data.token;
-      var authData = websocketAuth.authorizeToken(token);
-      if ( !token || !authData ) {
+      var username = websocketAuth.authorizeToken(token);
+      if ( !username ) {
         return ws.close(1008, "Valid auth token required");
       }
 
-      var sync = Sync.create( authData.username, authData.sessionId );
+      var sync = Sync.create( username, token );
       sync.setSocket( ws );
 
       ws.on('close', sync.onClose());

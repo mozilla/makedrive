@@ -2,17 +2,13 @@ var uuid = require('node-uuid');
 var env = require('./environment');
 
 /**
- * This module creates and tracks session objects representing
- * an analogue to sessions authenticated with Webmaker-Auth.
- * Each session object can have secure tokens generated for it
+ * This module creates and tracks transaction objects representing
+ * an analogue to individual HTTP requests made using sessions authenticated with Webmaker-Auth.
+ * Each transaction object can have secure tokens generated for it
  * to be used to prove a user's identity when opening a
- * websocket connection for a particular session.
+ * websocket connection for a particular transaction.
  *
- * createSessionTracker(username)
- *   - Creates an array to store tokens for a particular
- *     user session, and returns the UUID representing it.
- *
- * generateTokenForSession(username, sessionId)
+ * generateTokenForClient(username)
  *   - Creates and stores a one-time use token for the passed user.
  *     A user can have multiple tokens at a time, one for each
  *     client session. After a set amount of time, the token expires
@@ -20,47 +16,45 @@ var env = require('./environment');
  *
  * authorizeToken(token)
  *   - If the token passed exists for a particular user, the token
- *     is deleted from the datastore, returning true.
- *
- * purgeSession(username, sessionId)
- *   - Deletes all tokens for a particular user session, intended to be
- *     used on webmakerauth signout.
+ *     is deleted from the datastore, returning the username
  */
 var authTable = {};
 var TOKEN_TIMEOUT_MS = env.get("TOKEN_TIMEOUT_MS") || 60000; // Default to 60 sec
 
-function createSessionTracker(username, sessionId) {
-  if (!authTable[username]) {
-    authTable[username] = {};
-  }
+function removeToken(token) {
+  var username = getUsernameByToken(token);
+  var tokenIndex = authTable[username] && authTable[username].indexOf(token);
 
-  if(!sessionId) {
-    sessionId = uuid.v4();
+  if (tokenIndex > -1){
+    authTable[username].splice(tokenIndex, 1);
+
+    if (authTable[username].length === 0) {
+      delete authTable[username];
+    }
   }
-  authTable[username][sessionId] = [];
-  return sessionId;
 }
 
-function generateTokenForSession(username, sessionId) {
-  var sessionData = authTable[username][sessionId];
-  var token = uuid.v4();
+function generateTokenForClient(username) {
+  if (!authTable[username]) {
+    authTable[username] = [];
+  }
 
-  // Invalidate the token if the client doesn't
-  // use it in time.
+  var token = uuid.v4();
+  authTable[username].push(token);
+
+  // When a token is used to open a websocket,
+  // we delete it from authTable to prevent it from being used again.
+  // If it isn't used in a reasonable amount of time,
+  // we remove it here.
   setTimeout(function(){
-    if (authTable[username][sessionId]){
-      sessionData.splice(sessionData.indexOf(token), 1);
-    }
+    removeToken(token);
   }, TOKEN_TIMEOUT_MS);
 
-  sessionData.push(token);
   return token;
 }
 
 function authorizeToken(token) {
-  var username = getUsernameByToken(token),
-      session,
-      index;
+  var username = getUsernameByToken(token);
 
   // Token isn't valid?
   if (username === null) {
@@ -68,50 +62,21 @@ function authorizeToken(token) {
   }
 
   // Token is valid, find and delete it,
-  // returning username & sessionId
-  for (var id in authTable[username]) {
-    session = authTable[username][id];
-    index = session.indexOf(token);
-
-    if (index >= 0) {
-      session.splice(index, 1);
-      return  {
-        username: username,
-        sessionId: id
-      };
-    }
-  }
-  return null;
-}
-
-function purgeSession(sessionId) {
-  var sessionData = authTable[sessionId];
-
-  if (sessionData) {
-    delete authTable[sessionId];
-  }
-}
-
-function logoutHandler(req, res, next) {
-  purgeSession(req.params.sessionId);
-  next();
+  // returning username
+  removeToken(token);
+  return username;
 }
 
 function getUsernameByToken(token) {
-  for (var username in authTable) {
-    for (var id in authTable[username]) {
-      if (authTable[username][id].indexOf(token) >= 0) {
-        return username;
-      }
+  for(var username in authTable) {
+    if(authTable[username].indexOf(token) > -1) {
+      return username;
     }
   }
   return null;
 }
 
 module.exports = {
-  createSessionTracker: createSessionTracker,
-  generateTokenForSession: generateTokenForSession,
-  authorizeToken: authorizeToken,
-  purgeSession: purgeSession,
-  logoutHandler: logoutHandler
+  generateTokenForClient: generateTokenForClient,
+  authorizeToken: authorizeToken
 };
