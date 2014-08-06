@@ -25,7 +25,8 @@ module.exports = {
     websocketAuth.createTransactionTracker(username);
 
     req.params.username = username;
-    req.params.sessionId = req.session.sessionId;
+    req.params.sessionId = websocketAuth.createTransactionTracker(username);
+
 
     next();
   },

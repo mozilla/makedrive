@@ -29,7 +29,7 @@ var env = require('./environment');
 var authTable = {};
 var TOKEN_TIMEOUT_MS = env.get("TOKEN_TIMEOUT_MS") || 60000; // Default to 60 sec
 
-function createTransactionTracker(username, sessionId) { debugger;
+function createTransactionTracker(username) {
   if (!authTable[username]) {
     authTable[username] = {};
   }
@@ -40,7 +40,7 @@ function createTransactionTracker(username, sessionId) { debugger;
   return sessionId;
 }
 
-function generateTokenForSession(username, sessionId) { debugger;
+function generateTokenForSession(username, sessionId) {
   var sessionData = authTable[username][sessionId];
   var token = uuid.v4();
 
