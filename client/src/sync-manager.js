@@ -2,7 +2,9 @@ var SyncMessage = require( '../../lib/syncmessage' ),
     messageHandler = require('./message-handler'),
     states = require('./sync-states'),
     steps = require('./sync-steps'),
-    WebSocket = require('ws');
+    WebSocket = require('ws'),
+    fsUtils = require('../../lib/fs-utils'),
+    async = require('async');
 
 function SyncManager(sync, fs) {
   var manager = this;
@@ -113,6 +115,29 @@ SyncManager.prototype.syncPath = function(path) {
   syncRequest = SyncMessage.request.sync;
   syncRequest.content = {path: path};
   manager.socket.send(syncRequest.stringify());
+};
+
+// Remove the unsynced attribute for a list of paths
+SyncManager.prototype.resetUnsynced = function(paths, callback) {
+  var fs = this.fs;
+
+  function removeUnsyncedAttr(path, callback) {
+    fsUtils.removeUnsynced(fs, path, function(err) {
+      if(err) {
+        return callback(err);
+      }
+
+      callback();
+    });
+  }
+
+  async.eachSeries(paths, removeUnsyncedAttr, function(err) {
+    if(err) {
+      return callback(err);
+    }
+
+    callback();
+  });
 };
 
 SyncManager.prototype.close = function() {

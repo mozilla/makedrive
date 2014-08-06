@@ -89,7 +89,7 @@ function handleResponse(syncManager, data) {
   function handlePatchAckResponse() {
     session.state = states.READY;
     session.step = steps.SYNCED;
-    sync.onCompleted();
+    sync.onCompleted(data.content.syncedPaths);
   }
 
   function handlePatchResponse() {

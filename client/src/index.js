@@ -199,14 +199,28 @@ function createFS(options) {
         sync.emit('syncing');
       };
 
-      sync.onCompleted = function() {
+      sync.onCompleted = function(paths) {
         // If changes happened to the files that needed to be synced
         // during the sync itself, they will be overwritten
         // https://github.com/mozilla/makedrive/issues/129 and
         // https://github.com/mozilla/makedrive/issues/3
 
-        sync.state = sync.SYNC_CONNECTED;
-        sync.emit('completed');
+        function complete() {
+          sync.state = sync.SYNC_CONNECTED;
+          sync.emit('completed');
+        }
+
+        if(!paths) {
+          return complete();
+        }
+
+        manager.resetUnsynced(paths, function(err) {
+          if(err) {
+            return sync.onError(err);
+          }
+
+          complete();
+        });
       };
 
       // Upgrade connection state to 'connected'

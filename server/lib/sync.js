@@ -147,13 +147,17 @@ function handleResponse(data) {
     var diffs = diffHelper.deserialize(data.content.diffs);
     that.state = Sync.LISTENING;
 
-    rsync.patch(that.fs, that.path, diffs, rsyncOptions, function(err) {
+    rsync.patch(that.fs, that.path, diffs, rsyncOptions, function(err, paths) {
       if(err) {
         delete connectedClients[that.username].currentSyncSession;
-        return SyncMessage.error.patch;
+        response = SyncMessage.error.patch;
+        response.content = paths;
+        return that.socket.send(response.stringify());
       }
 
-      that.socket.send(SyncMessage.response.patch.stringify());
+      response = SyncMessage.response.patch;
+      response.content = {syncedPaths: paths.synced};
+      that.socket.send(response.stringify());
       that.end();
     });
   }

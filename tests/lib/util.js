@@ -11,6 +11,7 @@ var Path = Filer.Path;
 var uuid = require( "node-uuid" );
 var async = require('async');
 var diffHelper = require("../../lib/diff");
+var deepEqual = require('deep-equal');
 
 // Ensure the client timeout restricts tests to a reasonable length
 var env = require('../../server/lib/environment');
@@ -87,6 +88,17 @@ function upload(username, path, contents, callback) {
     expect(res.statusCode).to.equal(200);
     callback();
   });
+}
+
+function comparePaths(a, b) {
+  // If objects have a .path property, use it.
+  if(a.path && b.path) {
+    a = a.path;
+    b = b.path;
+  }
+  if(a > b) return 1;
+  if(a < b) return -1;
+  return 0;
 }
 
 // Ensure that the file is downloadable via /p/ route
@@ -704,7 +716,7 @@ function ensureFilesystemLayout(fs, layout, callback) {
         fsListing = stripModified(fsListing);
         fs2Listing = stripModified(fs2Listing);
 
-        expect(fsListing).to.deep.equal(fs2Listing);
+        expect(deepEqual(fsListing, fs2Listing, {ignoreArrayOrder: true, compareFn: comparePaths})).to.be.true;
         callback();
       });
     });
@@ -743,7 +755,7 @@ function ensureRemoteFilesystemLayout(layout, jar, callback) {
         layoutFSListing = stripModified(layoutFSListing);
         remoteFSListing = stripModified(remoteFSListing);
 
-        expect(remoteFSListing).to.deep.equal(layoutFSListing);
+        expect(deepEqual(remoteFSListing, layoutFSListing, {ignoreArrayOrder: true, compareFn: comparePaths})).to.be.true;
         callback(err);
       });
     });
