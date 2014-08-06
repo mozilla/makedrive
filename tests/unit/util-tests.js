@@ -345,7 +345,7 @@ describe('Test util.js', function(){
             expect(data).to.exist;
             expect(data.path).to.exist;
 
-            util.upstreamSyncSteps.requestSync(socketPackage, data.path, function() {
+            util.upstreamSyncSteps.requestSync(socketPackage, data, function() {
               util.cleanupSockets(result.done, socketPackage);
             });
           });
@@ -361,7 +361,7 @@ describe('Test util.js', function(){
           expect(syncData).to.exist;
           expect(syncData.path).to.exist;
 
-          util.upstreamSyncSteps.requestSync(socketPackage, syncData.path, function() {
+          util.upstreamSyncSteps.requestSync(socketPackage, syncData, function() {
             util.cleanupSockets(result.done, socketPackage);
           });
         });
@@ -379,7 +379,7 @@ describe('Test util.js', function(){
           expect(fs.name).to.exist;
           expect(fs.watch).to.exist;
           expect(fs.provider).to.exist;
-          util.upstreamSyncSteps.requestSync(socketPackage, function(message, cb) {
+          util.upstreamSyncSteps.requestSync(socketPackage, syncData, function(message, cb) {
             message = util.toSyncMessage(message);
 
             expect(message).to.exist;
@@ -407,7 +407,7 @@ describe('Test util.js', function(){
           expect(syncData).to.exist;
           expect(syncData.path).to.exist;
 
-          util.upstreamSyncSteps.requestSync(socketPackage, syncData.path, function() {
+          util.upstreamSyncSteps.requestSync(socketPackage, syncData, function() {
             util.cleanupSockets(result.done, socketPackage);
           });
         });

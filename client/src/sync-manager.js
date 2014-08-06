@@ -103,13 +103,16 @@ SyncManager.prototype.init = function(url, token, callback) {
 
 SyncManager.prototype.syncPath = function(path) {
   var manager = this;
+  var syncRequest;
 
   if(!manager.socket) {
     throw new Error('sync called before init');
   }
 
   manager.session.path = path;
-  manager.socket.send(SyncMessage.request.sync.stringify());
+  syncRequest = SyncMessage.request.sync;
+  syncRequest.content = {path: path};
+  manager.socket.send(syncRequest.stringify());
 };
 
 SyncManager.prototype.close = function() {

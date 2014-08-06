@@ -81,7 +81,7 @@ function handleResponse(syncManager, data) {
       session.step = steps.DIFFS;
 
       var message = SyncMessage.request.chksum;
-      message.content = {srcList: srcList, path: session.path};
+      message.content = {srcList: srcList};
       socket.send(message.stringify());
     });
   }

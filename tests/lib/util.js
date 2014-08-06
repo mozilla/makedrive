@@ -415,6 +415,7 @@ var upstreamSyncSteps = {
     });
 
     var requestSyncMessage = SyncMessage.request.sync;
+    requestSyncMessage.content = {path: data.path};
     socketPackage.socket.send(requestSyncMessage.stringify());
   },
   generateChecksums: function(socketPackage, data, customAssertions, cb) {
@@ -445,7 +446,6 @@ var upstreamSyncSteps = {
 
     var requestChksumMsg = SyncMessage.request.chksum;
     requestChksumMsg.content = {
-      path: data.path,
       srcList: data.srcList
     };
     socketPackage.socket.send(requestChksumMsg.stringify());

@@ -62,10 +62,15 @@ function handleRequest(data) {
   }
 
   function handleSyncInitRequest() {
+    if(!data.content || !data.content.path) {
+      that.updateLastContact();
+      return that.socket.send(SyncMessage.error.content.stringify());
+    }
+
     if(that.canSync()) {
       response = SyncMessage.response.sync;
       that.state = Sync.CHKSUM;
-      that.init();
+      that.init(data.content.path);
       that.updateLastContact();
     } else {
       response = SyncMessage.error.locked;
@@ -75,15 +80,14 @@ function handleRequest(data) {
   }
 
   function handleChecksumRequest() {
-    if(!data.content || !data.content.srcList || !data.content.path) {
+    if(!data.content || !data.content.srcList) {
       that.updateLastContact();
       return that.socket.send(SyncMessage.error.content.stringify());
     }
 
     var srcList = data.content.srcList;
-    var path = data.content.path;
 
-    rsync.checksums(that.fs, path, srcList, rsyncOptions, function(err, checksums) {
+    rsync.checksums(that.fs, that.path, srcList, rsyncOptions, function(err, checksums) {
       if(err) {
         that.state = Sync.LISTENING;
         response = SyncMessage.error.chksum;
@@ -91,7 +95,7 @@ function handleRequest(data) {
         delete connectedClients[that.username].currentSyncSession;
       } else {
         response = SyncMessage.request.diffs;
-        response.content = {checksums: checksums, path: that.path};
+        response.content = {checksums: checksums};
         that.state = Sync.PATCH;
       }
       that.updateLastContact();
@@ -141,8 +145,8 @@ function handleResponse(data) {
     }
 
     var diffs = diffHelper.deserialize(data.content.diffs);
-    var path = data.content.path;
     that.state = Sync.LISTENING;
+
     rsync.patch(that.fs, that.path, diffs, rsyncOptions, function(err) {
       if(err) {
         delete connectedClients[that.username].currentSyncSession;
@@ -227,8 +231,9 @@ function Sync(username, sessionId) {
 }
 
 // Initialize a sync for a client
-Sync.prototype.init = function() {
+Sync.prototype.init = function(path) {
   if(!(connectedClients[this.username].currentSyncSession)) {
+    this.path = path;
     connectedClients[this.username].currentSyncSession = this.sessionId;
   }
 };

@@ -216,6 +216,7 @@ describe('[Downstream Syncing with Websockets]', function(){
          util.downstreamSyncSteps.patchClientFilesystem(socketPackage, syncData, fs, function(msg, cb) {
            msg = util.toSyncMessage(msg);
            var startSyncMsg = SyncMessage.request.sync;
+           startSyncMsg.content = {path: '/'};
            util.sendSyncMessage(socketPackage, startSyncMsg, function(message){
              message = util.toSyncMessage(message);
 
@@ -238,6 +239,7 @@ describe('[Downstream Syncing with Websockets]', function(){
 
        util.prepareDownstreamSync(result.username, result.token, function(err, data, fs, socketPackage) {
          var startSyncMsg = SyncMessage.request.sync;
+         startSyncMsg.content = {path: '/'};
          util.sendSyncMessage(socketPackage, startSyncMsg, function(msg){
            var msg = util.toSyncMessage(msg);
 
@@ -385,28 +387,6 @@ describe('[Upstream Syncing with Websockets]', function(){
           var requestChksumMsg = SyncMessage.request.chksum;
           requestChksumMsg.content = {
             path: syncData.path
-          };
-          socketPackage.socket.send(requestChksumMsg.stringify());
-
-          util.sendSyncMessage(socketPackage, requestChksumMsg, function(msg) {
-            msg = util.toSyncMessage(msg);
-
-            expect(msg).to.deep.equal(SyncMessage.error.content);
-
-            util.cleanupSockets(result.done, socketPackage);
-          });
-        });
-      });
-    });
-    it('should return a CONTENT error SyncMessage if path isn\'t passed', function(done) {
-      // Authorize a user, open a socket, authorize and complete a downstream sync
-      util.authenticatedConnection({ done: done }, function( err, result ) {
-        expect(err).not.to.exist;
-
-        util.prepareUpstreamSync('requestSync', result.username, result.token, function(syncData, fs, socketPackage) {
-          var requestChksumMsg = SyncMessage.request.chksum;
-          requestChksumMsg.content = {
-            srcList: syncData.srcList
           };
           socketPackage.socket.send(requestChksumMsg.stringify());
 
