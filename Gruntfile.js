@@ -51,7 +51,7 @@ module.exports = function(grunt) {
           mangle: false
         },
         files: {
-          'client/demo/js/compiled/dependencies.min.js': [
+          'demo/js/compiled/dependencies.min.js': [
             'client/vendors/jquery/dist/jquery.min.js',
             'client/vendors/ace-builds/src-min/ace.js',
             'client/vendors/ace-builds/src-min/theme-monokai.js',
@@ -73,7 +73,7 @@ module.exports = function(grunt) {
           mangle: false
         },
         files: {
-          'client/demo/js/compiled/app.min.js': ['client/demo/js/angular/*.js']
+          'demo/js/compiled/app.min.js': ['demo/js/angular/*.js']
         },
       }
     },
@@ -162,7 +162,7 @@ module.exports = function(grunt) {
 
     watch: {
       angular: {
-        files: ['client/demo/js/angular/*.js'],
+        files: ['demo/js/angular/*.js'],
         tasks: ['uglify:angular_app'],
         options: {
           spawn: false
