@@ -294,10 +294,10 @@ Sync.prototype.setSocket = function(ws) {
 };
 
 // Close event for a sync
-Sync.prototype.onClose = function() {
+Sync.prototype.onClose = function() { debugger;
   var username = this.username;
   var id = this.sessionId;
-  return function() {
+  return function() { debugger
     delete connectedClients[username][id];
 
     // Also remove the username from the list if there are no more connected clients.
