@@ -35,7 +35,7 @@ describe('MakeDrive Client - sync a single file', function(){
         util.createFilesystemLayout(fs, fullLayout, function(err) {
           expect(err).not.to.exist;
 
-          sync.request('/file1');
+          sync.request();
         });
       });
 
