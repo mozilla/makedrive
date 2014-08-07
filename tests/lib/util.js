@@ -14,6 +14,7 @@ var uuid = require( "node-uuid" );
 var async = require('async');
 var diffHelper = require("../../lib/diff");
 var deepEqual = require('deep-equal');
+var MakeDrive = require('../../client/src/index.js');
 
 // Ensure the client timeout restricts tests to a reasonable length
 var env = require('../../server/lib/environment');
@@ -897,6 +898,58 @@ function ensureRemoteFilesystem(layout, jar, callback) {
   });
 }
 
+/**
+ * Setup a new client connection and do a downstream sync, leaving the
+ * connection open. If a layout is given, we also sync that up to the server.
+ * Callers should disconnect the client when done.  Callers can pass Filer
+ * FileSystem options on the options object.
+ */
+function setupSyncClient(options, callback) {
+  authenticateAndConnect(options, function(err, result) {
+    if(err) {
+      return callback(err);
+    }
+
+    // Make sure we have sane defaults on the options object for a filesystem
+    options.provider = options.provider ||
+      new Filer.FileSystem.providers.Memory(result.username + Date.now());
+    options.manual = !!options.manual;
+    options.forceCreate = true;
+
+    var fs = MakeDrive.fs(options);
+    var sync = fs.sync;
+    var client = {
+      jar: result.jar,
+      username: result.username,
+      fs: fs,
+      sync: sync
+    };
+
+    sync.once('connected', function onConnected() {
+      if(options.layout) {
+        sync.once('completed', function onUpstreamCompleted() {
+          callback(null, client);
+        });
+
+        createFilesystemLayout(fs, options.layout, function(err) {
+          if(err) {
+            return callback(err);
+          }
+          sync.request();
+        });
+      } else {
+        callback(null, client);
+      }
+    });
+
+    sync.once('error', function(err) {
+      callback(err);
+    });
+
+    sync.connect(socketURL, result.token);
+  });
+}
+
 module.exports = {
   // Misc helpers
   app: app,
@@ -933,5 +986,6 @@ module.exports = {
   downstreamSyncSteps: downstreamSyncSteps,
   upstreamSyncSteps: upstreamSyncSteps,
   sendSyncMessage: sendSyncMessage,
-  completeDownstreamSync: completeDownstreamSync
+  completeDownstreamSync: completeDownstreamSync,
+  setupSyncClient: setupSyncClient
 };
