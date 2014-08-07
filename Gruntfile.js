@@ -191,7 +191,7 @@ module.exports = function(grunt) {
   grunt.registerTask( "test", [ "jshint", "exec:run_mocha" ] );
   grunt.registerTask( "default", [ "test" ] );
   grunt.registerTask( "init", [ "exec:update_submodule", "exec:npm_install_submodule" ] );
-  grunt.registerTask( "build", [ "test", "clean", "browserify:makedriveClient", "uglify" ] );
+  grunt.registerTask( "build", [ "clean", "browserify:makedriveClient", "uglify" ] );
   grunt.registerTask( "install", [ "uglify:dependencies", "uglify:angular_app" ] );
   grunt.registerTask( "dev", [ "uglify:angular_app", "express:dev", "watch" ] );
 
