@@ -72,6 +72,15 @@ Below is a simple way to create and initiate a MakeDrive instance on client-side
 
 Multiple calls to `MakeDrive.fs()` will return the same instance.
 
+### Routes
+
+3 HTTP REST endpoints have been implemented in MakeDrive to store and retrieve data. Each one is accessed by simply
+appending them to the URL that currently hosts MakeDrive (eg. `https://makedrive.mofostaging.net/p/`):
+
+&nbsp;&nbsp;`/p/` - Serves as a path for a user's Filer filesystem. You can currently view anything that has been synced inside of the user's project directory tree. <br>
+&nbsp;&nbsp;`/j/` - A similar path to the `/p/` route, but serves the path information in `JSON` format for APIs.<br>
+&nbsp;&nbsp;`/z/` - Used to export the current user's project data in compressed ZIP format.
+
 ## API Reference
 
 ###Constructor
