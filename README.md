@@ -61,6 +61,11 @@ $ npm start
 
 You will now have MakeDrive running on localhost via port 9090 - [http://localhost:9090](http://localhost:9090)
 
+### Developer Demo
+
+An independent and lightweight front-end instance has been added to test MakeDrive's functionality on its own.
+It currently resides on and can be visited at [localhost:9090/demo/?makedrive=ws://localhost:9090](localhost:9090/demo/?makedrive=ws://localhost:9090).
+
 ## Overview
 Built on top of the [Filer](https://github.com/js-platform/filer) filesystem interface, MakeDrive adds cloud-like syncing functionality that allows for multiple clients to share and interact with an active project directory from different browsers
 or platforms. There are features and options for both ***manual*** and ***auto*** syncing.
