@@ -6,6 +6,7 @@
 
 var Filer = require('../../lib/filer.js');
 var Shell = require('../../lib/filer-shell.js');
+var Path = Filer.Path;
 var fsUtils = require('../../lib/fs-utils.js');
 var conflict = require('../../lib/conflict.js');
 var constants = require('../../lib/constants.js');
@@ -28,12 +29,11 @@ function SyncFileSystem(fs) {
 
   // The following non-modifying fs operations can be run as normal,
   // and are simply forwarded to the fs instance. NOTE: we have
-  // included setting xattributes since we don't sync these to the server.
-  // Also note that fs.unlink is here since we don't want to flag such changes.
+  // included setting xattributes since we don't sync these to the server (yet).
   ['stat', 'fstat', 'lstat', 'exists', 'readlink', 'realpath',
-   'rmdir', 'readdir', 'open', 'close', 'fsync', 'read', 'readFile',
+   'readdir', 'open', 'close', 'fsync', 'read', 'readFile',
    'setxattr', 'fsetxattr', 'getxattr', 'fgetxattr', 'removexattr',
-   'fremovexattr', 'watch', 'unlink'].forEach(function(method) {
+   'fremovexattr', 'watch'].forEach(function(method) {
      self[method] = function() {
        fs[method].apply(fs, arguments);
      };
@@ -47,67 +47,70 @@ function SyncFileSystem(fs) {
     fsUtils.setUnsynced(fs, path, callback);
   }
 
-  // These methods modify the filesystem. Wrap these calls.
-  ['rename', 'truncate', 'link', 'symlink', 'mknod', 'mkdir',
-   'utimes', 'writeFile','ftruncate', 'futimes', 'write',
-   'appendFile'].forEach(function(method) {
-     self[method] = function() {
-       var args = Array.prototype.slice.call(arguments, 0);
-       var lastIdx = args.length - 1;
-       var callback = args[lastIdx];
+  // We wrap all fs methods that modify the filesystem in some way that matters
+  // for syncing (i.e., changes we need to sync back to the server), such that we
+  // can track things. Different fs methods need to do this in slighly different ways,
+  // but the overall logic is the same.  The wrapMethod() fn defines this logic.
+  function wrapMethod(method, pathArgPos, setUnsyncedFn, useParentPath) {
+    return function() {
+      var args = Array.prototype.slice.call(arguments, 0);
+      var lastIdx = args.length - 1;
+      var callback = args[lastIdx];
 
-       // Grab the path or fd so we can use it to set the xattribute.
-       // Most methods take `path` or `fd` as the first arg, but it's
-       // second for some.
-       var pathOrFD;
-       switch(method) {
-         case 'rename':
-         case 'link':
-         case 'symlink':
-           pathOrFD = args[1];
-           break;
-         default:
-           pathOrFD = args[0];
-           break;
-       }
+      // Grab the path or fd so we can use it to set the xattribute.
+      // Most methods take `path` or `fd` as the first arg, but it's
+      // second for some.
+      var pathOrFD = args[pathArgPos];
 
-       // Check to see if it is a path or an open file descriptor
-       // TODO: Deal with a case of fs.open for a path with a write flag
-       // https://github.com/mozilla/makedrive/issues/210
-       if(!fs.openFiles[pathOrFD]) {
+      // In most cases we want to use the path itself, but in the case
+      // that a node is being removed, we want the parent dir.
+      pathOrFD = useParentPath ? Path.dirname(pathOrFD) : pathOrFD;
+
+      // Check to see if it is a path or an open file descriptor
+      // TODO: Deal with a case of fs.open for a path with a write flag
+      // https://github.com/mozilla/makedrive/issues/210.
+      if(!fs.openFiles[pathOrFD]) {
         self.pathToSync = pathOrFD;
-       }
+      }
 
-       // Figure out which function to use when setting the xattribute
-       // depending on whether this method uses paths or descriptors.
-       var setUnsyncedFn;
-       switch(method) {
-         case 'ftruncate':
-         case 'futimes':
-         case 'write':
-           setUnsyncedFn = fsetUnsynced;
-           break;
-         default:
-           setUnsyncedFn = setUnsynced;
-           break;
-       }
+      args[lastIdx] = function wrappedCallback() {
+        var args = Array.prototype.slice.call(arguments, 0);
+        if(args[0]) {
+          return callback(args[0]);
+        }
 
-       args[lastIdx] = function wrappedCallback() {
-         var args = Array.prototype.slice.call(arguments, 0);
-         if(args[0]) {
-           return callback(args[0]);
-         }
+        setUnsyncedFn(pathOrFD, function(err) {
+          if(err) {
+            return callback(err);
+          }
+          callback.apply(null, args);
+        });
+      };
 
-         setUnsyncedFn(pathOrFD, function(err) {
-           if(err) {
-             return callback(err);
-           }
-           callback.apply(null, args);
-         });
-       };
+      fs[method].apply(fs, args);
+    };
+  }
 
-       fs[method].apply(fs, args);
-     };
+  // Wrapped fs methods that have path at first arg position and use paths
+  ['truncate', 'mknod', 'mkdir', 'utimes', 'writeFile',
+   'appendFile'].forEach(function(method) {
+     self[method] = wrapMethod(method, 0, setUnsynced);
+  });
+
+  // Wrapped fs methods that have path at second arg position
+  ['rename', 'link', 'symlink'].forEach(function(method) {
+    self[method] = wrapMethod(method, 1, setUnsynced);
+  });
+
+  // Wrapped fs methods that use file descriptors
+  ['ftruncate', 'futimes', 'write'].forEach(function(method) {
+    self[method] = wrapMethod(method, 0, fsetUnsynced);
+  });
+
+  // Wrapped fs methods that have path at first arg position and use parent
+  // path for writing unsynced metadata (i.e., removes node)
+  ['rmdir', 'unlink'].forEach(function(method) {
+    self[method] = wrapMethod(method, 0, setUnsynced, true);
   });
 
   // We also want to do extra work in the case of a rename.
