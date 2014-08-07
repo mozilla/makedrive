@@ -64,7 +64,11 @@ You will now have MakeDrive running on localhost via port 9090 - [http://localho
 ### Developer Demo
 
 An independent and lightweight front-end instance has been added to test MakeDrive's functionality on its own.
+The [NODE_ENV](https://github.com/mozilla/makedrive/blob/master/env.dist#L5) variable must be set to `development` in your `.env` file for this page to be enabled.
 It currently resides on and can be visited at [localhost:9090/demo/?makedrive=ws://localhost:9090](localhost:9090/demo/?makedrive=ws://localhost:9090).
+
+**NOTE:** For connecting the demo with another MakeDrive server, the localhost address and port of the above demo page must be added to the [ALLOWED_CORS_DOMAINS](https://github.com/mozilla/makedrive/blob/master/env.dist#L12) variable in the `.env` file of
+the instance you are trying to connect to in order to avoid cross-origin resource errors.
 
 ## Overview
 Built on top of the [Filer](https://github.com/js-platform/filer) filesystem interface, MakeDrive adds cloud-like syncing functionality that allows for multiple clients to share and interact with an active project directory from different browsers
@@ -79,11 +83,11 @@ Multiple calls to `MakeDrive.fs()` will return the same instance.
 
 ### Routes
 
-3 HTTP REST endpoints have been implemented in MakeDrive to store and retrieve data. Each one is accessed by simply
-appending them to the URL that currently hosts MakeDrive (eg. `https://makedrive.mofostaging.net/p/`):
+MakeDrive has three HTTP REST endpoints for retrieving user filesystem data in various formats. All of these routes require authentication and are not meant for public use, but for users and apps to allow easy access to data when logged in.
+Each one is accessed by simply being appended to the URL that presently hosts MakeDrive <br>(eg. `https://makedrive.mofostaging.net/p/`):
 
 &nbsp;&nbsp;`/p/` - Serves as a path for a user's Filer filesystem. You can currently view anything that has been synced inside of the user's project directory tree. <br>
-&nbsp;&nbsp;`/j/` - A similar path to the `/p/` route, but serves the path information in `JSON` format for APIs.<br>
+&nbsp;&nbsp;`/j/` - Similar to the `/p/` route, but serves the path information in `JSON` format for APIs.<br>
 &nbsp;&nbsp;`/z/` - Used to export the current user's project data in compressed ZIP format.
 
 ## API Reference
@@ -107,7 +111,7 @@ Option | Value | Definition
 `memory` | `<Boolean>` | by default we use a persistent store (indexeddb or websql). Using memory=true overrides and uses a temporary ram disk.
 `provider` | `<Object>` | a Filer data provider to use instead of the default provider normally used. The provider given should already be instantiated (i.e., don't pass a constructor function).
 `forceCreate` | `<Boolean>` | by default we return the same fs instance with every call to `MakeDrive.fs()`. In some cases it is necessary to have multiple instances.  Using forceCreate=true does this.
-`interval` | `<Number>` | by default, the filesystem syncs every minute if auto syncing is turned on otherwise the interval between syncs can be specified in ms.
+`interval` | `<Number>` | by default, the filesystem syncs every minute if auto syncing is turned on, otherwise the interval between syncs can be specified in ms.
 
 Various bits of Filer are available on MakeDrive, including:
 
@@ -141,7 +145,7 @@ Method | Purpose
 ------ | -------------------------------------------
  `connect(url, [token])` | Try to connect to the specified sync server URL. An 'error' or 'connected' event will follow, depending on success. If the token parameter is provided, that authentication token will be used. Otherwise the client will try to obtain one from the server's /api/sync route. This requires the user to be authenticated previously with Webmaker.
  `disconnect()` | Disconnect from the sync server.
- `request(path)` | Request a sync with the server for the specified path. Such requests may or may not be processed right away.
+ `request()` | Request a sync with the server. The path is automatically tracked by any changes that occur within the filesystem. Such requests may or may not be processed.
 
 
  Finally, the `sync` property also exposes a "state", which is the
