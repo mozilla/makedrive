@@ -112,7 +112,7 @@ module.exports = global.WebSocket;
 var SyncManager = _dereq_('./sync-manager.js');
 var SyncFileSystem = _dereq_('./sync-filesystem.js');
 var Filer = _dereq_('../../lib/filer.js');
-var syncPathResolver = _dereq_('../../lib/sync-path-resolver');
+var resolvePath = _dereq_('../../lib/sync-path-resolver').resolve;
 var EventEmitter = _dereq_('events').EventEmitter;
 var request = _dereq_('request');
 
@@ -142,11 +142,8 @@ function createFS(options) {
   var manager;
 
   // Auto-sync handles
-  var watcher;
   var autoSync;
-  var syncPaths = [];
-  var syncInterval = options.interval|0;
-  syncInterval = syncInterval > 0 ? syncInterval : 60 * 1000;
+  var pathCache;
 
   // State of the sync connection
   sync.SYNC_DISCONNECTED = 0;
@@ -160,40 +157,27 @@ function createFS(options) {
 
   // Turn on auto-syncing if its not already on
   sync.auto = function(interval) {
-    if(watcher) {
-      return;
-    }
-
-    syncInterval = interval|0 > 0 ? interval|0 : 60 * 1000;
-
-    watcher = fs.watch('/', {recursive: true}, function(event, filename) {
-      syncPaths.push(filename);
-    });
+    var syncInterval = interval|0 > 0 ? interval|0 : 60 * 1000;
 
     if(autoSync) {
       clearInterval(autoSync);
     }
 
-    autoSync = setInterval(function() {
-      var pathToSync = '/';
-      if(syncPaths.length) {
-        pathToSync = syncPathResolver.resolve(syncPaths);
-        sync.request(pathToSync);
-      }
-    }, syncInterval);
+    autoSync = setInterval(sync.request, syncInterval);
   };
 
   // Turn off auto-syncing and turn on manual syncing
   sync.manual = function() {
-    if(watcher) {
-      watcher.close();
-      watcher = null;
+    if(autoSync) {
       clearInterval(autoSync);
       autoSync = null;
     }
   };
 
   sync.onError = function(err) {
+    // Regress to the path that needed to be synced but failed 
+    // (likely because of a sync LOCK)
+    fs.pathToSync = pathCache;
     sync.state = sync.SYNC_ERROR;
     sync.emit('error', err);
   };
@@ -203,19 +187,23 @@ function createFS(options) {
     sync.emit('disconnected');
   };
 
-  // Request that a sync begin for the specified path (optional).
-  sync.request = function(path) {
+  // Request that a sync begin.
+  sync.request = function() {
     // If we're not connected (or are already syncing), ignore this request
     if(sync.state !== sync.SYNC_CONNECTED) {
       // TODO: https://github.com/mozilla/makedrive/issues/115
       return;
     }
 
-    // Make sure the path exists, otherwise use root dir
-    fs.exists(path, function(exists) {
-      path = exists ? path : '/';
-      manager.syncPath(path);
-    });
+    // If there were no changes to the filesystem, ignore this request
+    if(!fs.pathToSync) {
+      return;
+    }
+
+    // Cache the path that needs to be synced for error recovery
+    pathCache = fs.pathToSync;
+    fs.pathToSync = null;
+    manager.syncPath(pathCache);
   };
 
   // Try to connect to the server.
@@ -243,14 +231,12 @@ function createFS(options) {
         sync.emit('syncing');
       };
 
-      sync.onCompleted = function(paths) {
+      sync.onCompleted = function() {
         // If changes happened to the files that needed to be synced
         // during the sync itself, they will be overwritten
         // https://github.com/mozilla/makedrive/issues/129 and
         // https://github.com/mozilla/makedrive/issues/3
-        if(paths && watcher) {
-          syncPaths = syncPathResolver.filterSynced(syncPaths, paths.synced);
-        }
+
         sync.state = sync.SYNC_CONNECTED;
         sync.emit('completed');
       };
@@ -265,7 +251,7 @@ function createFS(options) {
         return;
       }
 
-      sync.auto();
+      sync.auto(options.interval);
     }
 
     function connect(token) {
@@ -356,14 +342,12 @@ function createFS(options) {
       manager.close();
       manager = null;
     }
-    // Stop watching for fs changes, stop auto-sync'ing
-    if(watcher) {
-      watcher.close();
-      watcher = null;
-    }
+
+    // Stop auto-syncing
     if(autoSync) {
       clearInterval(autoSync);
       autoSync = null;
+      fs.pathToSync = null;
     }
 
     sync.onDisconnected();
@@ -480,7 +464,7 @@ function handleResponse(syncManager, data) {
       session.step = steps.DIFFS;
 
       var message = SyncMessage.request.chksum;
-      message.content = {srcList: srcList, path: session.path};
+      message.content = {srcList: srcList};
       socket.send(message.stringify());
     });
   }
@@ -599,9 +583,22 @@ var Shell = _dereq_('../../lib/filer-shell.js');
 var fsUtils = _dereq_('../../lib/fs-utils.js');
 var conflict = _dereq_('../../lib/conflict.js');
 var constants = _dereq_('../../lib/constants.js');
+var resolvePath = _dereq_('../../lib/sync-path-resolver.js').resolve;
 
 function SyncFileSystem(fs) {
   var self = this;
+  var pathToSync;
+  // Manage path resolution for sync path
+  Object.defineProperty(self, 'pathToSync', {
+    get: function() { return pathToSync; },
+    set: function(path) {
+      if(path) {
+        pathToSync = resolvePath(pathToSync, path);
+      } else {
+        pathToSync = null;
+      }
+    }
+  });
 
   // The following non-modifying fs operations can be run as normal,
   // and are simply forwarded to the fs instance. NOTE: we have
@@ -646,6 +643,13 @@ function SyncFileSystem(fs) {
          default:
            pathOrFD = args[0];
            break;
+       }
+
+       // Check to see if it is a path or an open file descriptor
+       // TODO: Deal with a case of fs.open for a path with a write flag
+       // https://github.com/mozilla/makedrive/issues/210
+       if(!fs.openFiles[pathOrFD]) {
+        self.pathToSync = pathOrFD;
        }
 
        // Figure out which function to use when setting the xattribute
@@ -725,7 +729,7 @@ function SyncFileSystem(fs) {
 
 module.exports = SyncFileSystem;
 
-},{"../../lib/conflict.js":68,"../../lib/constants.js":69,"../../lib/filer-shell.js":71,"../../lib/filer.js":72,"../../lib/fs-utils.js":73}],5:[function(_dereq_,module,exports){
+},{"../../lib/conflict.js":68,"../../lib/constants.js":69,"../../lib/filer-shell.js":71,"../../lib/filer.js":72,"../../lib/fs-utils.js":73,"../../lib/sync-path-resolver.js":75}],5:[function(_dereq_,module,exports){
 var SyncMessage = _dereq_( '../../lib/syncmessage' ),
     messageHandler = _dereq_('./message-handler'),
     states = _dereq_('./sync-states'),
@@ -831,13 +835,16 @@ SyncManager.prototype.init = function(url, token, callback) {
 
 SyncManager.prototype.syncPath = function(path) {
   var manager = this;
+  var syncRequest;
 
   if(!manager.socket) {
     throw new Error('sync called before init');
   }
 
   manager.session.path = path;
-  manager.socket.send(SyncMessage.request.sync.stringify());
+  syncRequest = SyncMessage.request.sync;
+  syncRequest.content = {path: path};
+  manager.socket.send(syncRequest.stringify());
 };
 
 SyncManager.prototype.close = function() {
@@ -16368,29 +16375,28 @@ rsync.checksums = function(fs, path, srcList, options, callback) {
 
   function getDirChecksums(entry, callback) {
     var nodeChecksum = { path: entry.path };
+    var dirPath = getDirPath(path, entry.path);
+    var absPath = Path.join(dirPath, entry.path);
 
-    // Directory
-    if(options.recursive && entry.type === 'DIRECTORY') {
-      checksumsForDir(nodeChecksum, entry, callback);
-    }
-    // File or Link
-    else {
-      var dirPath = getDirPath(path, entry.path);
-      var absPath = Path.join(dirPath, entry.path);
+    // Create any parent directories that do not exist
+    fs.Shell().mkdirp(dirPath, function(err) {
+      if(err && err.code !== 'EEXIST') {
+        return callback(err);
+      }
 
-      // Create any parent directories that do not exist
-      fs.mkdir(dirPath, function(err) {
-        if(err && err.code !== 'EEXIST') {
-          return callback(err);
-        }
-
+      // Directory
+      if(options.recursive && entry.type === 'DIRECTORY') {
+        checksumsForDir(nodeChecksum, entry, callback);
+      }
+      // File or Link
+      else {
         if(entry.type === 'FILE' || !options.links) {
           checksumsForFile(nodeChecksum, entry, dirPath, absPath, callback);
         } else if(entry.type === 'SYMLINK'){
           checksumsForLink(nodeChecksum, entry, dirPath, absPath, callback);
         }
-      });
-    }
+      }
+    });
   }
 
   async.eachSeries(srcList, getDirChecksums, function(err) {
@@ -16778,7 +16784,7 @@ rsync.patch = function(fs, path, diff, options, callback) {
     });
   }
 
-  if(diff) {
+  if(diff && diff.length) {
     async.eachSeries(diff, syncEach, function(err) {
       if(err) {
         callback(err, paths);
@@ -16787,7 +16793,13 @@ rsync.patch = function(fs, path, diff, options, callback) {
       }
     });
   } else {
-    removeNodesInParent(callback);
+    fs.Shell().mkdirp(path, function(err) {
+      if(err && err !== 'EEXIST') {
+        callback(err, paths);
+      } else {
+        removeNodesInParent(callback);
+      }
+    });
   }
 };
 
@@ -16897,173 +16909,62 @@ module.exports = rsync;
 /**
  * Sync path resolver is a library that provides
  * functionality to determine 'syncable' paths
- * It exposes two methods:
+ * It exposes the following method:
  *
- * resolve      - This method takes an array of paths as
- *                an argument which represents the paths
- *                that were modified in a Makedrive fs.
- *                The array is populated with every path picked
- *                up by watch events. This results in the array
- *                including parent paths for files as well.
- *                Resolve thus returns a single path which indicates
- *                the most common path between every path that was modified
- *                For example, if I created a file '/myfile.txt', the 'syncable'
- *                path would be '/myfile.txt'. If I created another file as well,
- *                '/myfile_2.txt', the 'syncable' path then becomes '/'.
+ * resolve      - This method takes two paths as arguments.
+ *                The goal is to find the most common ancestor
+ *                between them. For e.g. the most common ancestor
+ *                between '/dir' and '/dir/file.txt' is '/dir' while
+ *                between '/dir' and '/file.txt' would be '/'.
  *
- * filterSynced - This method takes two arguments. The first is an array
- *                populated with Makedrive watch events. The second is an
- *                array of recently synced paths. This method returns a single
- *                array representing the modified paths without including the
- *                synced paths. However, the returned array will still have the
- *                same format as if picked up by watch events.
 */
 
 var pathResolver = {};
-var Path = _dereq_('./filer').Path;
+var dirname = _dereq_('./filer').Path.dirname;
 
-function getPathSegments(absPath) {
-  if(absPath !== '/') {
-    return getPathSegments(Path.dirname(absPath))
-    .concat(Path.basename(absPath));
+function getDepth(path) {
+  if(path === '/') {
+    return 0;
   }
 
-  return ['/'];
+  return 1 + getDepth(dirname(path));
 }
 
-function cleanup(dirtyArray) {
-  var result = [];
-
-  dirtyArray.forEach(function(element, index, array) {
-    if(dirtyArray[index]) {
-      result.push(dirtyArray[index]);
-    }
-  });
-
-  return result;
-}
-
-// Constructs a 2-D variable length array
-// where each element in the first dimension
-// represents an array of paths determined by
-// the correlation between the index of the first
-// dimension in which the array of paths exists
-// and the number of '/'s in each path of that array
-// of paths
-// Holes in the 1-D array can exist anywhere. For e.g.,
-// [undefined, undefined, Array, Array] is possible
-function constructBuckets(pathList) {
-  var pathBucketArray = [];
-
-  function createBucketForList(pathElement, index, list) {
-    var depth;
-
-    if(pathElement === '/') {
-      depth = 0;
-    } else {
-      depth = pathElement.match(/\//g).length;
-    }
-
-    if(!pathBucketArray[depth]) {
-      pathBucketArray[depth] = [];
-    }
-
-    pathBucketArray[depth].push(pathElement);
+function commonAncestor(path1, depth1, path2, depth2) {
+  if(path1 === path2) {
+    return path1;
   }
 
-  pathList.forEach(createBucketForList);
-
-  pathBucketArray = cleanup(pathBucketArray);
-
-  return pathBucketArray;
-}
-
-function getCommonPathAncestor(path1, path2) {
-  path1 = getPathSegments(path1);
-  path2 = getPathSegments(path2);
-
-  for (var commonIndex = 0; commonIndex < path1.length && 
-    commonIndex < path2.length && 
-    path1[commonIndex] === path2[commonIndex]; commonIndex++);
-
-  commonIndex--;
-
-  return '/' + path1.slice(1, commonIndex + 1).join('/');
-}
-
-function getRegressedPath(pathList) {
-  var regressedPath = pathList[0];
-
-  for (var i = 1; i < pathList.length; i++) {
-    regressedPath = getCommonPathAncestor(regressedPath, pathList[i]);
+  // Regress the appropriate path
+  if(depth1 === depth2) {
+    path1 = dirname(path1);
+    depth1--;
+    path2 = dirname(path2);
+    depth2--;
+  } else if(depth1 > depth2) {
+    path1 = dirname(path1);
+    depth1--;
+  } else {
+    path2 = dirname(path2);
+    depth2--;
   }
 
-  return regressedPath;
+  return commonAncestor(path1, depth1, path2, depth2);
 }
 
-// Paths is an array containing paths and their parent paths
-pathResolver.resolve = function(paths) {
-
-  if(!paths.length) {
+pathResolver.resolve = function(path1, path2) {
+  if(!path1 && !path2) {
     return '/';
   }
 
-  // A 2-D array containing paths organized in
-  // descending order according to their depths
-  var pathBucketList = constructBuckets(paths);
-  var regressedPath = '/';
-  var fullPath;
-  // Paths that were modified, arranged in descending
-  // order of their depth
-  var modifiedPaths = [];
-  var dirs, parentBucket;
-
-  // Construct a 1-D array of paths that were modified
-  // This is done to remove the paths that were added
-  // by fs.watch for parent node changes
-  for(var i = pathBucketList.length - 1; i >= 0; i--) {
-    for(var j = 0; pathBucketList[i] && j < pathBucketList[i].length; j++) {
-      fullPath = pathBucketList[i][j];
-      modifiedPaths.push(fullPath);
-
-      // Get the parent path and remove an entry of it
-      // from the corresponding bucket
-      dir = Path.dirname(fullPath);
-      parentBucket = pathBucketList[i-1];
-
-      if(parentBucket) {
-        parentIndex = parentBucket.indexOf(dir);
-
-        if(parentIndex >= 0) {
-          parentBucket.splice(parentIndex, 1);
-        }
-      }
-    }
+  if(!path1 || !path2) {
+    return path1 || path2;
   }
 
-  regressedPath = getRegressedPath(modifiedPaths);
+  var path1Depth = getDepth(path1);
+  var path2Depth = getDepth(path2);
 
-  return regressedPath;
-};
-
-pathResolver.filterSynced = function(paths, syncedPaths) {
-  var repeatedPath, repeatedParentIndex;
-
-  for(var i = 0; i < syncedPaths.length; i++) {
-    repeatedPath = syncedPaths[i];
-    for(var j = 0; j < paths.length; j++) {
-      if(paths[j] == repeatedPath) {
-        paths.splice(j, 1);
-        repeatedParentIndex = paths.indexOf(Path.dirname(repeatedPath));
-        if(repeatedParentIndex >= 0) {
-          paths.splice(repeatedParentIndex, 1);
-        }
-        continue;
-      }
-    }
-  }
-
-  return paths;
+  return commonAncestor(path1, path1Depth, path2, path2Depth);
 };
 
 module.exports = pathResolver;
@@ -18688,419 +18589,8 @@ module.exports = charenc;
 
 }).call(this,_dereq_("FWaASH"))
 },{"FWaASH":85}],81:[function(_dereq_,module,exports){
-// Browser Request
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-var XHR = XMLHttpRequest
-if (!XHR) throw new Error('missing XMLHttpRequest')
-
-module.exports = request
-request.log = {
-  'trace': noop, 'debug': noop, 'info': noop, 'warn': noop, 'error': noop
-}
-
-var DEFAULT_TIMEOUT = 3 * 60 * 1000 // 3 minutes
-
-//
-// request
-//
-
-function request(options, callback) {
-  // The entry-point to the API: prep the options object and pass the real work to run_xhr.
-  if(typeof callback !== 'function')
-    throw new Error('Bad callback given: ' + callback)
-
-  if(!options)
-    throw new Error('No options given')
-
-  var options_onResponse = options.onResponse; // Save this for later.
-
-  if(typeof options === 'string')
-    options = {'uri':options};
-  else
-    options = JSON.parse(JSON.stringify(options)); // Use a duplicate for mutating.
-
-  options.onResponse = options_onResponse // And put it back.
-
-  if (options.verbose) request.log = getLogger();
-
-  if(options.url) {
-    options.uri = options.url;
-    delete options.url;
-  }
-
-  if(!options.uri && options.uri !== "")
-    throw new Error("options.uri is a required argument");
-
-  if(typeof options.uri != "string")
-    throw new Error("options.uri must be a string");
-
-  var unsupported_options = ['proxy', '_redirectsFollowed', 'maxRedirects', 'followRedirect']
-  for (var i = 0; i < unsupported_options.length; i++)
-    if(options[ unsupported_options[i] ])
-      throw new Error("options." + unsupported_options[i] + " is not supported")
-
-  options.callback = callback
-  options.method = options.method || 'GET';
-  options.headers = options.headers || {};
-  options.body    = options.body || null
-  options.timeout = options.timeout || request.DEFAULT_TIMEOUT
-
-  if(options.headers.host)
-    throw new Error("Options.headers.host is not supported");
-
-  if(options.json) {
-    options.headers.accept = options.headers.accept || 'application/json'
-    if(options.method !== 'GET')
-      options.headers['content-type'] = 'application/json'
-
-    if(typeof options.json !== 'boolean')
-      options.body = JSON.stringify(options.json)
-    else if(typeof options.body !== 'string')
-      options.body = JSON.stringify(options.body)
-  }
-
-  // If onResponse is boolean true, call back immediately when the response is known,
-  // not when the full request is complete.
-  options.onResponse = options.onResponse || noop
-  if(options.onResponse === true) {
-    options.onResponse = callback
-    options.callback = noop
-  }
-
-  // XXX Browsers do not like this.
-  //if(options.body)
-  //  options.headers['content-length'] = options.body.length;
-
-  // HTTP basic authentication
-  if(!options.headers.authorization && options.auth)
-    options.headers.authorization = 'Basic ' + b64_enc(options.auth.username + ':' + options.auth.password);
-
-  return run_xhr(options)
-}
-
-var req_seq = 0
-function run_xhr(options) {
-  var xhr = new XHR
-    , timed_out = false
-    , is_cors = is_crossDomain(options.uri)
-    , supports_cors = ('withCredentials' in xhr)
-
-  req_seq += 1
-  xhr.seq_id = req_seq
-  xhr.id = req_seq + ': ' + options.method + ' ' + options.uri
-  xhr._id = xhr.id // I know I will type "_id" from habit all the time.
-
-  if(is_cors && !supports_cors) {
-    var cors_err = new Error('Browser does not support cross-origin request: ' + options.uri)
-    cors_err.cors = 'unsupported'
-    return options.callback(cors_err, xhr)
-  }
-
-  xhr.timeoutTimer = setTimeout(too_late, options.timeout)
-  function too_late() {
-    timed_out = true
-    var er = new Error('ETIMEDOUT')
-    er.code = 'ETIMEDOUT'
-    er.duration = options.timeout
-
-    request.log.error('Timeout', { 'id':xhr._id, 'milliseconds':options.timeout })
-    return options.callback(er, xhr)
-  }
-
-  // Some states can be skipped over, so remember what is still incomplete.
-  var did = {'response':false, 'loading':false, 'end':false}
-
-  xhr.onreadystatechange = on_state_change
-  xhr.open(options.method, options.uri, true) // asynchronous
-  if(is_cors)
-    xhr.withCredentials = !! options.withCredentials
-  xhr.send(options.body)
-  return xhr
-
-  function on_state_change(event) {
-    if(timed_out)
-      return request.log.debug('Ignoring timed out state change', {'state':xhr.readyState, 'id':xhr.id})
-
-    request.log.debug('State change', {'state':xhr.readyState, 'id':xhr.id, 'timed_out':timed_out})
-
-    if(xhr.readyState === XHR.OPENED) {
-      request.log.debug('Request started', {'id':xhr.id})
-      for (var key in options.headers)
-        xhr.setRequestHeader(key, options.headers[key])
-    }
-
-    else if(xhr.readyState === XHR.HEADERS_RECEIVED)
-      on_response()
-
-    else if(xhr.readyState === XHR.LOADING) {
-      on_response()
-      on_loading()
-    }
-
-    else if(xhr.readyState === XHR.DONE) {
-      on_response()
-      on_loading()
-      on_end()
-    }
-  }
-
-  function on_response() {
-    if(did.response)
-      return
-
-    did.response = true
-    request.log.debug('Got response', {'id':xhr.id, 'status':xhr.status})
-    clearTimeout(xhr.timeoutTimer)
-    xhr.statusCode = xhr.status // Node request compatibility
-
-    // Detect failed CORS requests.
-    if(is_cors && xhr.statusCode == 0) {
-      var cors_err = new Error('CORS request rejected: ' + options.uri)
-      cors_err.cors = 'rejected'
-
-      // Do not process this request further.
-      did.loading = true
-      did.end = true
-
-      return options.callback(cors_err, xhr)
-    }
-
-    options.onResponse(null, xhr)
-  }
-
-  function on_loading() {
-    if(did.loading)
-      return
-
-    did.loading = true
-    request.log.debug('Response body loading', {'id':xhr.id})
-    // TODO: Maybe simulate "data" events by watching xhr.responseText
-  }
-
-  function on_end() {
-    if(did.end)
-      return
-
-    did.end = true
-    request.log.debug('Request done', {'id':xhr.id})
-
-    xhr.body = xhr.responseText
-    if(options.json) {
-      try        { xhr.body = JSON.parse(xhr.responseText) }
-      catch (er) { return options.callback(er, xhr)        }
-    }
-
-    options.callback(null, xhr, xhr.body)
-  }
-
-} // request
-
-request.withCredentials = false;
-request.DEFAULT_TIMEOUT = DEFAULT_TIMEOUT;
-
-//
-// defaults
-//
-
-request.defaults = function(options, requester) {
-  var def = function (method) {
-    var d = function (params, callback) {
-      if(typeof params === 'string')
-        params = {'uri': params};
-      else {
-        params = JSON.parse(JSON.stringify(params));
-      }
-      for (var i in options) {
-        if (params[i] === undefined) params[i] = options[i]
-      }
-      return method(params, callback)
-    }
-    return d
-  }
-  var de = def(request)
-  de.get = def(request.get)
-  de.post = def(request.post)
-  de.put = def(request.put)
-  de.head = def(request.head)
-  return de
-}
-
-//
-// HTTP method shortcuts
-//
-
-var shortcuts = [ 'get', 'put', 'post', 'head' ];
-shortcuts.forEach(function(shortcut) {
-  var method = shortcut.toUpperCase();
-  var func   = shortcut.toLowerCase();
-
-  request[func] = function(opts) {
-    if(typeof opts === 'string')
-      opts = {'method':method, 'uri':opts};
-    else {
-      opts = JSON.parse(JSON.stringify(opts));
-      opts.method = method;
-    }
-
-    var args = [opts].concat(Array.prototype.slice.apply(arguments, [1]));
-    return request.apply(this, args);
-  }
-})
-
-//
-// CouchDB shortcut
-//
-
-request.couch = function(options, callback) {
-  if(typeof options === 'string')
-    options = {'uri':options}
-
-  // Just use the request API to do JSON.
-  options.json = true
-  if(options.body)
-    options.json = options.body
-  delete options.body
-
-  callback = callback || noop
-
-  var xhr = request(options, couch_handler)
-  return xhr
-
-  function couch_handler(er, resp, body) {
-    if(er)
-      return callback(er, resp, body)
-
-    if((resp.statusCode < 200 || resp.statusCode > 299) && body.error) {
-      // The body is a Couch JSON object indicating the error.
-      er = new Error('CouchDB error: ' + (body.error.reason || body.error.error))
-      for (var key in body)
-        er[key] = body[key]
-      return callback(er, resp, body);
-    }
-
-    return callback(er, resp, body);
-  }
-}
-
-//
-// Utility
-//
-
-function noop() {}
-
-function getLogger() {
-  var logger = {}
-    , levels = ['trace', 'debug', 'info', 'warn', 'error']
-    , level, i
-
-  for(i = 0; i < levels.length; i++) {
-    level = levels[i]
-
-    logger[level] = noop
-    if(typeof console !== 'undefined' && console && console[level])
-      logger[level] = formatted(console, level)
-  }
-
-  return logger
-}
-
-function formatted(obj, method) {
-  return formatted_logger
-
-  function formatted_logger(str, context) {
-    if(typeof context === 'object')
-      str += ' ' + JSON.stringify(context)
-
-    return obj[method].call(obj, str)
-  }
-}
-
-// Return whether a URL is a cross-domain request.
-function is_crossDomain(url) {
-  var rurl = /^([\w\+\.\-]+:)(?:\/\/([^\/?#:]*)(?::(\d+))?)?/
-
-  // jQuery #8138, IE may throw an exception when accessing
-  // a field from window.location if document.domain has been set
-  var ajaxLocation
-  try { ajaxLocation = location.href }
-  catch (e) {
-    // Use the href attribute of an A element since IE will modify it given document.location
-    ajaxLocation = document.createElement( "a" );
-    ajaxLocation.href = "";
-    ajaxLocation = ajaxLocation.href;
-  }
-
-  var ajaxLocParts = rurl.exec(ajaxLocation.toLowerCase()) || []
-    , parts = rurl.exec(url.toLowerCase() )
-
-  var result = !!(
-    parts &&
-    (  parts[1] != ajaxLocParts[1]
-    || parts[2] != ajaxLocParts[2]
-    || (parts[3] || (parts[1] === "http:" ? 80 : 443)) != (ajaxLocParts[3] || (ajaxLocParts[1] === "http:" ? 80 : 443))
-    )
-  )
-
-  //console.debug('is_crossDomain('+url+') -> ' + result)
-  return result
-}
-
-// MIT License from http://phpjs.org/functions/base64_encode:358
-function b64_enc (data) {
-    // Encodes string using MIME base64 algorithm
-    var b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
-    var o1, o2, o3, h1, h2, h3, h4, bits, i = 0, ac = 0, enc="", tmp_arr = [];
-
-    if (!data) {
-        return data;
-    }
-
-    // assume utf8 data
-    // data = this.utf8_encode(data+'');
-
-    do { // pack three octets into four hexets
-        o1 = data.charCodeAt(i++);
-        o2 = data.charCodeAt(i++);
-        o3 = data.charCodeAt(i++);
-
-        bits = o1<<16 | o2<<8 | o3;
-
-        h1 = bits>>18 & 0x3f;
-        h2 = bits>>12 & 0x3f;
-        h3 = bits>>6 & 0x3f;
-        h4 = bits & 0x3f;
-
-        // use hexets to index into b64, and append result to encoded string
-        tmp_arr[ac++] = b64.charAt(h1) + b64.charAt(h2) + b64.charAt(h3) + b64.charAt(h4);
-    } while (i < data.length);
-
-    enc = tmp_arr.join('');
-
-    switch (data.length % 3) {
-        case 1:
-            enc = enc.slice(0, -2) + '==';
-        break;
-        case 2:
-            enc = enc.slice(0, -1) + '=';
-        break;
-    }
-
-    return enc;
-}
-
-},{}],82:[function(_dereq_,module,exports){
+module.exports=_dereq_(12)
+},{"buffer":82}],82:[function(_dereq_,module,exports){
 /*!
  * The buffer module from node.js, for the browser.
  *
@@ -19117,22 +18607,35 @@ exports.INSPECT_MAX_BYTES = 50
 Buffer.poolSize = 8192
 
 /**
- * If `Buffer._useTypedArrays`:
+ * If `TYPED_ARRAY_SUPPORT`:
  *   === true    Use Uint8Array implementation (fastest)
- *   === false   Use Object implementation (compatible down to IE6)
+ *   === false   Use Object implementation (most compatible, even IE6)
+ *
+ * Browsers that support typed arrays are IE 10+, Firefox 4+, Chrome 7+, Safari 5.1+,
+ * Opera 11.6+, iOS 4.2+.
+ *
+ * Note:
+ *
+ * - Implementation must support adding new properties to `Uint8Array` instances.
+ *   Firefox 4-29 lacked support, fixed in Firefox 30+.
+ *   See: https://bugzilla.mozilla.org/show_bug.cgi?id=695438.
+ *
+ *  - Chrome 9-10 is missing the `TypedArray.prototype.subarray` function.
+ *
+ *  - IE10 has a broken `TypedArray.prototype.subarray` function which returns arrays of
+ *    incorrect length in some situations.
+ *
+ * We detect these buggy browsers and set `TYPED_ARRAY_SUPPORT` to `false` so they will
+ * get the Object implementation, which is slower but will work correctly.
  */
-Buffer._useTypedArrays = (function () {
-  // Detect if browser supports Typed Arrays. Supported browsers are IE 10+, Firefox 4+,
-  // Chrome 7+, Safari 5.1+, Opera 11.6+, iOS 4.2+. If the browser does not support adding
-  // properties to `Uint8Array` instances, then that's the same as no `Uint8Array` support
-  // because we need to be able to add all the node Buffer API methods. This is an issue
-  // in Firefox 4-29. Now fixed: https://bugzilla.mozilla.org/show_bug.cgi?id=695438
+var TYPED_ARRAY_SUPPORT = (function () {
   try {
     var buf = new ArrayBuffer(0)
     var arr = new Uint8Array(buf)
     arr.foo = function () { return 42 }
-    return 42 === arr.foo() &&
-        typeof arr.subarray === 'function' // Chrome 9-10 lack `subarray`
+    return 42 === arr.foo() && // typed array instances can be augmented
+        typeof arr.subarray === 'function' && // chrome 9-10 lack `subarray`
+        new Uint8Array(1).subarray(1, 1).byteLength === 0 // ie10 has broken `subarray`
   } catch (e) {
     return false
   }
@@ -19156,23 +18659,23 @@ function Buffer (subject, encoding, noZero) {
 
   var type = typeof subject
 
-  if (encoding === 'base64' && type === 'string') {
-    subject = base64clean(subject)
-  }
-
   // Find the length
   var length
   if (type === 'number')
-    length = coerce(subject)
-  else if (type === 'string')
+    length = subject > 0 ? subject >>> 0 : 0
+  else if (type === 'string') {
+    if (encoding === 'base64')
+      subject = base64clean(subject)
     length = Buffer.byteLength(subject, encoding)
-  else if (type === 'object')
-    length = coerce(subject.length) // assume that object is array-like
-  else
+  } else if (type === 'object' && subject !== null) { // assume object is array-like
+    if (subject.type === 'Buffer' && isArray(subject.data))
+      subject = subject.data
+    length = +subject.length > 0 ? Math.floor(+subject.length) : 0
+  } else
     throw new Error('First argument needs to be a number, array or string.')
 
   var buf
-  if (Buffer._useTypedArrays) {
+  if (TYPED_ARRAY_SUPPORT) {
     // Preferred: Return an augmented `Uint8Array` instance for best performance
     buf = Buffer._augment(new Uint8Array(length))
   } else {
@@ -19183,7 +18686,7 @@ function Buffer (subject, encoding, noZero) {
   }
 
   var i
-  if (Buffer._useTypedArrays && typeof subject.byteLength === 'number') {
+  if (TYPED_ARRAY_SUPPORT && typeof subject.byteLength === 'number') {
     // Speed optimization -- use set if we're copying from a typed array
     buf._set(subject)
   } else if (isArrayish(subject)) {
@@ -19197,7 +18700,7 @@ function Buffer (subject, encoding, noZero) {
     }
   } else if (type === 'string') {
     buf.write(subject, 0, encoding)
-  } else if (type === 'number' && !Buffer._useTypedArrays && !noZero) {
+  } else if (type === 'number' && !TYPED_ARRAY_SUPPORT && !noZero) {
     for (i = 0; i < length; i++) {
       buf[i] = 0
     }
@@ -19229,7 +18732,7 @@ Buffer.isEncoding = function (encoding) {
 }
 
 Buffer.isBuffer = function (b) {
-  return !!(b !== null && b !== undefined && b._isBuffer)
+  return !!(b != null && b._isBuffer)
 }
 
 Buffer.byteLength = function (str, encoding) {
@@ -19504,7 +19007,7 @@ Buffer.prototype.copy = function (target, target_start, start, end) {
 
   var len = end - start
 
-  if (len < 100 || !Buffer._useTypedArrays) {
+  if (len < 100 || !TYPED_ARRAY_SUPPORT) {
     for (var i = 0; i < len; i++) {
       target[i + target_start] = this[i + start]
     }
@@ -19576,10 +19079,29 @@ function utf16leSlice (buf, start, end) {
 
 Buffer.prototype.slice = function (start, end) {
   var len = this.length
-  start = clamp(start, len, 0)
-  end = clamp(end, len, len)
+  start = ~~start
+  end = end === undefined ? len : ~~end
 
-  if (Buffer._useTypedArrays) {
+  if (start < 0) {
+    start += len;
+    if (start < 0)
+      start = 0
+  } else if (start > len) {
+    start = len
+  }
+
+  if (end < 0) {
+    end += len
+    if (end < 0)
+      end = 0
+  } else if (end > len) {
+    end = len
+  }
+
+  if (end < start)
+    end = start
+
+  if (TYPED_ARRAY_SUPPORT) {
     return Buffer._augment(this.subarray(start, end))
   } else {
     var sliceLen = end - start
@@ -20038,7 +19560,7 @@ Buffer.prototype.inspect = function () {
  */
 Buffer.prototype.toArrayBuffer = function () {
   if (typeof Uint8Array !== 'undefined') {
-    if (Buffer._useTypedArrays) {
+    if (TYPED_ARRAY_SUPPORT) {
       return (new Buffer(this)).buffer
     } else {
       var buf = new Uint8Array(this.length)
@@ -20129,25 +19651,6 @@ function base64clean (str) {
 function stringtrim (str) {
   if (str.trim) return str.trim()
   return str.replace(/^\s+|\s+$/g, '')
-}
-
-// slice(start, end)
-function clamp (index, len, defaultValue) {
-  if (typeof index !== 'number') return defaultValue
-  index = ~~index;  // Coerce to integer.
-  if (index >= len) return len
-  if (index >= 0) return index
-  index += len
-  if (index >= 0) return index
-  return 0
-}
-
-function coerce (length) {
-  // Coerce length to a number (possibly NaN), round up
-  // in case it's fractional (e.g. 123.456) then do a
-  // double negate to coerce a NaN to 0. Easy, right?
-  length = ~~Math.ceil(+length)
-  return length < 0 ? 0 : length
 }
 
 function isArray (subject) {
