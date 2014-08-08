@@ -147,6 +147,15 @@ describe('MakeDrive Client API', function(){
       testServer = null;
     });
 
+    function parseMessage(msg) {
+      msg = msg.data || msg;
+
+      msg = JSON.parse(msg);
+      msg = SyncMessage.parse(msg);
+
+      return msg;
+    }
+
     it('should restart a downstream sync on receiving a CHKSUM ERROR SyncMessage instead of a sourceList.', function(done){
       function clientLogic() {
         var fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
@@ -158,6 +167,7 @@ describe('MakeDrive Client API', function(){
 
         sync.connect("ws://0.0.0.0:" + port, "this-is-not-relevant");
       }
+
 
       // First, prepare the stub of the server.
       testServer.on('connection', function(ws){
@@ -173,21 +183,22 @@ describe('MakeDrive Client API', function(){
             expect(e, "[Error parsing fake token]").to.not.exist;
           }
 
-          ws.once('message', function(msg, flags) {
-            // The second message from the client should be a REQUEST RESET
-            try {
-              msg = JSON.parse(msg);
-              msg = SyncMessage.parse(msg);
-            } catch(e) {
-              expect(e, "[Error parsing REQUEST RESET message]").to.not.exist;
-            }
+          ws.once('message', function(msg, flags){
+            msg = parseMessage(msg);
+            expect(msg).to.deep.equal(SyncMessage.response.authz);
 
-            expect(msg).to.deep.equal(SyncMessage.request.reset);
-            done();
+            ws.once('message', function(msg, flags) {
+              // The next message from the client should be a REQUEST RESET
+              msg = parseMessage(msg);
+
+              expect(msg).to.deep.equal(SyncMessage.request.reset);
+              done();
+            });
+
+            ws.send(SyncMessage.error.srclist.stringify());
           });
 
           ws.send(SyncMessage.response.authz.stringify());
-          ws.send(SyncMessage.error.srclist.stringify());
         });
       });
 
@@ -216,53 +227,43 @@ describe('MakeDrive Client API', function(){
         // Stub WS auth
         ws.once('message', function(msg, flags) {
           msg = msg.data || msg;
+          msg = parseMessage(msg);
 
-          try {
-            msg = JSON.parse(msg);
-          } catch(e) {
-            expect(e, "[Error parsing fake token]").to.not.exist;
-          }
+          ws.once('message', function(msg, flags){
+            msg = parseMessage(msg);
+            expect(msg).to.deep.equal(SyncMessage.response.authz);
 
-          ws.once('message', function(msg, flags) {
-            // The second message from the client should be a REQUEST DIFFS
-            try {
-              msg = JSON.parse(msg);
-              msg = SyncMessage.parse(msg);
-            } catch(e) {
-              expect(e, "[Error parsing REQUEST DIFFS message]").to.not.exist;
-            }
+            ws.once('message', function(msg, flags) {
+              // The second message from the client should be a REQUEST DIFFS
+              msg = parseMessage(msg);
+              expect(msg.type).to.equal(SyncMessage.REQUEST);
+              expect(msg.name).to.equal(SyncMessage.DIFFS);
 
-            expect(msg.type).to.equal(SyncMessage.REQUEST);
-            expect(msg.name).to.equal(SyncMessage.DIFFS);
+              ws.once('message', function(msg) {
+                // The third message should be a REQUEST RESET
+                msg = parseMessage(msg);
 
-            ws.once('message', function(msg) {
-              // The third message should be a REQUEST RESET
-              try {
-                msg = JSON.parse(msg);
-                msg = SyncMessage.parse(msg);
-              } catch(e) {
-                expect(e, "[Error parsing REQUEST RESET]").to.not.exist;
-              }
+                expect(msg).to.deep.equal(SyncMessage.request.reset);
+                done();
+              });
 
-              expect(msg).to.deep.equal(SyncMessage.request.reset);
-              done();
+              var diffsErrorMessage = SyncMessage.error.diffs;
+              ws.send(diffsErrorMessage.stringify());
             });
 
-            var diffsErrorMessage = SyncMessage.error.diffs;
-            ws.send(diffsErrorMessage.stringify());
+            rsync.sourceList(fs, '/', rsyncOptions, function(err, srcList) {
+              expect(err, "[SourceList generation error]").to.not.exist;
+              var chksumRequest = SyncMessage.request.chksum;
+              chksumRequest.content = {
+                srcList: srcList,
+                path: '/'
+              };
+
+              ws.send(chksumRequest.stringify());
+            });
           });
 
           ws.send(SyncMessage.response.authz.stringify());
-          rsync.sourceList(fs, '/', rsyncOptions, function(err, srcList) {
-            expect(err, "[SourceList generation error]").to.not.exist;
-            var chksumRequest = SyncMessage.request.chksum;
-            chksumRequest.content = {
-              srcList: srcList,
-              path: '/'
-            };
-
-            ws.send(chksumRequest.stringify());
-          });
         });
       });
 

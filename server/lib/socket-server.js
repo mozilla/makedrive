@@ -53,22 +53,9 @@ module.exports = function( server ) {
         }
       });
 
-      rsync.sourceList(sync.fs, '/', rsyncOptions, function(err, srcList) {
-        var response;
-        if(err) {
-          response = SyncMessage.error.srclist;
-          response.content = {error: err};
-        } else {
-          response = SyncMessage.request.chksum;
-          response.content = {srcList: srcList, path: '/'};
-        }
-
-        // Is the websocket still open? If not, don't send anything
-        if (ws.readyState === 1) {
-          ws.send(SyncMessage.response.authz.stringify());
-          ws.send(response.stringify());
-        }
-      });
+      if (ws.readyState === 1){
+        ws.send(SyncMessage.response.authz.stringify());
+      }
     });
   });
 };

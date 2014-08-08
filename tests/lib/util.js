@@ -251,6 +251,7 @@ function openSocket(socketData, options) {
       if (customMessageHandler) {
         socket.once("message", customMessageHandler);
       }
+      socket.send(SyncMessage.response.authz.stringify());
     };
   }
 
@@ -566,6 +567,8 @@ function prepareDownstreamSync(finalStep, username, token, cb){
             });
           });
         });
+
+        socketPackage.socket.send(SyncMessage.response.authz.stringify());
       },
       onOpen: function() {
         socketPackage.socket.send(JSON.stringify({

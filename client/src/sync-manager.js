@@ -77,6 +77,7 @@ SyncManager.prototype.init = function(url, token, callback) {
         var data = event.data || event;
         messageHandler(manager, data);
       };
+      socket.send(SyncMessage.response.authz.stringify());
 
       callback();
     } else {

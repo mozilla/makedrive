@@ -182,7 +182,7 @@ function handleResponse(data) {
     });
   }
 
-  if (data.is.reset) {
+  if (data.is.reset || data.is.authz) {
     handleDownstreamReset();
   } else if(data.is.diffs && that.state === Sync.PATCH) {
     handleDiffResponse();

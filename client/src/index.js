@@ -143,7 +143,7 @@ function createFS(options) {
   };
 
   sync.onError = function(err) {
-    // Regress to the path that needed to be synced but failed 
+    // Regress to the path that needed to be synced but failed
     // (likely because of a sync LOCK)
     fs.pathToSync = pathCache;
     sync.state = sync.SYNC_ERROR;
