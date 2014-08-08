@@ -158,8 +158,8 @@ function createFS(options) {
   // Request that a sync begin.
   sync.request = function() {
     // If we're not connected (or are already syncing), ignore this request
-    if(sync.state !== sync.SYNC_CONNECTED) {
-      // TODO: https://github.com/mozilla/makedrive/issues/115
+    if(sync.state === sync.SYNC_DISCONNECTED || sync.state === sync.SYNC_ERROR) {
+      sync.emit('error', new Error('Invalid state. Expected ' + sync.SYNC_CONNECTED + ', got ' + sync.state));
       return;
     }
 
@@ -179,7 +179,7 @@ function createFS(options) {
     // Bail if we're already connected
     if(sync.state !== sync.SYNC_DISCONNECTED &&
        sync.state !== sync.ERROR) {
-      console.error("MakeDrive: Attempted to connect to \"" + url + "\", but a connection already exists!");
+      sync.emit('error', new Error("MakeDrive: Attempted to connect to \"" + url + "\", but a connection already exists!"));
       return;
     }
 
@@ -225,15 +225,15 @@ function createFS(options) {
 
       // Upgrade connection state to 'connected'
       sync.state = sync.SYNC_CONNECTED;
-      sync.emit('connected');
 
       // If we're in manual mode, bail before starting auto-sync
       if(options.manual) {
         sync.manual();
-        return;
+      } else {
+        sync.auto(options.interval);
       }
 
-      sync.auto(options.interval);
+      sync.emit('connected');
     }
 
     function connect(token) {
@@ -315,7 +315,7 @@ function createFS(options) {
     // Bail if we're not already connected
     if(sync.state === sync.SYNC_DISCONNECTED ||
        sync.state === sync.ERROR) {
-      console.error("MakeDrive: Attempted to disconnect, but no server connection exists!");
+      sync.emit('error', new Error("MakeDrive: Attempted to disconnect, but no server connection exists!"));
       return;
     }
 

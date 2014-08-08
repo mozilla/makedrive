@@ -125,15 +125,16 @@ describe('MakeDrive Client API', function(){
     var provider;
     var socket;
     var port = 1212;
+    var testServer;
 
     beforeEach(function(done) {
       provider = new Filer.FileSystem.providers.Memory(util.username());
 
       testServer = new WebSocketServer({port: port});
-      testServer.on('error', function(err){
+      testServer.once('error', function(err){
         expect(err, "[Error creating socket server]").to.not.exist;
       });
-      testServer.on('listening', function() {
+      testServer.once('listening', function() {
         done();
       });
     });
@@ -268,6 +269,136 @@ describe('MakeDrive Client API', function(){
       });
 
       clientLogic();
+    });
+
+    it('should emit an error describing an incorrect SYNC_STATE in the sync.request step', function(done){
+      util.authenticatedConnection(function( err, result ) {
+        expect(err).not.to.exist;
+
+        var token = result.token;
+        var layout = {'/file': 'data'};
+        var fs;
+        var sync;
+
+        fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
+        sync = fs.sync;
+
+        sync.once('connected', function onConnected() {
+          sync.once('disconnected', function onDisconnected() {
+            sync.once('error', function(err){
+              expect(err).to.exist;
+              expect(err).to.deep.equal(new Error('Invalid state. Expected ' + sync.SYNC_CONNECTED + ', got ' + sync.SYNC_DISCONNECTED));
+
+              done();
+            });
+
+            sync.request();
+          });
+
+          // Make FS changes and try to sync
+          util.createFilesystemLayout(fs, layout, function(err) {
+            expect(err).not.to.exist;
+
+            sync.disconnect();
+          });
+        });
+
+        sync.connect(util.socketURL, token);
+      });
+    });
+
+    it('should emit an error warning about an unexpected sync.state when calling the sync.auto step', function(done){
+      util.authenticatedConnection(function( err, result ) {
+        expect(err).not.to.exist;
+
+        var token = result.token;
+        var layout = {'/file': 'data'};
+        var fs;
+        var sync;
+
+        fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
+        sync = fs.sync;
+
+        sync.once('connected', function onConnected() {
+          sync.once('disconnected', function onDisconnected() {
+            sync.once('error', function(err){
+              expect(err).to.exist;
+              expect(err).to.deep.equal(new Error('Invalid state. ' + sync.state + ' is unexpected.'));
+
+              done();
+            });
+
+            sync.auto();
+          });
+
+          // Make FS changes and try to sync
+          util.createFilesystemLayout(fs, layout, function(err) {
+            expect(err).not.to.exist;
+
+            sync.disconnect();
+          });
+        });
+
+        sync.connect(util.socketURL, token);
+      });
+    });
+
+    it('should emit an error describing an already CONNECTED sync.state in the sync.connect step', function(done){
+      util.authenticatedConnection(function( err, result ) {
+        expect(err).not.to.exist;
+
+        var token = result.token;
+        var layout = {'/file': 'data'};
+        var fs;
+        var sync;
+
+        fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
+        sync = fs.sync;
+
+        sync.once('connected', function onConnected() {
+          sync.once('error', function(err){
+            expect(err).to.exist;
+            expect(err).to.deep.equal(new Error("MakeDrive: Attempted to connect to the websocket URL, but a connection already exists!"));
+
+            done();
+          });
+
+          sync.connect(util.socketURL, token);
+        });
+
+        sync.connect(util.socketURL, token);
+      });
+    });
+
+    it('should emit an error on an attempted sync.disconnect() call when already DISCONNECTED', function(done){
+      util.authenticatedConnection(function( err, result ) {
+        expect(err).not.to.exist;
+
+        var token = result.token;
+        var layout = {'/file': 'data'};
+        var fs;
+        var sync;
+
+        fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
+        sync = fs.sync;
+
+        sync.once('connected', function onConnected() {
+          sync.once('disconnected', function onDisconnected() {
+            sync.once('error', function(err){
+              expect(err).to.exist;
+              expect(err).to.deep.equal(new Error("MakeDrive: Attempted to disconnect, but no server connection exists!"));
+
+              done();
+            });
+
+            sync.disconnect();
+          });
+
+          sync.disconnect();
+        });
+
+        sync.connect(util.socketURL, token);
+      });
     });
   });
 });

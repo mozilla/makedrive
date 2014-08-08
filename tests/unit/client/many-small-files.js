@@ -46,9 +46,13 @@ describe('MakeDrive Client - sync many small files', function(){
       sync.once('connected', function onConnected() {
         util.createFilesystemLayout(fs, layout, function(err) {
           expect(err).not.to.exist;
-
+          expect(sync.state).to.equal(sync.SYNC_CONNECTED);
           sync.request();
         });
+      });
+
+      sync.once('error', function onError(err){
+        expect(err).not.to.exist;
       });
 
       sync.once('completed', function onUpstreamCompleted() {
