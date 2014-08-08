@@ -175,7 +175,7 @@ function createFS(options) {
   };
 
   sync.onError = function(err) {
-    // Regress to the path that needed to be synced but failed 
+    // Regress to the path that needed to be synced but failed
     // (likely because of a sync LOCK)
     fs.pathToSync = pathCache;
     sync.state = sync.SYNC_ERROR;
@@ -231,14 +231,28 @@ function createFS(options) {
         sync.emit('syncing');
       };
 
-      sync.onCompleted = function() {
+      sync.onCompleted = function(paths) {
         // If changes happened to the files that needed to be synced
         // during the sync itself, they will be overwritten
         // https://github.com/mozilla/makedrive/issues/129 and
         // https://github.com/mozilla/makedrive/issues/3
 
-        sync.state = sync.SYNC_CONNECTED;
-        sync.emit('completed');
+        function complete() {
+          sync.state = sync.SYNC_CONNECTED;
+          sync.emit('completed');
+        }
+
+        if(!paths) {
+          return complete();
+        }
+
+        manager.resetUnsynced(paths, function(err) {
+          if(err) {
+            return sync.onError(err);
+          }
+
+          complete();
+        });
       };
 
       // Upgrade connection state to 'connected'
@@ -472,7 +486,7 @@ function handleResponse(syncManager, data) {
   function handlePatchAckResponse() {
     session.state = states.READY;
     session.step = steps.SYNCED;
-    sync.onCompleted();
+    sync.onCompleted(data.content.syncedPaths);
   }
 
   function handlePatchResponse() {
@@ -737,7 +751,9 @@ var SyncMessage = _dereq_( '../../lib/syncmessage' ),
     messageHandler = _dereq_('./message-handler'),
     states = _dereq_('./sync-states'),
     steps = _dereq_('./sync-steps'),
-    WebSocket = _dereq_('ws');
+    WebSocket = _dereq_('ws'),
+    fsUtils = _dereq_('../../lib/fs-utils'),
+    async = _dereq_('async');
 
 function SyncManager(sync, fs) {
   var manager = this;
@@ -810,6 +826,7 @@ SyncManager.prototype.init = function(url, token, callback) {
         var data = event.data || event;
         messageHandler(manager, data);
       };
+      socket.send(SyncMessage.response.authz.stringify());
 
       callback();
     } else {
@@ -850,6 +867,29 @@ SyncManager.prototype.syncPath = function(path) {
   manager.socket.send(syncRequest.stringify());
 };
 
+// Remove the unsynced attribute for a list of paths
+SyncManager.prototype.resetUnsynced = function(paths, callback) {
+  var fs = this.fs;
+
+  function removeUnsyncedAttr(path, callback) {
+    fsUtils.removeUnsynced(fs, path, function(err) {
+      if(err) {
+        return callback(err);
+      }
+
+      callback();
+    });
+  }
+
+  async.eachSeries(paths, removeUnsyncedAttr, function(err) {
+    if(err) {
+      return callback(err);
+    }
+
+    callback();
+  });
+};
+
 SyncManager.prototype.close = function() {
   var manager = this;
   var socket = manager.socket;
@@ -871,7 +911,7 @@ SyncManager.prototype.close = function() {
 
 module.exports = SyncManager;
 
-},{"../../lib/syncmessage":76,"./message-handler":3,"./sync-states":6,"./sync-steps":7,"ws":1}],6:[function(_dereq_,module,exports){
+},{"../../lib/fs-utils":73,"../../lib/syncmessage":76,"./message-handler":3,"./sync-states":6,"./sync-steps":7,"async":80,"ws":1}],6:[function(_dereq_,module,exports){
 module.exports = {
   SYNCING: "SYNC IN PROGRESS",
   READY: "READY",
@@ -18608,8 +18648,6 @@ module.exports = charenc;
 
 var XHR = XMLHttpRequest
 if (!XHR) throw new Error('missing XMLHttpRequest')
-
-module.exports = request
 request.log = {
   'trace': noop, 'debug': noop, 'info': noop, 'warn': noop, 'error': noop
 }
@@ -18674,6 +18712,70 @@ function request(options, callback) {
     else if(typeof options.body !== 'string')
       options.body = JSON.stringify(options.body)
   }
+  
+  //BEGIN QS Hack
+  var serialize = function(obj) {
+    var str = [];
+    for(var p in obj)
+      if (obj.hasOwnProperty(p)) {
+        str.push(encodeURIComponent(p) + "=" + encodeURIComponent(obj[p]));
+      }
+    return str.join("&");
+  }
+  
+  if(options.qs){
+    var qs = (typeof options.qs == 'string')? options.qs : serialize(options.qs);
+    if(options.uri.indexOf('?') !== -1){ //no get params
+        options.uri = options.uri+'&'+qs;
+    }else{ //existing get params
+        options.uri = options.uri+'?'+qs;
+    }
+  }
+  //END QS Hack
+  
+  //BEGIN FORM Hack
+  var multipart = function(obj) {
+    //todo: support file type (useful?)
+    var result = {};
+    result.boundry = '-------------------------------'+Math.floor(Math.random()*1000000000);
+    var lines = [];
+    for(var p in obj){
+        if (obj.hasOwnProperty(p)) {
+            lines.push(
+                '--'+result.boundry+"\n"+
+                'Content-Disposition: form-data; name="'+p+'"'+"\n"+
+                "\n"+
+                obj[p]+"\n"
+            );
+        }
+    }
+    lines.push( '--'+result.boundry+'--' );
+    result.body = lines.join('');
+    result.length = result.body.length;
+    result.type = 'multipart/form-data; boundary='+result.boundry;
+    return result;
+  }
+  
+  if(options.form){
+    if(typeof options.form == 'string') throw('form name unsupported');
+    if(options.method === 'POST'){
+        var encoding = (options.encoding || 'application/x-www-form-urlencoded').toLowerCase();
+        options.headers['content-type'] = encoding;
+        switch(encoding){
+            case 'application/x-www-form-urlencoded':
+                options.body = serialize(options.form).replace(/%20/g, "+");
+                break;
+            case 'multipart/form-data':
+                var multi = multipart(options.form);
+                //options.headers['content-length'] = multi.length;
+                options.body = multi.body;
+                options.headers['content-type'] = multi.type;
+                break;
+            default : throw new Error('unsupported encoding:'+encoding);
+        }
+    }
+  }
+  //END FORM Hack
 
   // If onResponse is boolean true, call back immediately when the response is known,
   // not when the full request is complete.
@@ -19003,6 +19105,7 @@ function b64_enc (data) {
 
     return enc;
 }
+module.exports = request;
 
 },{}],82:[function(_dereq_,module,exports){
 /*!
@@ -19021,22 +19124,35 @@ exports.INSPECT_MAX_BYTES = 50
 Buffer.poolSize = 8192
 
 /**
- * If `Buffer._useTypedArrays`:
+ * If `TYPED_ARRAY_SUPPORT`:
  *   === true    Use Uint8Array implementation (fastest)
- *   === false   Use Object implementation (compatible down to IE6)
+ *   === false   Use Object implementation (most compatible, even IE6)
+ *
+ * Browsers that support typed arrays are IE 10+, Firefox 4+, Chrome 7+, Safari 5.1+,
+ * Opera 11.6+, iOS 4.2+.
+ *
+ * Note:
+ *
+ * - Implementation must support adding new properties to `Uint8Array` instances.
+ *   Firefox 4-29 lacked support, fixed in Firefox 30+.
+ *   See: https://bugzilla.mozilla.org/show_bug.cgi?id=695438.
+ *
+ *  - Chrome 9-10 is missing the `TypedArray.prototype.subarray` function.
+ *
+ *  - IE10 has a broken `TypedArray.prototype.subarray` function which returns arrays of
+ *    incorrect length in some situations.
+ *
+ * We detect these buggy browsers and set `TYPED_ARRAY_SUPPORT` to `false` so they will
+ * get the Object implementation, which is slower but will work correctly.
  */
-Buffer._useTypedArrays = (function () {
-  // Detect if browser supports Typed Arrays. Supported browsers are IE 10+, Firefox 4+,
-  // Chrome 7+, Safari 5.1+, Opera 11.6+, iOS 4.2+. If the browser does not support adding
-  // properties to `Uint8Array` instances, then that's the same as no `Uint8Array` support
-  // because we need to be able to add all the node Buffer API methods. This is an issue
-  // in Firefox 4-29. Now fixed: https://bugzilla.mozilla.org/show_bug.cgi?id=695438
+var TYPED_ARRAY_SUPPORT = (function () {
   try {
     var buf = new ArrayBuffer(0)
     var arr = new Uint8Array(buf)
     arr.foo = function () { return 42 }
-    return 42 === arr.foo() &&
-        typeof arr.subarray === 'function' // Chrome 9-10 lack `subarray`
+    return 42 === arr.foo() && // typed array instances can be augmented
+        typeof arr.subarray === 'function' && // chrome 9-10 lack `subarray`
+        new Uint8Array(1).subarray(1, 1).byteLength === 0 // ie10 has broken `subarray`
   } catch (e) {
     return false
   }
@@ -19060,23 +19176,23 @@ function Buffer (subject, encoding, noZero) {
 
   var type = typeof subject
 
-  if (encoding === 'base64' && type === 'string') {
-    subject = base64clean(subject)
-  }
-
   // Find the length
   var length
   if (type === 'number')
-    length = coerce(subject)
-  else if (type === 'string')
+    length = subject > 0 ? subject >>> 0 : 0
+  else if (type === 'string') {
+    if (encoding === 'base64')
+      subject = base64clean(subject)
     length = Buffer.byteLength(subject, encoding)
-  else if (type === 'object')
-    length = coerce(subject.length) // assume that object is array-like
-  else
+  } else if (type === 'object' && subject !== null) { // assume object is array-like
+    if (subject.type === 'Buffer' && isArray(subject.data))
+      subject = subject.data
+    length = +subject.length > 0 ? Math.floor(+subject.length) : 0
+  } else
     throw new Error('First argument needs to be a number, array or string.')
 
   var buf
-  if (Buffer._useTypedArrays) {
+  if (TYPED_ARRAY_SUPPORT) {
     // Preferred: Return an augmented `Uint8Array` instance for best performance
     buf = Buffer._augment(new Uint8Array(length))
   } else {
@@ -19087,7 +19203,7 @@ function Buffer (subject, encoding, noZero) {
   }
 
   var i
-  if (Buffer._useTypedArrays && typeof subject.byteLength === 'number') {
+  if (TYPED_ARRAY_SUPPORT && typeof subject.byteLength === 'number') {
     // Speed optimization -- use set if we're copying from a typed array
     buf._set(subject)
   } else if (isArrayish(subject)) {
@@ -19101,7 +19217,7 @@ function Buffer (subject, encoding, noZero) {
     }
   } else if (type === 'string') {
     buf.write(subject, 0, encoding)
-  } else if (type === 'number' && !Buffer._useTypedArrays && !noZero) {
+  } else if (type === 'number' && !TYPED_ARRAY_SUPPORT && !noZero) {
     for (i = 0; i < length; i++) {
       buf[i] = 0
     }
@@ -19133,7 +19249,7 @@ Buffer.isEncoding = function (encoding) {
 }
 
 Buffer.isBuffer = function (b) {
-  return !!(b !== null && b !== undefined && b._isBuffer)
+  return !!(b != null && b._isBuffer)
 }
 
 Buffer.byteLength = function (str, encoding) {
@@ -19408,7 +19524,7 @@ Buffer.prototype.copy = function (target, target_start, start, end) {
 
   var len = end - start
 
-  if (len < 100 || !Buffer._useTypedArrays) {
+  if (len < 100 || !TYPED_ARRAY_SUPPORT) {
     for (var i = 0; i < len; i++) {
       target[i + target_start] = this[i + start]
     }
@@ -19480,10 +19596,29 @@ function utf16leSlice (buf, start, end) {
 
 Buffer.prototype.slice = function (start, end) {
   var len = this.length
-  start = clamp(start, len, 0)
-  end = clamp(end, len, len)
+  start = ~~start
+  end = end === undefined ? len : ~~end
 
-  if (Buffer._useTypedArrays) {
+  if (start < 0) {
+    start += len;
+    if (start < 0)
+      start = 0
+  } else if (start > len) {
+    start = len
+  }
+
+  if (end < 0) {
+    end += len
+    if (end < 0)
+      end = 0
+  } else if (end > len) {
+    end = len
+  }
+
+  if (end < start)
+    end = start
+
+  if (TYPED_ARRAY_SUPPORT) {
     return Buffer._augment(this.subarray(start, end))
   } else {
     var sliceLen = end - start
@@ -19942,7 +20077,7 @@ Buffer.prototype.inspect = function () {
  */
 Buffer.prototype.toArrayBuffer = function () {
   if (typeof Uint8Array !== 'undefined') {
-    if (Buffer._useTypedArrays) {
+    if (TYPED_ARRAY_SUPPORT) {
       return (new Buffer(this)).buffer
     } else {
       var buf = new Uint8Array(this.length)
@@ -20033,25 +20168,6 @@ function base64clean (str) {
 function stringtrim (str) {
   if (str.trim) return str.trim()
   return str.replace(/^\s+|\s+$/g, '')
-}
-
-// slice(start, end)
-function clamp (index, len, defaultValue) {
-  if (typeof index !== 'number') return defaultValue
-  index = ~~index;  // Coerce to integer.
-  if (index >= len) return len
-  if (index >= 0) return index
-  index += len
-  if (index >= 0) return index
-  return 0
-}
-
-function coerce (length) {
-  // Coerce length to a number (possibly NaN), round up
-  // in case it's fractional (e.g. 123.456) then do a
-  // double negate to coerce a NaN to 0. Easy, right?
-  length = ~~Math.ceil(+length)
-  return length < 0 ? 0 : length
 }
 
 function isArray (subject) {
