@@ -12,7 +12,7 @@ var cachedFS = {};
 if ( providerType === "filer-s3" ) {
   defaults.bucket = env.get( "S3_BUCKET" );
   defaults.key = env.get( "S3_KEY" );
-  defaults.secret = env.get( "S3_SECRET ");
+  defaults.secret = env.get( "S3_SECRET");
 }
 
 module.exports = {
