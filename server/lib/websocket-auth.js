@@ -14,23 +14,36 @@ var env = require('./environment');
  *     client session. After a set amount of time, the token expires
  *     and can no longer be used.
  *
- * authorizeToken(token)
- *   - If the token passed exists for a particular user, the token
- *     is deleted from the datastore, returning the username
+ * getAuthorizedUsername(token)
+ *   - returns the username associated with a given token, or null.
  */
 var authTable = {};
 var TOKEN_TIMEOUT_MS = env.get("TOKEN_TIMEOUT_MS") || 60000; // Default to 60 sec
 
-function removeToken(token) {
-  var username = getUsernameByToken(token);
-  var tokenIndex = authTable[username] && authTable[username].indexOf(token);
-
-  if (tokenIndex > -1){
-    authTable[username].splice(tokenIndex, 1);
-
-    if (authTable[username].length === 0) {
-      delete authTable[username];
+function getUsernameByToken(token) {
+  for(var username in authTable) {
+    if(authTable[username].indexOf(token) > -1) {
+      return username;
     }
+  }
+  return null;
+}
+
+function revokeToken(token) {
+  var username = getUsernameByToken(token);
+  if(!username) {
+    return;
+  }
+
+  var clients = authTable[username];
+  var tokenIndex = clients && clients.indexOf(token);
+  if (tokenIndex === -1) {
+    return;
+  }
+
+  clients.splice(tokenIndex, 1);
+  if(clients.length === 0) {
+    delete authTable[username];
   }
 }
 
@@ -47,36 +60,25 @@ function generateTokenForClient(username) {
   // If it isn't used in a reasonable amount of time,
   // we remove it here.
   setTimeout(function(){
-    removeToken(token);
+    revokeToken(token);
   }, TOKEN_TIMEOUT_MS);
 
   return token;
 }
 
-function authorizeToken(token) {
+function getAuthorizedUsername(token) {
   var username = getUsernameByToken(token);
 
-  // Token isn't valid?
-  if (username === null) {
-    return null;
+  // If token is valid, revoke it now that it's been used.
+  if(username) {
+    revokeToken(token);
   }
 
-  // Token is valid, find and delete it,
-  // returning username
-  removeToken(token);
+  // Return username (could be `null` if no username was found).
   return username;
-}
-
-function getUsernameByToken(token) {
-  for(var username in authTable) {
-    if(authTable[username].indexOf(token) > -1) {
-      return username;
-    }
-  }
-  return null;
 }
 
 module.exports = {
   generateTokenForClient: generateTokenForClient,
-  authorizeToken: authorizeToken
+  getAuthorizedUsername: getAuthorizedUsername
 };

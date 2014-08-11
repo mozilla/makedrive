@@ -1,61 +1,188 @@
-var Sync = require( './sync'),
-    SyncMessage = require('../../lib/syncmessage'),
-    WebSocketServer = require('ws').Server,
-    websocketAuth = require('./websocket-auth'),
-    rsync = require('../../lib/rsync'),
-    rsyncOptions = require('../../lib/constants').rsyncDefaults;
+var Sync = require( './sync');
+var SyncMessage = require('../../lib/syncmessage');
+var WebSocketServer = require('ws').Server;
+var rsync = require('../../lib/rsync');
+var rsyncOptions = require('../../lib/constants').rsyncDefaults;
+var websocketAuth = require('./websocket-auth');
 
-module.exports = function( server ) {
-  var wss = new WebSocketServer({ server: server });
+/**
+ * Handle a new ws client connection from the server. The process
+ * goes through two phases.  First, the client needs to send a
+ * token obtained via the /api/sync HTTP route, identifying them.
+ * After we have confirmed the client's identity, we run the sync
+ * protocol as normal.
+ */
+function handleClient(ws) {
+  var sync;
 
-  // Websockets
-  wss.on('error', function( error ) {
-    console.error("Socket server error: ", error );
-  });
+  // Clean up client resources for sync and ws, possibly sending
+  // error info in the process.
+  function cleanup(error) {
+    if(!ws) {
+      return;
+    }
 
-  wss.on('connection', function(ws) {
-    ws.once('message', function(data, flags) {
-      // Socket data sent from a web browser
-      // is accessed through `data.data`, whereas
-      // requests sent from the NodeJS `request` module
-      // are accessed through `data`.
-      data = data.data || data;
+    error = error || {};
 
-      // Capture the syncId + token
+    // If we're passed error info, try to close with that first
+    if(error.code && error.message) {
+      // Ignore onerror with this call
+      ws.onerror = function(){};
+      ws.close(error.code, error.message);
+    }
+
+    // Log error details if present
+    if(error.log) {
+      console.error(error.log);
+    }
+
+    // Shutdown sync session if it exists
+    if(sync) {
+      sync.close();
+      sync = null;
+    }
+
+    // Dump all listeners, tear down socket, and kill client reference.
+    ws.terminate();
+    ws = null;
+  }
+
+  // Default error handler for both phases.
+  ws.onerror = function(err) {
+    cleanup({log: 'Unexpected WebSocket Client Error: ' + err.stack});
+  };
+
+  // Default close handler for both phases.
+  ws.onclose = function() {
+    // Client hung-up early
+    cleanup();
+  };
+
+  // Phase 1: authorize a client's token and create a sync session
+  function authorize() {
+    ws.onmessage = function(data, flags) {
+      // Get the user's token
       try {
+        data = data.data;
         data = JSON.parse(data);
       } catch(e) {
-        return ws.close(1011, "Parsing error: " + e);
+        cleanup({code: 1011, message: 'Error: token could not be parsed.'});
+        return;
       }
 
       // Authorize user
       var token = data.token;
-      var username = websocketAuth.authorizeToken(token);
-      if ( !username ) {
-        return ws.close(1008, "Valid auth token required");
+      var username = websocketAuth.getAuthorizedUsername(token);
+      if (!username) {
+        cleanup({code: 1008, message: 'Error: invalid token.'});
+        return;
       }
 
-      var sync = Sync.create( username, token );
-      sync.setSocket( ws );
+      // Setup a sync session for this authorized user
+      sync = new Sync(username, token, ws);
 
-      ws.on('close', sync.onClose());
-
-      ws.on('message', function(data, flags) {
-        if(!flags || (flags && !flags.binary)) {
-          try {
-            data = JSON.parse(data);
-            sync.messageHandler(data);
-          } catch(error) {
-            var errorMessage = SyncMessage.error.format;
-            errorMessage.content = {error: error};
-            ws.send(errorMessage.stringify());
-          }
-        }
+      // Deal with any failed socket access by sync
+      sync.on('error', function(err) {
+        cleanup({log: 'Unable to write to client WebSocket: ' + err.stack});
       });
 
-      if (ws.readyState === 1){
-        ws.send(SyncMessage.response.authz.stringify());
+      run();
+    };
+  }
+
+  // Phase 2: send the client an AUTHZ message and run the sync session
+  function run() {
+    function invalidMessage() {
+      var message = SyncMessage.error.format;
+      message.content = {error: 'Unable to parse/handle message, invalid message format.'};
+      sync.sendMessage(message);
+    }
+
+    ws.onmessage = function(data, flags) {
+      if(!flags || !flags.binary) {
+        try {
+          data = data.data;
+          data = JSON.parse(data);
+          var message = SyncMessage.parse(data);
+          sync.handleMessage(message);
+        } catch(error) {
+          invalidMessage();
+        }
+      } else {
+        invalidMessage();
+      }
+    };
+
+    // Send an AUTHZ response to let client know normal sync'ing can begin.
+    sync.sendMessage(SyncMessage.response.authz);
+  }
+
+  // Begin phase 1
+  authorize();
+}
+
+/**
+ * The WebSocket Server is designed to be able to safely deal with errors
+ * and if possible, restart itself. If the websocket server can't be (re)started,
+ * the entire server (process) is terminated.
+ */
+function handleServer(server) {
+  var wss;
+
+  function kill() {
+    // Close down within 30 seconds
+    var killtimer = setTimeout(function() {
+      process.exit(1);
+    }, 30000);
+    // But don't block on that timeout
+    killtimer.unref();
+
+    // Stop taking new requests and end.
+    server.close(function() {
+      process.exit(1);
+    });
+  }
+
+  function start() {
+    // We only want to try a restart if we actually got to listening
+    // (so we don't go into an infinite loop with failed server startup)
+    var shouldRestart = false;
+
+    console.log('Starting socket server');
+
+    wss = new WebSocketServer({server: server});
+
+    wss.once('listening', function() {
+      // Made it to listening, should be OK to restart on error
+      shouldRestart = true;
+    });
+
+    wss.on('connection', handleClient);
+
+    wss.on('error', function(error) {
+      console.error("Socket server error, shutting down: ", error.stack );
+
+      try {
+        wss.close();
+      } catch(e) {
+        console.error("Error shutting down socket server: ", e.stack );
+      }
+
+      wss.removeAllListeners();
+      wss = null;
+
+      // Try to start server again if possible, otherwise shutdown the server
+      if(shouldRestart) {
+        console.log('Attempting to restart socket server...');
+        start();
+      } else {
+        console.error('Unable to restart WebSocket server, shutting down server/process.');
+        kill();
       }
     });
-  });
-};
+  }
+
+  start();
+}
+
+module.exports = handleServer;
