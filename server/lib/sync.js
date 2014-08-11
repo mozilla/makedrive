@@ -112,13 +112,19 @@ function Sync(username, id, ws) {
   };
 
   // State
-  sync.state = Sync.OUT_OF_DATE;
+  sync.state = Sync.INIT;
   sync.is = Object.create(Object.prototype, {
     listening: {
       get: function() { return sync.state === Sync.LISTENING; }
     },
     outOfDate: {
       get: function() { return sync.state === Sync.OUT_OF_DATE; }
+    },
+    initiating: {
+      get: function() { return sync.state === Sync.INIT; }
+    },
+    downstreaming: {
+      get: function() { return sync.state === Sync.INIT || sync.state === Sync.OUT_OF_DATE; }
     },
     chksum: {
       get: function() { return sync.state === Sync.CHKSUM; }
@@ -145,6 +151,7 @@ Sync.CHKSUM = "CHECKSUM";
 Sync.PATCH = "PATCH";
 Sync.ERROR = "ERROR";
 Sync.CLOSED = "CLOSED";
+Sync.INIT = "INIT";
 
 // Initialize a sync for a client
 Sync.prototype.init = function(path) {
@@ -353,11 +360,11 @@ function handleRequest(sync, data) {
     });
   }
 
-  if(data.is.reset && !sync.is.outOfDate) {
+  if(data.is.reset && !sync.is.downstreaming) {
     handleUpstreamReset();
-  } else if(data.is.diffs && sync.is.outOfDate) {
+  } else if(data.is.diffs && sync.is.downstreaming) {
     handleDiffRequest();
-  } else if(data.is.sync && !sync.is.outOfDate) {
+  } else if(data.is.sync && !sync.is.downstreaming) {
     handleSyncInitRequest();
   } else if(data.is.chksum && sync.is.chksum) {
     handleChecksumRequest();
@@ -433,7 +440,7 @@ function handleResponse(sync, data) {
     handleDownstreamReset();
   } else if(data.is.diffs && sync.is.patch) {
     handleDiffResponse();
-  } else if(data.is.patch && sync.is.outOfDate) {
+  } else if(data.is.patch && sync.is.downstreaming) {
     handlePatchResponse();
   } else {
     sync.sendMessage(Sync.error.response);
@@ -446,6 +453,7 @@ function broadcastUpdate(username, response) {
   var clients = connectedClients[username];
   var activeSync = activeSyncs.byUsername(username);
   var outOfDateClient;
+
   if(!clients) {
     return;
   }
@@ -454,7 +462,7 @@ function broadcastUpdate(username, response) {
   }
 
   Object.keys(clients).forEach(function(id) {
-    if(activeSync.id === id) {
+    if(activeSync.id === id || clients[id].is.initiating) {
       return;
     }
 
