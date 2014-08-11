@@ -171,6 +171,9 @@ function handleResponse(data) {
     var size = data.content.size || 5;
 
     rsync.compareContents(that.fs, checksums, size, function(err, equal) {
+      // We need to check if equal is true because equal can have three possible
+      // return value. 1. equal = true, 2. equal = false, 3. equal = undefined
+      // we want to send error verification in case of err return or equal is false.
       if(equal) {
         that.state = Sync.LISTENING;
         response = SyncMessage.response.verification;
