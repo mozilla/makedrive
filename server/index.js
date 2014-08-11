@@ -57,10 +57,6 @@ app.use( app.router );
 app.use( middleware.errorHandler );
 app.use( middleware.fourOhFourHandler );
 
-function corsOptions ( req, res ) {
-  res.header( "Access-Control-Allow-Origin", "*" );
-}
-
 // Declare routes
 routes( app, webmakerAuth );
 
