@@ -145,6 +145,7 @@ Sync.CHKSUM = "CHECKSUM";
 Sync.PATCH = "PATCH";
 Sync.ERROR = "ERROR";
 Sync.CLOSED = "CLOSED";
+Sync.INIT = "INIT";
 
 // Initialize a sync for a client
 Sync.prototype.init = function(path) {
@@ -353,9 +354,9 @@ function handleRequest(sync, data) {
     });
   }
 
-  if(data.is.reset && !sync.is.outOfDate) {
+  if(data.is.reset && !sync.is.outOfDate && sync.state !== Sync.INIT) {
     handleUpstreamReset();
-  } else if(data.is.diffs && sync.is.outOfDate) {
+  } else if(data.is.diffs && (sync.is.outOfDate || sync.state === Sync.INIT) {
     handleDiffRequest();
   } else if(data.is.sync && !sync.is.outOfDate) {
     handleSyncInitRequest();
@@ -433,7 +434,7 @@ function handleResponse(sync, data) {
     handleDownstreamReset();
   } else if(data.is.diffs && sync.is.patch) {
     handleDiffResponse();
-  } else if(data.is.patch && sync.is.outOfDate) {
+  } else if(data.is.patch && (sync.is.outOfDate || sync.state === Sync.INIT)) {
     handlePatchResponse();
   } else {
     sync.sendMessage(Sync.error.response);
