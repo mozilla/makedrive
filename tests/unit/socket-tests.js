@@ -255,6 +255,38 @@ describe('[Downstream Syncing with Websockets]', function(){
      });
    });
  });
+
+  describe('Two clients', function() {
+    it('should be allowed to sync in such a way that one client can perform an upstream sync while another is in the middle of a downstream sync', function(done) {
+      util.authenticatedConnection({done: done}, function(err, result) {
+        expect(err).not.to.exist;
+
+        util.authenticatedConnection({username: result.username}, function(err2, result2) {
+          expect(err2).not.to.exist;
+
+          util.prepareDownstreamSync('generateDiffs', result2.username, result2.token, function(err2, syncData2, fs2, socketPackage2) {
+            expect(err2).not.to.exist;
+
+            socketPackage2.socket.removeListener('message', socketPackage2.onMessage);
+            socketPackage2.socket.once('message', function(message) {
+              expect(message, '[Error: Client received unexpected message:' + message).not.to.exist;
+
+              util.cleanupSockets(result.done, socketPackage, socketPackage2);
+            });
+
+            util.prepareUpstreamSync('patch', result.username, result.token, function(err, syncData, fs, socketPackage) {
+              expect(err).not.to.exist;
+
+              setTimeout(function() {
+                console.log('timedout');
+                util.cleanupSockets(result.done, socketPackage, socketPackage2);
+              }, 10000);
+            });
+          });
+        });
+      });
+    });
+  });
 });
 
 describe('[Upstream Syncing with Websockets]', function(){
