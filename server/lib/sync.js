@@ -49,7 +49,8 @@ var activeSyncs = (function() {
   return {
     setActive: setActive,
     removeActive: removeActive,
-    byUsername: byUsername
+    byUsername: byUsername,
+    get containsSyncs() { return Object.keys(syncs).length; }
   };
 }());
 
@@ -111,6 +112,11 @@ function Sync(username, id, ws) {
     }
   };
 
+  // Flag indicating if the server is writing data to this
+  // user's filesystem, used to prevent data loss on errors by
+  // blocking actions that could interrupt this process.
+  sync.patching = false;
+
   // State
   sync.state = Sync.INIT;
   sync.is = Object.create(Object.prototype, {
@@ -141,6 +147,7 @@ function Sync(username, id, ws) {
   });
 }
 util.inherits(Sync, EventEmitter);
+Sync.safeMode = false;
 
 /**
  * Sync states
@@ -208,13 +215,22 @@ Sync.prototype.reset = function() {
 
 // Whether the client can begin an upstream sync. The answer to this
 // depends on a) whether there is already an active sync going for this
-// username (e.g., secondary client connection); and b) if a) is true
-// but the sync has stalled and could be killed.
+// username (e.g., secondary client connection), b) if a) is true
+// but the sync has stalled and could be killed; or c) if a) is true
+// but the sync is in the patch step, and can't be interrupted
 Sync.prototype.canSync = function() {
   var now = Date.now();
   var activeSync = activeSyncs.byUsername(this.username);
   if(!activeSync) {
     return true;
+  }
+
+  // If we're writing to the filesystem at this point in the active sync,
+  // lock it no matter what. Also block if the safe mode is enabled,
+  // meaning we're trying to recover from a serious error and shouldn't
+  // risk a new sync.
+  if(activeSync.patching || Sync.safeMode) {
+    return false;
   }
 
   return (now - activeSync.lastContact > CLIENT_TIMEOUT_MS);
@@ -286,6 +302,54 @@ Sync.error = {
     message.content = {error: 'The resource sent as a response cannot be processed'};
     return message;
   }
+};
+
+// In the case of server errors, we want to safely shut down
+// any currently active syncs. To start, we immediately
+// kill all active syncs that are not already writing to their
+// respective user's filesystems. Afterwards, we monitor the syncs
+// that are making write operations, and emit an event when they are
+// all complete.
+Sync.initiateSafeShutdown = function() {
+  // Checks to see if there are no active syncs left
+  // so we can safely shut down the server.
+  function areSyncsComplete() {
+    if (!activeSyncs.containsSyncs) {
+      Sync.emit('allSyncsComplete');
+    }
+  }
+
+  function closeActiveSync(username, activeSync) {
+    return function() {
+      activeSync.close();
+      activeSyncs.removeActive(username);
+
+      areSyncsComplete();
+    };
+  }
+
+  // Enable safe mode, effectively locking the server by
+  // preventing new websocket connections and preventing
+  // regular SyncMessage protocol actions.
+  Sync.safeMode = true;
+
+  var activeSync;
+  for (var username in connectedClients) {
+    activeSync = activeSyncs.byUsername(username);
+
+    if (activeSync) {
+      if (!activeSync.patching) {
+        activeSync.close();
+        activeSyncs.removeActive(username);
+      }
+
+      // Listen for an indicator that the patch is complete
+      // so we can safely close this sync
+      activeSync.once('patchComplete', closeActiveSync(username, activeSync));
+    }
+  }
+
+  areSyncsComplete();
 };
 
 // Handle requested resources
@@ -360,6 +424,14 @@ function handleRequest(sync, data) {
     });
   }
 
+  // In safe mode, we ignore all messages coming in from connected clients
+  // since we are in the process of safely shutting down all connections and
+  // the socket server itself.
+  if (Sync.safeMode) {
+    sync.sendMessage(SyncMessage.error.serverReset);
+    return;
+  }
+
   if(data.is.reset && !sync.is.downstreaming) {
     handleUpstreamReset();
   } else if(data.is.diffs && sync.is.downstreaming) {
@@ -398,19 +470,30 @@ function handleResponse(sync, data) {
     var diffs = diffHelper.deserialize(data.content.diffs);
     sync.state = Sync.LISTENING;
 
-    rsync.patch(sync.fs, sync.path, diffs, rsyncOptions, function(err, paths) {
-      if(err) {
-        activeSyncs.removeActive(sync.username);
-        response = SyncMessage.error.patch;
-        response.content = paths;
-        return sync.sendMessage(response);
-      }
+    // Flag that changes are being made to the filesystem,
+    // preventing actions that could interrupt this process
+    // and corrupt data.
+    try {
+      sync.patching = true;
+      rsync.patch(sync.fs, sync.path, diffs, rsyncOptions, function(err, paths) {
+        sync.patching = false;
 
-      response = SyncMessage.response.patch;
-      response.content = {syncedPaths: paths.synced};
-      sync.sendMessage(response);
-      sync.end();
-    });
+        if(err) {
+          activeSyncs.removeActive(sync.username);
+          response = SyncMessage.error.patch;
+          response.content = paths;
+          return sync.sendMessage(response);
+        }
+
+        response = SyncMessage.response.patch;
+        response.content = {syncedPaths: paths.synced};
+        sync.sendMessage(response);
+        sync.end();
+      });
+    } catch (e) {
+      // Handle rsync failing badly on a patch step
+      // TODO: https://github.com/mozilla/makedrive/issues/31
+    }
   }
 
   function handlePatchResponse() {
@@ -434,6 +517,14 @@ function handleResponse(sync, data) {
 
       sync.sendMessage(response);
     });
+  }
+
+  // In safe mode, we ignore all messages coming in from connected clients
+  // since we are in the process of safely shutting down all connections and
+  // the socket server itself.
+  if (Sync.safeMode) {
+    sync.sendMessage(SyncMessage.error.serverReset);
+    return;
   }
 
   if (data.is.reset || data.is.authz) {

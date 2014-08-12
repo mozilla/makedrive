@@ -38,8 +38,18 @@ function handleClient(ws) {
 
     // Shutdown sync session if it exists
     if(sync) {
-      sync.close();
-      sync = null;
+      var closeSync = function() {
+        sync.close();
+        sync = null;
+      };
+
+      // Closing the sync while it is in the middle of a `patch` step
+      // could cause data loss, so we confirm that it is safe.
+      if (sync.patching) {
+        sync.once('patchComplete', closeSync);
+      } else {
+        closeSync();
+      }
     }
 
     // Dump all listeners, tear down socket, and kill client reference.
@@ -160,25 +170,30 @@ function handleServer(server) {
     wss.on('connection', handleClient);
 
     wss.on('error', function(error) {
-      console.error("Socket server error, shutting down: ", error.stack );
+      console.error("Socket server error, beginning shutdown process: ", error.stack );
 
-      try {
-        wss.close();
-      } catch(e) {
-        console.error("Error shutting down socket server: ", e.stack );
-      }
+      // Safely conclude active syncs
+      Sync.on('allSyncsComplete', function(){
+        try {
+          wss.close();
+        } catch(e) {
+          console.error("Error shutting down socket server: ", e.stack );
+        }
 
-      wss.removeAllListeners();
-      wss = null;
+        wss.removeAllListeners();
+        wss = null;
 
-      // Try to start server again if possible, otherwise shutdown the server
-      if(shouldRestart) {
-        console.log('Attempting to restart socket server...');
-        start();
-      } else {
-        console.error('Unable to restart WebSocket server, shutting down server/process.');
-        kill();
-      }
+        // Try to start server again if possible, otherwise shutdown the server
+        if(shouldRestart) {
+          console.log('Attempting to restart socket server...');
+          start();
+        } else {
+          console.error('Unable to restart WebSocket server, shutting down server/process.');
+          kill();
+        }
+      });
+
+      Sync.initiateSafeShutdown();
     });
   }
 
