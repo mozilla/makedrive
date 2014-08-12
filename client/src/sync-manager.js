@@ -124,7 +124,7 @@ SyncManager.prototype.resetUnsynced = function(paths, callback) {
 
   function removeUnsyncedAttr(path, callback) {
     fsUtils.removeUnsynced(fs, path, function(err) {
-      if(err) {
+      if(err && err.code !== 'ENOENT') {
         return callback(err);
       }
 
