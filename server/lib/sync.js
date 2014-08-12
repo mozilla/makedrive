@@ -391,6 +391,7 @@ function handleRequest(sync, data) {
 
     if(sync.canSync()) {
       response = SyncMessage.response.sync;
+      response.content = {path: data.content.path};
       sync.updateLastContact();
       sync.state = Sync.CHKSUM;
       sync.init(data.content.path);
@@ -559,6 +560,7 @@ function broadcastUpdate(username, response) {
 
     outOfDateClient = clients[id];
     outOfDateClient.state = Sync.OUT_OF_DATE;
+    outOfDateClient.path = response.content.path;
     outOfDateClient.sendMessage(response);
   });
 }

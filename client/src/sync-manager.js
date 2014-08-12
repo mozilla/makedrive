@@ -112,7 +112,6 @@ SyncManager.prototype.syncPath = function(path) {
     throw new Error('sync called before init');
   }
 
-  manager.session.path = path;
   syncRequest = SyncMessage.request.sync;
   syncRequest.content = {path: path};
   manager.socket.send(syncRequest.stringify());

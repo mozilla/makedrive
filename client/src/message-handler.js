@@ -71,6 +71,7 @@ function handleResponse(syncManager, data) {
   function handleSrcListResponse() {
     session.state = states.SYNCING;
     session.step = steps.INIT;
+    session.path = data.content.path;
     sync.onSyncing();
 
     rsync.sourceList(fs, session.path, rsyncOptions, function(err, srcList) {
@@ -95,7 +96,6 @@ function handleResponse(syncManager, data) {
   function handlePatchResponse() {
     var diffs = data.content.diffs;
     diffs = deserializeDiff(diffs);
-    session.path = data.content.path;
 
     rsync.patch(fs, session.path, diffs, rsyncOptions, function(err, paths) {
       if (err) {
