@@ -2,9 +2,8 @@ var expect = require('chai').expect;
 var util = require('../../lib/util.js');
 var MakeDrive = require('../../../client/src');
 var Filer = require('../../../lib/filer.js');
-var fsUtils = require('../../../lib/fs-utils.js');
+var checkUnsyncedAttr = require('../../lib/unsynced-attr.js');
 var FILE_CONTENT = 'This is a file';
-var async = require('async');
 
 describe('MakeDrive Client FileSystem Unsynced Attribute', function() {
   var provider;
@@ -15,33 +14,6 @@ describe('MakeDrive Client FileSystem Unsynced Attribute', function() {
   afterEach(function() {
     provider = null;
   });
-
-  // Check whether a list of paths have the unsynced attribute attached
-  // The 'unsynced' flag indicates what to check for. true makes sure that
-  // the paths have the unsynced attribute while false makes sure that they don't.
-  function checkUnsyncedAttr(fs, layout, expected, callback) {
-    var error;
-    var paths = Object.keys(layout);
-
-    function isUnsynced(path, callback) {
-      fsUtils.isPathUnsynced(fs, path, function(err, hasAttr) {
-        if(err) {
-          error = err;
-          return callback(false);
-        }
-
-        callback(expected === hasAttr);
-      });
-    }
-
-    async.every(paths, isUnsynced, function(result) {
-      if(error) {
-        return callback(error);
-      }
-
-      callback(null, result);
-    });
-  }
 
   it('should remove unsynced attribute from all nodes after an upstream sync', function(done) {
     util.authenticatedConnection(function(err, result) {
