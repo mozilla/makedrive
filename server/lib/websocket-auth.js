@@ -53,7 +53,9 @@ function generateTokenForClient(username) {
   }
 
   var token = uuid.v4();
+  console.log('Adding ', token);
   authTable[username].push(token);
+  console.log('auth: ', authTable[username]);
 
   // When a token is used to open a websocket,
   // we delete it from authTable to prevent it from being used again.
