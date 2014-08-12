@@ -125,7 +125,7 @@ function Sync(username, id, ws) {
     },
     downstreaming: {
       get: function() { return sync.state === Sync.INIT || sync.state === Sync.OUT_OF_DATE; }
-    };
+    },
     chksum: {
       get: function() { return sync.state === Sync.CHKSUM; }
     },
@@ -453,7 +453,7 @@ function broadcastUpdate(username, response) {
   var clients = connectedClients[username];
   var activeSync = activeSyncs.byUsername(username);
   var outOfDateClient;
-  
+
   if(!clients) {
     return;
   }
