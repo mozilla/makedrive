@@ -195,7 +195,35 @@ function createFS(options) {
   };
 
   // Try to connect to the server.
-  sync.connect = function(url, token) {
+  sync.connect = function(url, options) {
+    options = options || {};
+
+    options.autoReconnect = option.autoReconnect !== false;
+    options.reconnectAttempts = option.reconnectAttempts || Infinity;
+    options.reconnectDelay = option.reconnectDelay || 1000;
+    options.reconnectDelayMax = option.reconnectDelayMax || 5000;
+
+    // Expose setters/getters to allow the client to change
+    // these values later
+    Object.defineProperties(sync, {
+      "autoReconnect": {
+        get: function() { return options.autoReconnect; },
+        set: function(newValue) { options.autoReconnect = newValue; }
+      },
+      "reconnectAttempts": {
+        get: function() { return options.reconnectAttempts; },
+        set: function(newValue) { options.reconnectAttempts = newValue; }
+      },
+      "reconnectDelay": {
+        get: function() { return options.reconnectDelay; },
+        set: function(newValue) { options.reconnectDelay = newValue; }
+      },
+      "reconnectDelayMax": {
+        get: function() { return options.reconnectDelayMax; },
+        set: function(newValue) { options.reconnectDelayMax = newValue; }
+      }
+    });
+
     // Bail if we're already connected
     if(sync.state !== sync.SYNC_DISCONNECTED &&
        sync.state !== sync.ERROR) {
@@ -289,6 +317,36 @@ function createFS(options) {
       });
     }
 
+    function getTokenAndConnect() {
+      // Remove WebSocket protocol from URL, and swap for http:// or https://
+      // ws://drive.webmaker.org/ -> http://drive.webmaker.org/api/sync
+      var apiSync = url.replace(/^([^\/]*\/\/)?/, function(match, p1) {
+        return p1 === 'wss://' ? 'https://' : 'http://';
+      });
+      // Also add /api/sync to the end:
+      apiSync = apiSync.replace(/\/?$/, '/api/sync');
+
+      request({
+        url: apiSync,
+        method: 'GET',
+        json: true,
+        withCredentials: true
+      }, function(err, msg, body) {
+        var statusCode;
+        var error;
+
+        statusCode = msg && msg.statusCode;
+        error = statusCode !== 200 ?
+          { message: err || 'Unable to get token', code: statusCode } : null;
+
+        if(error) {
+          sync.onError(error);
+        } else {
+          connect(body);
+        }
+      });
+    }
+
     // If we were provided a token, we can connect right away, otherwise
     // we need to get one first via the /api/sync route
     if(token) {
@@ -322,6 +380,12 @@ function createFS(options) {
         }
       });
     }
+
+    sync.on('disconnected', function() {
+      if (options.autoReconnect) {
+
+      }
+    });
   };
 
   // Disconnect from the server
