@@ -41,9 +41,16 @@
  * - 'error': an error occured while connecting/syncing. The error
  * object is passed as the first arg to the event.
  *
- * - 'connected': a connection was established with the sync server
+ * - 'connecting': a connection is being established with the MakeDrive server
  *
- * - 'disconnected': the connection to the sync server was lost, either
+ * - 'connected': a connection was established with the MakeDrive server
+ *
+ * - 'reconnecting': the original connection with the MakeDrive server has failed,
+ * and the client is attempting a reconnection.
+ *
+ * - 'reconnected': a connection was re-established with the MakeDrive server
+ *
+ * - 'disconnected': the connection to the MakeDrive server was lost, either
  * due to the client or server.
  *
  * - 'syncing': a sync with the server has begun. A subsequent 'completed'
@@ -55,13 +62,26 @@
  *
  * The `sync` property also exposes a number of methods, including:
  *
- * - connect(url, [token]): try to connect to the specified sync server URL.
- * An 'error' or 'connected' event will follow, depending on success. If the
- * token parameter is provided, that authentication token will be used. Otherwise
- * the client will try to obtain one from the server's /api/sync route. This
- * requires the user to be authenticated previously with Webmaker.
+ * - connect(url, [options]): try to connect to the specified MakeDrive server URL.
+ * An 'error' or 'connected' event will follow, depending on success. The 'options'
+ * object can contain 5 options:
  *
- * - disconnect(): disconnect from the sync server.
+ *   -  [autoReconnect] | Whether to reconnect automatically or not on being disconnected (defaults to true)
+ *   -  [reconnectAttempts] | How many times to try reconnecting until giving up (defaults to Infinity)
+ *   -  [reconnectDelay] | How long to wait (ms) until trying to automatically reconnect (defaults to 1000)
+ *   -  [reconnectDelayMax] | How much time to wait between reconnect attempts. Each attempt increases the delay by reconnectDelay (defaults to 5000)
+ *   -  [token] | A security token for opening a websocket with the MakeDrive server. If not provided, the client
+ *         will automatically attempt to obtain one from the server's /api/sync route. This
+ *         requires the user to be authenticated previously with Webmaker.
+ *   E.g.
+ *    sync.connect('ws://some.url.com', {
+ *      autoReconnect: true,
+ *      reconnectAttempts: 15,
+ *      reconnectDelay: 2000,
+ *      reconnectDelayMax: 3000
+ *    });
+ *
+ * - disconnect(): disconnect from the MakeDrive server.
  *
  * - request(path): request a sync with the server for the specified
  * path. Such requests may or may not be processed right away.
