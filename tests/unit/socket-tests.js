@@ -1,3 +1,5 @@
+/*jshint expr: true*/
+
 var expect = require('chai').expect;
 var util = require('../lib/util.js');
 var SyncMessage = require('../../lib/syncmessage');
@@ -241,7 +243,7 @@ describe('[Downstream Syncing with Websockets]', function(){
          var startSyncMsg = SyncMessage.request.sync;
          startSyncMsg.content = {path: '/'};
          util.sendSyncMessage(socketPackage, startSyncMsg, function(msg){
-           var msg = util.toSyncMessage(msg);
+           msg = util.toSyncMessage(msg);
 
            expect(msg).to.exist;
            expect(msg.type).to.equal(SyncMessage.ERROR);

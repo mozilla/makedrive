@@ -1,3 +1,5 @@
+/*jshint expr: true*/
+
 var OPTION_SIZE = { size: 5 };
 var OPTION_REC_SIZE = { recursive: true, size: 5 };
 var CHUNK_SIZE = OPTION_SIZE.size;
@@ -397,7 +399,7 @@ describe('[Rsync Functional tests]', function() {
               });
             });
           });
-        })
+        });
       });
     });
   });
@@ -531,7 +533,7 @@ describe('[Rsync Functional tests]', function() {
                 });
               });
             });
-          })
+          });
         });
       });
     });
@@ -771,7 +773,7 @@ describe('[Rsync Functional tests]', function() {
                                 fs2.stat('/proj_2/inside_proj_2', function (err, stats) {
                                   expect(err).to.not.exist;
                                   done();
-                                })
+                                });
                               });
                             });
                           });

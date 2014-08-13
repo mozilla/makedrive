@@ -1,3 +1,5 @@
+/*jshint expr: true*/
+
 var expect = require('chai').expect;
 var util = require('../lib/util.js');
 var SyncMessage = require('../../lib/syncmessage');
