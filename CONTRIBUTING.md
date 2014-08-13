@@ -81,8 +81,10 @@ Name&nbsp;(`SyncMessage.NAME`) | Properties (Type) | Details
 Tests are writting using [Mocha](http://visionmedia.github.io/mocha/) and [Chai](http://chaijs.com/api/bdd/).
 You can run the tests in a nodejs context by running `grunt test`.
 
-If you're writing tests, make sure you write them in the same style as existing tests. See `tests/lib/utils.js` and how it gets used in various tests as
+If you're writing tests, make sure you write them in the same style as existing tests. See `tests/lib/util.js` and how it gets used in various tests as
 an example.
+
+**NOTE:** *The entire test suite has been updated to be parsed by JSHint, so please make sure to prepend any newly added test files with* `/*jshint expr: true*/`.
 
 ## Communication
 

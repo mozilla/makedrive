@@ -1,8 +1,10 @@
+/*jshint expr: true*/
+
 var expect = require('chai').expect;
 var util = require('../../lib/util.js');
 var MakeDrive = require('../../../client/src');
 var Filer = require('../../../lib/filer.js');
-var SyncMessage = require('../../../lib/syncmessage')
+var SyncMessage = require('../../../lib/syncmessage');
 var WebSocketServer = require('ws').Server;
 var rsync = require("../../../lib/rsync");
 var rsyncOptions = require('../../../lib/constants').rsyncDefaults;
@@ -143,7 +145,7 @@ describe('MakeDrive Client API', function(){
 
       if (socket) {
         socket.close();
-      };
+      }
       testServer.close();
       testServer = null;
     });
@@ -164,7 +166,7 @@ describe('MakeDrive Client API', function(){
         sync.on('error', function(err) {
           // Confirm our client-side error is emitted as expected
           expect(err).to.deep.equal(new Error('Could not sync filesystem from server'));
-        })
+        });
 
         sync.connect("ws://0.0.0.0:" + port, "this-is-not-relevant");
       }
@@ -216,7 +218,7 @@ describe('MakeDrive Client API', function(){
         sync.on('error', function(err) {
           // Confirm our client-side error is emitted as expected
           expect(err).to.deep.equal(new Error('Could not sync filesystem from server'));
-        })
+        });
 
         sync.connect("ws://0.0.0.0:" + port, "this-is-not-relevant");
       }

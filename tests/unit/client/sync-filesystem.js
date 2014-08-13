@@ -1,3 +1,5 @@
+/*jshint expr: true*/
+
 var expect = require('chai').expect;
 var util = require('../../lib/util.js');
 var MakeDrive = require('../../../client/src');

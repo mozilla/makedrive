@@ -1,3 +1,5 @@
+/*jshint expr: true*/
+
 var request = require('request');
 var expect = require('chai').expect;
 var ws = require('ws');
@@ -666,9 +668,9 @@ function deleteFilesystemLayout(fs, paths, callback) {
     });
   } else {
     var sh = fs.Shell();
-    function rm(path, callback) {
+    var rm = function(path, callback) {
       sh.rm(path, {recursive: true}, callback);
-    }
+    };
     async.eachSeries(paths, rm, callback);
   }
 }
@@ -926,7 +928,6 @@ module.exports = {
   ensureRemoteFilesystem: ensureRemoteFilesystem,
 
   // Sync helpers
-  upload: upload,
   prepareDownstreamSync: prepareDownstreamSync,
   prepareUpstreamSync: prepareUpstreamSync,
   downstreamSyncSteps: downstreamSyncSteps,

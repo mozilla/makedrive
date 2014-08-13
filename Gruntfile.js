@@ -155,7 +155,9 @@ module.exports = function(grunt) {
         "Gruntfile.js",
         "client/src/**/*.js",
         "server/**/*.js",
-        "lib/**/*.js"
+        "lib/**/*.js",
+        "tests/unit/**/*.js",
+        "tests/lib/*.js"
       ]
     },
 

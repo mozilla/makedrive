@@ -1,3 +1,5 @@
+/*jshint expr: true*/
+
 var expect = require('chai').expect;
 var util = require('../lib/util.js');
 var request = require('request');
@@ -183,10 +185,10 @@ describe('Test util.js', function(){
 
     it('util.openSocket should open a socket with custom handlers when passed', function(done){
       util.authenticatedConnection({ done: done }, function(err, result) {
-        function onClose() {};
-        function onError() {};
-        function onOpen() {};
-        function onMessage() {};
+        function onClose() {}
+        function onError() {}
+        function onOpen() {}
+        function onMessage() {}
 
         var socketPackage = util.openSocket({
           onClose: onClose,
@@ -215,7 +217,7 @@ describe('Test util.js', function(){
       util.authenticatedConnection({ done: done }, function(err, result) {
         var socketData = {
           token: result.token
-        }
+        };
 
         var socketPackage = util.openSocket(socketData, {
           onMessage: function(message){
@@ -413,5 +415,5 @@ describe('Test util.js', function(){
         });
       });
     });
-  })
+  });
 });

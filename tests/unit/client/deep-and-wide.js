@@ -1,3 +1,5 @@
+/*jshint expr: true*/
+
 var expect = require('chai').expect;
 var util = require('../../lib/util.js');
 var MakeDrive = require('../../../client/src');
@@ -14,15 +16,15 @@ describe('MakeDrive Client - sync many dirs, many files', function(){
   });
 
   function smallFile(number) {
-    return '<!doctype html> \
-           <head> \
-             <meta charset="utf-8"> \
-             <title> Small File ' + number + ' </title> \
-           </head> \
-           <body> \
-             <p>This is small file ' + number + '.</p> \
-           </body> \
-           </html>';
+    return '<!doctype html> '+
+           '<head> '+
+             '<meta charset="utf-8"> '+
+             '<title> Small File ' + number + ' </title> '+
+           '</head> '+
+           '<body> '+
+             '<p>This is small file ' + number + '.</p> '+
+           '</body> '+
+           '</html>';
   }
 
   /**
