@@ -190,8 +190,8 @@ function createFS(options) {
   // Request that a sync begin.
   sync.request = function() {
     // If we're not connected (or are already syncing), ignore this request
-    if(sync.state !== sync.SYNC_CONNECTED) {
-      // TODO: https://github.com/mozilla/makedrive/issues/115
+    if(sync.state === sync.SYNC_DISCONNECTED || sync.state === sync.SYNC_ERROR) {
+      sync.emit('error', new Error('Invalid state. Expected ' + sync.SYNC_CONNECTED + ', got ' + sync.state));
       return;
     }
 
@@ -211,7 +211,7 @@ function createFS(options) {
     // Bail if we're already connected
     if(sync.state !== sync.SYNC_DISCONNECTED &&
        sync.state !== sync.ERROR) {
-      console.error("MakeDrive: Attempted to connect to \"" + url + "\", but a connection already exists!");
+      sync.emit('error', new Error("MakeDrive: Attempted to connect to \"" + url + "\", but a connection already exists!"));
       return;
     }
 
@@ -257,15 +257,15 @@ function createFS(options) {
 
       // Upgrade connection state to 'connected'
       sync.state = sync.SYNC_CONNECTED;
-      sync.emit('connected');
 
       // If we're in manual mode, bail before starting auto-sync
       if(options.manual) {
         sync.manual();
-        return;
+      } else {
+        sync.auto(options.interval);
       }
 
-      sync.auto(options.interval);
+      sync.emit('connected');
     }
 
     function connect(token) {
@@ -347,7 +347,7 @@ function createFS(options) {
     // Bail if we're not already connected
     if(sync.state === sync.SYNC_DISCONNECTED ||
        sync.state === sync.ERROR) {
-      console.error("MakeDrive: Attempted to disconnect, but no server connection exists!");
+      sync.emit('error', new Error("MakeDrive: Attempted to disconnect, but no server connection exists!"));
       return;
     }
 
@@ -468,6 +468,7 @@ function handleResponse(syncManager, data) {
   function handleSrcListResponse() {
     session.state = states.SYNCING;
     session.step = steps.INIT;
+    session.path = data.content.path;
     sync.onSyncing();
 
     rsync.sourceList(fs, session.path, rsyncOptions, function(err, srcList) {
@@ -492,7 +493,6 @@ function handleResponse(syncManager, data) {
   function handlePatchResponse() {
     var diffs = data.content.diffs;
     diffs = deserializeDiff(diffs);
-    session.path = data.content.path;
 
     rsync.patch(fs, session.path, diffs, rsyncOptions, function(err, paths) {
       if (err) {
@@ -861,7 +861,6 @@ SyncManager.prototype.syncPath = function(path) {
     throw new Error('sync called before init');
   }
 
-  manager.session.path = path;
   syncRequest = SyncMessage.request.sync;
   syncRequest.content = {path: path};
   manager.socket.send(syncRequest.stringify());
@@ -17076,6 +17075,9 @@ function SyncMessage(type, name, content) {
     },
     get impl() {
       return that.name === SyncMessage.IMPL;
+    },
+    get serverReset() {
+      return that.name === SyncMessage.SERVER_RESET;
     }
   };
 }
@@ -17114,6 +17116,7 @@ SyncMessage.RESET = "RESET";
 SyncMessage.LOCKED = "LOCKED";
 SyncMessage.AUTHZ = "AUTHORIZED";
 SyncMessage.IMPL = "IMPLEMENTATION";
+SyncMessage.SERVER_RESET = "SERVER_RESET";
 
 // SyncMessage Error constants
 SyncMessage.INFRMT = "INVALID FORMAT";
@@ -17131,7 +17134,8 @@ function isValidName(name) {
          name === SyncMessage.AUTHZ        ||
          name === SyncMessage.IMPL         ||
          name === SyncMessage.INFRMT       ||
-         name === SyncMessage.INCONT;
+         name === SyncMessage.INCONT       ||
+         name === SyncMessage.SERVER_RESET;
 }
 
 function isValidType(type) {
@@ -17194,8 +17198,11 @@ SyncMessage.error = {
   get impl() {
     return new SyncMessage(SyncMessage.ERROR, SyncMessage.IMPL);
   },
+  get serverReset() {
+    return new SyncMessage(SyncMessage.ERROR, SyncMessage.SERVER_RESET);
+  },
   get verification() {
-    return new SyncMessage(SyncMessage.ERROR, 
+    return new SyncMessage(SyncMessage.ERROR,
                            SyncMessage.VERIFICATION,
                            'Patch could not be verified');
   },
