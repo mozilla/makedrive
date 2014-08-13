@@ -90,7 +90,7 @@ describe('[Downstream Syncing with Websockets]', function(){
            expect(message.name).to.equal(SyncMessage.CHKSUM);
            expect(message.content).to.be.an('object');
 
-           util.authenticatedConnection(function(err, result2) {
+           util.authenticatedConnection({username: result.username}, function(err, result2) {
              expect(err).not.to.exist;
              socketData = {
                syncId: result2.syncId,
