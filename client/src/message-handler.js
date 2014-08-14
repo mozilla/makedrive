@@ -5,10 +5,24 @@ var serializeDiff = require('../../lib/diff').serialize;
 var deserializeDiff = require('../../lib/diff').deserialize;
 var states = require('./sync-states');
 var steps = require('./sync-steps');
+var dirname = require('../../lib/filer').Path.dirname;
 
 function onError(syncManager, err) {
   syncManager.session.step = steps.FAILED;
   syncManager.sync.onError(err);
+}
+
+// Checks if path is in masterPath
+function hasCommonPath(masterPath, path) {
+  if(masterPath === path) {
+    return true;
+  }
+
+  if(path === '/') {
+    return false;
+  }
+
+  return hasCommonPath(masterPath, dirname(path));
 }
 
 function handleRequest(syncManager, data) {
@@ -18,8 +32,9 @@ function handleRequest(syncManager, data) {
   var socket = syncManager.socket;
 
   function handleChecksumRequest() {
-    var srcList = data.content.srcList;
+    var srcList = session.srcList = data.content.srcList;
     session.path = data.content.path;
+    fs.modifiedPath = null;
     sync.onSyncing();
 
     rsync.checksums(fs, session.path, srcList, rsyncOptions, function(err, checksums) {
@@ -68,6 +83,26 @@ function handleResponse(syncManager, data) {
   var session = syncManager.session;
   var socket = syncManager.socket;
 
+  function resendChecksums() {
+    if(!session.srcList) {
+      // Source List was somehow reset, the entire downstream sync
+      // needs to be restarted
+      session.step = steps.FAILED;
+      socket.send(SyncMessage.response.reset.stringify());
+      return onError(syncManager, new Error('Fatal Error: Could not sync filesystem from server...trying again!'));
+    }
+
+    rsync.checksums(fs, session.path, session.srcList, rsyncOptions, function(err, checksums) {
+      if(err) {
+        return onError(syncManager, err);
+      }
+
+      var message = SyncMessage.request.diffs;
+      message.content = {checksums: checksums};
+      socket.send(message.stringify());
+    });
+  }
+
   function handleSrcListResponse() {
     session.state = states.SYNCING;
     session.step = steps.INIT;
@@ -94,6 +129,15 @@ function handleResponse(syncManager, data) {
   }
 
   function handlePatchResponse() {
+    var modifiedPath = fs.modifiedPath;
+    fs.modifiedPath = null;
+
+    // If there was a change to the filesystem that shares a common path with
+    // the path being synced, reset the downstream(even if it is the initial one)
+    if(modifiedPath && hasCommonPath(session.path, modifiedPath)) {
+      return resendChecksums();
+    }
+
     var diffs = data.content.diffs;
     diffs = deserializeDiff(diffs);
 
@@ -121,6 +165,7 @@ function handleResponse(syncManager, data) {
   }
 
   function handleVerificationResponse() {
+    session.srcList = null;
     session.step = steps.SYNCED;
     sync.onCompleted();
   }

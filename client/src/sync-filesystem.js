@@ -15,6 +15,8 @@ var resolvePath = require('../../lib/sync-path-resolver.js').resolve;
 function SyncFileSystem(fs) {
   var self = this;
   var pathToSync;
+  var modifiedPath;
+
   // Manage path resolution for sync path
   Object.defineProperty(self, 'pathToSync', {
     get: function() { return pathToSync; },
@@ -23,6 +25,18 @@ function SyncFileSystem(fs) {
         pathToSync = resolvePath(pathToSync, path);
       } else {
         pathToSync = null;
+      }
+    }
+  });
+
+  // Record modifications to the filesystem during a sync
+  Object.defineProperty(fs, 'modifiedPath', {
+    get: function() { return modifiedPath; },
+    set: function(path) {
+      if(path) {
+        modifiedPath = resolvePath(modifiedPath, path);
+      } else {
+        modifiedPath = null;
       }
     }
   });
@@ -71,6 +85,8 @@ function SyncFileSystem(fs) {
       // https://github.com/mozilla/makedrive/issues/210.
       if(!fs.openFiles[pathOrFD]) {
         self.pathToSync = pathOrFD;
+        // Record the path that was modified on the fs
+        fs.modifiedPath = pathOrFD;
       }
 
       args[lastIdx] = function wrappedCallback() {
