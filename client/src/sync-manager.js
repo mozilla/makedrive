@@ -4,7 +4,9 @@ var SyncMessage = require( '../../lib/syncmessage' ),
     steps = require('./sync-steps'),
     WebSocket = require('ws'),
     fsUtils = require('../../lib/fs-utils'),
-    async = require('async');
+    async = require('async'),
+    util = require('util'),
+    EventEmitter = require('events').EventEmitter;
 
 function SyncManager(sync, fs) {
   var manager = this;
@@ -53,6 +55,7 @@ function SyncManager(sync, fs) {
     })
   };
 }
+util.inherits(SyncManager, EventEmitter);
 
 SyncManager.prototype.init = function(url, token, callback) {
   var manager = this;
@@ -94,6 +97,9 @@ SyncManager.prototype.init = function(url, token, callback) {
 
     sync.onError(error);
     sync.onDisconnected();
+
+    // Signal a non-client driven disconnection
+    manager.emit('disconnected');
   }
 
   var socket = manager.socket = new WebSocket(url);

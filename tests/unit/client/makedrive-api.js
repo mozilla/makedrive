@@ -109,7 +109,9 @@ describe('MakeDrive Client API', function(){
         });
 
         expect(sync.state).to.equal(sync.SYNC_DISCONNECTED);
-        sync.connect(util.socketURL, token);
+        sync.connect(util.socketURL, {
+          token: token
+        });
         expect(sync.state).to.equal(sync.SYNC_CONNECTING);
       });
     });
@@ -455,7 +457,9 @@ describe('MakeDrive Client API', function(){
           });
         });
 
-        sync.connect(util.socketURL, token);
+        sync.connect(util.socketURL, {
+          token: token
+        });
       });
     });
 
@@ -491,7 +495,9 @@ describe('MakeDrive Client API', function(){
           });
         });
 
-        sync.connect(util.socketURL, token);
+        sync.connect(util.socketURL, {
+          token: token
+        });
       });
     });
 
@@ -515,10 +521,14 @@ describe('MakeDrive Client API', function(){
             done();
           });
 
-          sync.connect(util.socketURL, token);
+          sync.connect(util.socketURL, {
+            token: token
+          });
         });
 
-        sync.connect(util.socketURL, token);
+        sync.connect(util.socketURL, {
+          token: token
+        });
       });
     });
 
@@ -549,7 +559,9 @@ describe('MakeDrive Client API', function(){
           sync.disconnect();
         });
 
-        sync.connect(util.socketURL, token);
+        sync.connect(util.socketURL, {
+          token: token
+        });
       });
     });
   });

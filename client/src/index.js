@@ -73,13 +73,15 @@
  *   -  [token] | A security token for opening a websocket with the MakeDrive server. If not provided, the client
  *         will automatically attempt to obtain one from the server's /api/sync route. This
  *         requires the user to be authenticated previously with Webmaker.
- *   E.g.
- *    sync.connect('ws://some.url.com', {
- *      autoReconnect: true,
- *      reconnectAttempts: 15,
- *      reconnectDelay: 2000,
- *      reconnectDelayMax: 3000
- *    });
+ *   - E.g.
+ *     ```
+ *       sync.connect('ws://some.url.com', {
+ *         autoReconnect: true,
+ *         reconnectAttempts: 15,
+ *         reconnectDelay: 2000,
+ *         reconnectDelayMax: 3000
+ *       });
+ *     ```
  *
  * - disconnect(): disconnect from the MakeDrive server.
  *
@@ -128,6 +130,7 @@ function createFS(options) {
   var fs = new SyncFileSystem(_fs);
   var sync = fs.sync = new EventEmitter();
   var manager;
+  var _url;
 
   // Auto-sync handles
   var autoSync;
@@ -197,42 +200,44 @@ function createFS(options) {
   // Try to connect to the server.
   sync.connect = function(url, options) {
     options = options || {};
-
-    options.autoReconnect = option.autoReconnect !== false;
-    options.reconnectAttempts = option.reconnectAttempts || Infinity;
-    options.reconnectDelay = option.reconnectDelay || 1000;
-    options.reconnectDelayMax = option.reconnectDelayMax || 5000;
+    if (typeof url === 'function') {
+      var reconnectCallback = url;
+      url = null;
+    }
+    _url = url || _url;
 
     // Expose setters/getters to allow the client to change
     // these values later
-    Object.defineProperties(sync, {
-      "autoReconnect": {
-        get: function() { return options.autoReconnect; },
-        set: function(newValue) { options.autoReconnect = newValue; }
-      },
-      "reconnectAttempts": {
-        get: function() { return options.reconnectAttempts; },
-        set: function(newValue) { options.reconnectAttempts = newValue; }
-      },
-      "reconnectDelay": {
-        get: function() { return options.reconnectDelay; },
-        set: function(newValue) { options.reconnectDelay = newValue; }
-      },
-      "reconnectDelayMax": {
-        get: function() { return options.reconnectDelayMax; },
-        set: function(newValue) { options.reconnectDelayMax = newValue; }
-      }
-    });
+    if (!sync.hasOwnProperty('autoReconnect')) {
+      options.autoReconnect = options.autoReconnect !== false;
+      options.reconnectAttempts = options.reconnectAttempts || Infinity;
+      options.reconnectDelay = options.reconnectDelay || 1000;
+      options.reconnectDelayMax = options.reconnectDelayMax || 5000;
+
+      Object.defineProperties(sync, {
+        "autoReconnect": {
+          get: function() { return options.autoReconnect; },
+          set: function(newValue) { options.autoReconnect = !!newValue; }
+        },
+        "reconnectAttempts": {
+          get: function() { return options.reconnectAttempts; },
+          set: function(newValue) { options.reconnectAttempts = newValue; }
+        },
+        "reconnectDelay": {
+          get: function() { return options.reconnectDelay; },
+          set: function(newValue) { options.reconnectDelay = newValue; }
+        },
+        "reconnectDelayMax": {
+          get: function() { return options.reconnectDelayMax; },
+          set: function(newValue) { options.reconnectDelayMax = newValue; }
+        }
+      });
+    }
 
     // Bail if we're already connected
     if(sync.state !== sync.SYNC_DISCONNECTED &&
        sync.state !== sync.ERROR) {
       sync.emit('error', new Error("MakeDrive: Attempted to connect to \"" + url + "\", but a connection already exists!"));
-      return;
-    }
-
-    // Also bail if we already have a SyncManager
-    if(manager) {
       return;
     }
 
@@ -281,17 +286,28 @@ function createFS(options) {
         sync.auto(options.interval);
       }
 
-      sync.emit('connected');
+      // If we're reconnecting, execute the reconnect
+      // callback. Otherwise, this is an initial (or client driven)
+      // connection, so we emit the 'connected' event.
+      if (reconnectCallback) {
+        reconnectCallback();
+      } else {
+        sync.emit('connected');
+      }
     }
 
     function connect(token) {
       // Try to connect to provided server URL. Use the raw Filer fs
       // instance for all rsync operations on the filesystem, so that we
       // can untangle changes done by user vs. sync code.
-      manager = new SyncManager(sync, _fs);
+      manager = manager || new SyncManager(sync, _fs);
       manager.init(url, token, function(err) {
         if(err) {
-          sync.onError(err);
+          if (reconnectCallback) {
+            reconnectCallback(err);
+          } else {
+            sync.onError(err);
+          }
           return;
         }
 
@@ -314,6 +330,12 @@ function createFS(options) {
           // Downstream sync is done, finish connect() setup
           downstreamSyncCompleted();
         };
+      });
+
+      manager.once('disconnected', function() {
+        if (sync.autoReconnect) {
+          maybeBeginReconnect();
+        }
       });
     }
 
@@ -349,43 +371,11 @@ function createFS(options) {
 
     // If we were provided a token, we can connect right away, otherwise
     // we need to get one first via the /api/sync route
-    if(token) {
-      connect(token);
+    if(options.token) {
+      connect(options.token);
     } else {
-      // Remove WebSocket protocol from URL, and swap for http:// or https://
-      // ws://drive.webmaker.org/ -> http://drive.webmaker.org/api/sync
-      var apiSync = url.replace(/^([^\/]*\/\/)?/, function(match, p1) {
-        return p1 === 'wss://' ? 'https://' : 'http://';
-      });
-      // Also add /api/sync to the end:
-      apiSync = apiSync.replace(/\/?$/, '/api/sync');
-
-      request({
-        url: apiSync,
-        method: 'GET',
-        json: true,
-        withCredentials: true
-      }, function(err, msg, body) {
-        var statusCode;
-        var error;
-
-        statusCode = msg && msg.statusCode;
-        error = statusCode !== 200 ?
-          { message: err || 'Unable to get token', code: statusCode } : null;
-
-        if(error) {
-          sync.onError(error);
-        } else {
-          connect(body);
-        }
-      });
+      getTokenAndConnect();
     }
-
-    sync.on('disconnected', function() {
-      if (options.autoReconnect) {
-
-      }
-    });
   };
 
   // Disconnect from the server
@@ -397,8 +387,9 @@ function createFS(options) {
     }
 
     // Bail if we're not already connected
-    if(sync.state === sync.SYNC_DISCONNECTED ||
-       sync.state === sync.ERROR) {
+    // if(sync.state === sync.SYNC_DISCONNECTED ||
+    //    sync.state === sync.ERROR) {
+    if(sync.state === sync.SYNC_DISCONNECTED) {
       sync.emit('error', new Error("MakeDrive: Attempted to disconnect, but no server connection exists!"));
       return;
     }
@@ -417,6 +408,49 @@ function createFS(options) {
     }
 
     sync.onDisconnected();
+  };
+
+  // Begin the reconnect loop if enabled
+  sync.maybeBeginReconnect = function() {
+    if (sync.autoReconnect && !sync.reconnecting && sync.attempts === 0 && !sync.begunReconnect) {
+      // Prevent this from triggering the reconnect loop twice
+      sync.begunReconnect = true;
+      sync.reconnect();
+    }
+  };
+
+  // Attempt a reconnection
+  sync.reconnect = function() {
+    if (sync.reconnecting) {
+      return;
+    }
+
+    if (++sync.attempts > sync.reconnectAttempts) {
+      sync.emit('error', new Error('Reconnect failed after ' + sync.reconnectAttempts + ' attempts.'));
+      sync.reconnecting = false;
+      sync.beginReconnect = false;
+      sync.attempts = 0;
+    } else {
+      var delay = sync.attempts * sync.reconnectDelay;
+      delay = Math.min(delay, sync.reconnectDelayMax);
+
+      sync.reconnecting = true;
+      var timer = setTimeout(function() {
+        sync.emit('reconnecting', sync.attempts);
+
+        sync.connect(function(err){
+          if (err){
+            sync.reconnecting = false;
+            sync.reconnect();
+          } else {{
+            sync.emit('reconnected');
+            sync.reconnecting = false;
+            sync.beginReconnect = false;
+            sync.attempts = 0;
+          }}
+        });
+      }, delay);
+    }
   };
 
   return fs;
