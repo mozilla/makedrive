@@ -15,7 +15,7 @@
     "angular-bootstrap": "~0.11.0",
     "angular-ui": "~0.4.0"
   },
-  "version": "0.0.25",
+  "version": "0.0.26",
   "resolutions": {
     "jquery": "2.1.1"
   }
