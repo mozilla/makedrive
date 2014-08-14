@@ -14,9 +14,38 @@
   "keywords": [
     "filesystem",
     "storage",
-    "web"
+    "web",
+    "makedrive",
+    "webmaker",
+    "cloud"
   ],
-  "author": "David Humphrey <david.humphrey@senecacollege.ca>",
+  "contributors": [
+    {
+      "name": "David Humphrey",
+      "email": "david.humphrey@senecacollege.ca",
+      "url": "https://github.com/humphd"
+    },
+    {
+      "name": "Ali Al Dallal",
+      "email": "ali@alicoding.com",
+      "url": "https://github.com/alicoding"
+    },
+    {
+      "name": "Kieran Sedgwick",
+      "email": "kieran.sedgwick@gmail.com",
+      "url": "https://github.com/sedge"
+    },
+    {
+      "name": "Gideon Thomas",
+      "email": "r.gideonthomas@gmail.com",
+      "url": "https://github.com/gideonthomas"
+    },
+    {
+      "name": "Yoav Gurevich",
+      "email": "ygurevich@ymail.com",
+      "url": "https://github.com/yoavgurevich"
+    }
+  ],
   "license": "MPL2",
   "bugs": {
     "url": "https://github.com/mozilla/makedrive/issues"
@@ -65,7 +94,11 @@
     "supertest": "0.13.x",
     "time-grunt": "^0.4.0"
   },
-  "main": "./server/index.js",
+  "main": "./makedrive.js",
+  "files": [
+    "./client/dist/makedrive.js",
+    "./client/dist/makedrive.min.js"
+  ],
   "browser": {
     "filer": "./node_modules/filer/dist/filer.js",
     "request": "browser-request",
