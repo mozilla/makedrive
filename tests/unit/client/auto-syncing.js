@@ -71,12 +71,16 @@ describe('MakeDrive Client - Automatic syncing', function(){
           util.getWebsocketToken(result, function(err, result) {
             expect(err).not.to.exist;
 
-            sync.connect(util.socketURL, result.token);
+            sync.connect(util.socketURL, {
+              token: result.token
+            });
           });
         });
       });
 
-      sync.connect(util.socketURL, result.token);
+      sync.connect(util.socketURL, {
+        token: result.token
+      });
     });
   });
 
@@ -131,12 +135,16 @@ describe('MakeDrive Client - Automatic syncing', function(){
           util.getWebsocketToken(result, function(err, result) {
             expect(err).not.to.exist;
 
-            sync.connect(util.socketURL, result.token);
+            sync.connect(util.socketURL, {
+              token: result.token
+            });
           });
         });
       });
 
-      sync.connect(util.socketURL, result.token);
+      sync.connect(util.socketURL, {
+        token: result.token
+      });
     });
   });
 

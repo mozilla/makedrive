@@ -84,7 +84,9 @@ describe('MakeDrive Client FileSystem Unsynced Attribute', function() {
         });
       });
 
-      sync.connect(util.socketURL, result.token);
+      sync.connect(util.socketURL, {
+        token: result.token
+      });
     });
   });
 
@@ -153,7 +155,9 @@ describe('MakeDrive Client FileSystem Unsynced Attribute', function() {
         });
       });
 
-      sync.connect(util.socketURL, result.token);
+      sync.connect(util.socketURL, {
+        token: result.token
+      });
     });
   });
 
