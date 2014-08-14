@@ -5,14 +5,17 @@ var Filer = require('../../lib/filer.js');
 var checkUnsyncedAttr = require('../lib/unsynced-attr.js');
 
 describe('The \'unsynced\' attribute', function() {
-  var provider;
+  var provider1, provider2;
   var paths = ['/dir/myfile.txt', '/dir/myfile2.txt'];
 
   beforeEach(function() {
-    provider = new Filer.FileSystem.providers.Memory(util.username());
+    var username = util.username();
+    provider1 = new Filer.FileSystem.providers.Memory(username + '_1');
+    provider2 = new Filer.FileSystem.providers.Memory(username + '_2');
   });
   afterEach(function() {
-    provider = null;
+    provider1 = null;
+    provider2 = null;
   });
 
   it('should be applied to nodes according to their sync state in the filesystem', function(done) {
@@ -25,9 +28,10 @@ describe('The \'unsynced\' attribute', function() {
     var finalPath1Layout = {};
     var finalPath2Layout = {};
     var finalPath1Layout2 = {};
+    var jar1, jar2;
+    var token2;
 
     function onConnected1() {
-    	console.log('session id 1:', result1.token);
     	// Step 5: Create /dir/myfile.txt for client 1
     	util.createFilesystemLayout(fs1, layout, function(err) {
     		expect(err).not.to.exist;
@@ -147,7 +151,9 @@ describe('The \'unsynced\' attribute', function() {
       function onUpstreamCompleted2() {
       	function onSecondUpstreamCompleted2() {
       		function onThirdUpstreamCompleted2() {
-      			util.ensureRemoteFilesystem(finalLayout2, result2.jar, function(err) {
+            console.log('finalLayout2', finalLayout2);
+      			util.ensureRemoteFilesystem(finalLayout2, jar2, function(err) {
+              console.log('entering the callback');
       				expect(err).not.to.exist;
 
       				checkUnsyncedAttr(fs2, finalLayout2, false, function(err, synced) {
@@ -162,7 +168,7 @@ describe('The \'unsynced\' attribute', function() {
 
       		for(var path in partialLayout) layout[path] = partialLayout[path];
 
-      		util.ensureRemoteFilesystem(layout, result2.jar, function(err) {
+      		util.ensureRemoteFilesystem(layout, jar2, function(err) {
         		expect(err).not.to.exist;
 
         		checkUnsyncedAttr(fs2, layout, false, function(err, synced) {
@@ -175,7 +181,7 @@ describe('The \'unsynced\' attribute', function() {
       	// Step 16: Client 2 has finished second upstream sync
       	client2.once('completed', onSecondUpstreamCompleted2);
 
-      	util.ensureRemoteFilesystem(layout, result2.jar, function(err) {
+      	util.ensureRemoteFilesystem(layout, jar2, function(err) {
       		expect(err).not.to.exist;
 
       		checkUnsyncedAttr(fs2, layout, false, function(err, synced) {
@@ -196,7 +202,7 @@ describe('The \'unsynced\' attribute', function() {
 
     	partialLayout[paths[1]] = 'This is a second file';
 
-    	util.ensureRemoteFilesystem(layout, result1.jar, function(err) {
+    	util.ensureRemoteFilesystem(layout, jar1, function(err) {
     		expect(err).not.to.exist;
 
     		checkUnsyncedAttr(fs1, layout, false, function(err, synced) {
@@ -204,13 +210,12 @@ describe('The \'unsynced\' attribute', function() {
           expect(synced).to.be.true;
 
 					// Step 8: Connect second client
-          client2.connect(util.socketURL, result2.token);
+          client2.connect(util.socketURL, token2);
     		});
     	});
     }
 
     function onConnected2() {
-    	console.log('session id 2:', result2.token);
     	util.ensureFilesystem(fs2, layout, function(err) {
     		expect(err).not.to.exist;
 
@@ -239,21 +244,24 @@ describe('The \'unsynced\' attribute', function() {
   	// Step 1: Create a user and get a token for client 1
   	util.authenticatedConnection(function(err, result1) {
   		expect(err).not.to.exist;
+      jar1 = result1.jar;
 
-  		fs1 = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
+  		fs1 = MakeDrive.fs({provider: provider1, manual: true, forceCreate: true});
       client1 = fs1.sync;
 
       // Step 2: Get a token for client 2
-  		util.getWebsocketToken(result1, function(err, result2) {
+  		util.authenticatedConnection({username: result1.username}, function(err, result2) {
   			expect(err).not.to.exist;
+        jar2 = result2.jar;
+        token2 = result2.token;
 
-  			fs2 = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
+  			fs2 = MakeDrive.fs({provider: provider2, manual: true, forceCreate: true});
 	      client2 = fs2.sync;
 	      layout[paths[0]] = 'This is a file';
 	      finalLayout1[paths[0]] = 'This is the final modification';
 	      finalLayout1[paths[1]] = 'This is a second file';
 	      finalLayout2[paths[0]] = 'Changed content';
-	      finalLayout2[paths[0]] = 'The second file was modified';
+	      finalLayout2[paths[1]] = 'The second file was modified';
 
 	      // Step 4: Client 1 has connected
 	      client1.once('connected', onConnected1);
