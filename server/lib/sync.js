@@ -10,49 +10,14 @@ var rsyncOptions = require('../../lib/constants').rsyncDefaults;
 var env = require('../../server/lib/environment');
 var EventEmitter = require('events').EventEmitter;
 var util = require('util');
+var getCommonPath = require('../../lib/sync-path-resolver').resolve;
+var ActiveSyncManager = require('../../server/lib/active-sync-manager');
 
 // Table of connected clients, keyed by username. Each connected client
 // has its own unique id (i.e., token obtained from /api/sync), but
 // multiple connected clients may share a username (e.g., user A connects
 // from a laptop and desktop at the same time--two tokens, one username).
 var connectedClients = {};
-
-// Active syncs manager, with list of active syncs keyed by username. While
-// a given user may connect multiple sessions at once (multiple browsers
-// or devices), only one of these connections can sync upstream to the server
-// at a time. This keeps track of which client connection is currently syncing
-// for the given username (if any), manages access to the active sync per user.
-var activeSyncs = (function() {
-  var syncs = {};
-
-  function byUsername(username) {
-    return syncs[username];
-  }
-
-  function removeActive(username) {
-    var sync = byUsername(username);
-    if(!sync) {
-      return;
-    }
-
-    sync.reset();
-    delete syncs[sync.username];
-  }
-
-  function setActive(sync) {
-    if(byUsername(sync.username)) {
-      removeActive(sync.username);
-    }
-    syncs[sync.username] = sync;
-  }
-
-  return {
-    setActive: setActive,
-    removeActive: removeActive,
-    byUsername: byUsername,
-    get containsSyncs() { return Object.keys(syncs).length; }
-  };
-}());
 
 var CLIENT_TIMEOUT_MS = env.get('CLIENT_TIMEOUT_MS') || 5000;
 
@@ -65,7 +30,9 @@ function Sync(username, id, ws) {
   sync.username = username;
 
   // Ensure the current user exists in our datastore and
-  // track this client session keyed by a new `syncId`
+  // track this client session keyed by a new `id`.
+  // We also add a tracking attribute, `downstreamLocked`,
+  // for use in preventing concurrent upstream/downstream syncs.
   if (!connectedClients[username]) {
     connectedClients[username] = {};
   }
@@ -166,7 +133,7 @@ controller.initiateSafeShutdown = function() {
   // Checks to see if there are no active syncs left
   // so we can safely shut down the server.
   function areSyncsComplete() {
-    if (!activeSyncs.containsSyncs) {
+    if (!ActiveSyncManager.areSyncsActive) {
       controller.emit('allSyncsComplete');
     }
   }
@@ -174,7 +141,7 @@ controller.initiateSafeShutdown = function() {
   function closeActiveSync(username, activeSync) {
     return function() {
       activeSync.close();
-      activeSyncs.removeActive(username);
+      ActiveSyncManager.remove(username);
 
       areSyncsComplete();
     };
@@ -187,12 +154,12 @@ controller.initiateSafeShutdown = function() {
 
   var activeSync;
   for (var username in connectedClients) {
-    activeSync = activeSyncs.byUsername(username);
+    activeSync = ActiveSyncManager.byUsername(username);
 
     if (activeSync) {
       if (!activeSync.patching) {
         activeSync.close();
-        activeSyncs.removeActive(username);
+        ActiveSyncManager.remove(username);
       }
 
       // Listen for an indicator that the patch is complete
@@ -221,19 +188,19 @@ Sync.prototype.init = function(path) {
 
   // If there's already a sync underway for this user, see if
   // it's stalled, and if so we can keep going.
-  if(activeSyncs.byUsername(sync.username)) {
+  if(ActiveSyncManager.byUsername(sync.username)) {
     if(!sync.canSync()) {
       // Bail, since we can't sync (yet).
       return;
     }
 
     // Reset the existing stalled active sync so we can start a new one
-    activeSyncs.removeActive(sync.username);
+    ActiveSyncManager.remove(sync.username);
   }
 
   // Start an active sync for this user/client
   sync.path = path;
-  activeSyncs.setActive(sync);
+  ActiveSyncManager.set(sync);
 };
 
 // End a completed sync for a client
@@ -241,7 +208,7 @@ Sync.prototype.end = function(patchResponse) {
   var sync = this;
 
   // If there's no sync underway, bail
-  if(!activeSyncs.byUsername(sync.username)) {
+  if(!ActiveSyncManager.byUsername(sync.username)) {
     return;
   }
 
@@ -257,7 +224,7 @@ Sync.prototype.end = function(patchResponse) {
     }
     sync.lastContact = null;
     broadcastUpdate(sync.username, response);
-    activeSyncs.removeActive(sync.username);
+    ActiveSyncManager.remove(sync.username);
     sync.sendMessage(patchResponse);
   });
 };
@@ -269,14 +236,14 @@ Sync.prototype.reset = function() {
   sync.state = Sync.LISTENING;
 };
 
-// Whether the client can begin an upstream sync. The answer to this
+// Whether the client can begin updating their remote filesystem. The answer to this
 // depends on a) whether there is already an active sync going for this
 // username (e.g., secondary client connection), b) if a) is true
 // but the sync has stalled and could be killed; or c) if a) is true
 // but the sync is in the patch step, and can't be interrupted
 Sync.prototype.canSync = function() {
   var now = Date.now();
-  var activeSync = activeSyncs.byUsername(this.username);
+  var activeSync = ActiveSyncManager.byUsername(this.username);
   if(!activeSync) {
     return true;
   }
@@ -323,9 +290,9 @@ Sync.prototype.close = function() {
   delete connectedClients[username][id];
 
   // Make sure we don't leave this sync session active for some reason
-  var activeSync = activeSyncs.byUsername(username);
+  var activeSync = ActiveSyncManager.byUsername(username);
   if(activeSync && activeSync.id === id) {
-    activeSyncs.removeActive(username);
+    ActiveSyncManager.remove(username);
   }
 
   // Also remove the username from the list if there are no more connected clients.
@@ -372,6 +339,16 @@ function handleRequest(sync, data) {
   function handleDiffRequest() {
     if(!data.content || !data.content.checksums) {
       return sync.sendMessage(SyncMessage.error.content, true);
+    }
+
+    // We reject downstream sync SyncMessages unless the sync
+    // is part of an initial downstream sync for a connection
+    // or no upstream sync is in progress.
+    if (ActiveSyncManager.byUsername(sync.username) && !sync.is.initiating) {
+      var response = SyncMessage.error.downstreamLocked;
+      sync.downstreamInterrupted = true;
+      sync.sendMessage(response, true);
+      return;
     }
 
     var checksums = data.content.checksums;
@@ -422,7 +399,7 @@ function handleRequest(sync, data) {
         sync.state = Sync.LISTENING;
         response = SyncMessage.error.chksum;
         response.content = {error: err};
-        activeSyncs.removeActive(sync.username);
+        ActiveSyncManager.remove(sync.username);
       } else {
         response = SyncMessage.request.diffs;
         response.content = {checksums: checksums};
@@ -459,6 +436,16 @@ function handleResponse(sync, data) {
   var response;
 
   function handleDownstreamReset() {
+    // We reject downstream sync SyncMessages unless the sync
+    // is part of an initial downstream sync for a connection
+    // or no upstream sync is in progress.
+    if (ActiveSyncManager.byUsername(sync.username) && !sync.is.initiating) {
+      var response = SyncMessage.error.downstreamLocked;
+      sync.downstreamInterrupted = true;
+      sync.sendMessage(response, true);
+      return;
+    }
+
     rsync.sourceList(sync.fs, '/', rsyncOptions, function(err, srcList) {
       if(err) {
         response = SyncMessage.error.srclist;
@@ -466,6 +453,11 @@ function handleResponse(sync, data) {
       } else {
         response = SyncMessage.request.chksum;
         response.content = {srcList: srcList, path: '/'};
+
+        // `handleDownstreamReset` can be called for a client's initial downstream
+        // filesystem update, or as a trigger for a new one. The state of the `sync`
+        // object must be different in each case.
+        sync.state = data.is.authz ? Sync.INIT : Sync.OUT_OF_DATE;
       }
       sync.sendMessage(response, true);
     });
@@ -488,7 +480,7 @@ function handleResponse(sync, data) {
         sync.patching = false;
 
         if(err) {
-          activeSyncs.removeActive(sync.username);
+          ActiveSyncManager.remove(sync.username);
           response = SyncMessage.error.patch;
           response.content = paths;
           return sync.sendMessage(response);
@@ -548,15 +540,14 @@ function handleResponse(sync, data) {
 
 // Broadcast an out-of-date message to the all clients other than
 // the active sync after an upstream sync process has completed.
-function broadcastUpdate(username, response) {
+// Also, if any downstream syncs were interrupted during this
+// upstream sync, they will be retriggered.
+function broadcastUpdate(username, defaultResponse) {
   var clients = connectedClients[username];
-  var activeSync = activeSyncs.byUsername(username);
+  var activeSync = ActiveSyncManager.byUsername(username);
   var outOfDateClient;
 
-  if(!clients) {
-    return;
-  }
-  if(!activeSync) {
+  if(!clients || !activeSync) {
     return;
   }
 
@@ -567,8 +558,31 @@ function broadcastUpdate(username, response) {
 
     outOfDateClient = clients[id];
     outOfDateClient.state = Sync.OUT_OF_DATE;
-    outOfDateClient.path = response.content.path;
-    outOfDateClient.sendMessage(response);
+
+    // If this client was in the process of a downstream sync, we
+    // want to reactivate it with a path that is the common ancestor
+    // of the path originally being synced, and the path that was just
+    // updated in this upstream sync.
+    if(outOfDateClient.downstreamInterrupted) {
+      delete outOfDateClient.downstreamInterrupted;
+      outOfDateClient.path = getCommonPath(defaultResponse.path, outOfDateClient.path);
+
+      rsync.sourceList(outOfDateClient.fs, outOfDateClient.path, rsyncOptions, function(err, srcList) {
+        var response;
+        if (err) {
+          response = SyncMessage.error.srclist;
+          response.content = {error: err};
+        } else {
+          response = SyncMessage.request.chksum;
+          response.content = {srcList: srcList, path: outOfDateClient.path};
+        }
+        outOfDateClient.sendMessage(response);
+      });
+      return;
+    }
+
+    outOfDateClient.path = defaultResponse.content.path;
+    outOfDateClient.sendMessage(defaultResponse);
   });
 }
 

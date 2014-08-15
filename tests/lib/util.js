@@ -322,6 +322,36 @@ function sendSyncMessage(socketPackage, syncMessage, callback) {
  * Sync Helpers
  */
 var downstreamSyncSteps = {
+  requestSync: function(socketPackage, data, fs, customAssertions, cb) {
+    if (!cb) {
+      cb = customAssertions;
+      customAssertions = null;
+    }
+
+    socketPackage.socket.removeListener("message", socketPackage.onMessage);
+    socketPackage.socket.once("message", function(message) {
+      // Reattach original listener
+      socketPackage.socket.once("message", socketPackage.onMessage);
+
+      if (!customAssertions) {
+        message = toSyncMessage(message);
+
+        expect(message.type, "[Diffs error: \"" + (message.content && message.content.error) + "\"]").to.equal(SyncMessage.REQUEST);
+        expect(message.name).to.equal(SyncMessage.CHKSUM);
+        expect(message.content).to.exist;
+        expect(message.content.srcList).to.exist;
+        expect(message.content.path).to.exist;
+
+        return cb(null, data);
+      }
+
+      customAssertions(message, cb);
+    });
+
+    // send response reset
+    var resetDownstream = SyncMessage.response.reset;
+    socketPackage.socket.send(resetDownstream.stringify());
+  },
   generateDiffs: function(socketPackage, data, fs, customAssertions, cb) {
     if (!cb) {
       cb = customAssertions;
