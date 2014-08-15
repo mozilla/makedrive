@@ -94,11 +94,7 @@
     "supertest": "0.13.x",
     "time-grunt": "^0.4.0"
   },
-  "main": "./makedrive.js",
-  "files": [
-    "./client/dist/makedrive.js",
-    "./client/dist/makedrive.min.js"
-  ],
+  "main": "./server/index.js",
   "browser": {
     "filer": "./node_modules/filer/dist/filer.js",
     "request": "browser-request",
