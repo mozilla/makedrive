@@ -149,6 +149,61 @@ function Sync(username, id, ws) {
 util.inherits(Sync, EventEmitter);
 Sync.safeMode = false;
 
+// This object wraps the Sync constructor, and acts as an EventEmitter
+// for Syncs in general.
+var controller = new EventEmitter();
+controller.create =function(username, token, ws) {
+  return new Sync(username, token, ws);
+};
+controller.Sync = Sync;
+// In the case of server errors, we want to safely shut down
+// any currently active syncs. To start, we immediately
+// kill all active syncs that are not already writing to their
+// respective user's filesystems. Afterwards, we monitor the syncs
+// that are making write operations, and emit an event when they are
+// all complete.
+controller.initiateSafeShutdown = function() {
+  // Checks to see if there are no active syncs left
+  // so we can safely shut down the server.
+  function areSyncsComplete() {
+    if (!activeSyncs.containsSyncs) {
+      controller.emit('allSyncsComplete');
+    }
+  }
+
+  function closeActiveSync(username, activeSync) {
+    return function() {
+      activeSync.close();
+      activeSyncs.removeActive(username);
+
+      areSyncsComplete();
+    };
+  }
+
+  // Enable safe mode, effectively locking the server by
+  // preventing new websocket connections and preventing
+  // regular SyncMessage protocol actions.
+  Sync.safeMode = true;
+
+  var activeSync;
+  for (var username in connectedClients) {
+    activeSync = activeSyncs.byUsername(username);
+
+    if (activeSync) {
+      if (!activeSync.patching) {
+        activeSync.close();
+        activeSyncs.removeActive(username);
+      }
+
+      // Listen for an indicator that the patch is complete
+      // so we can safely close this sync
+      activeSync.once('patchComplete', closeActiveSync(username, activeSync));
+    }
+  }
+
+  areSyncsComplete();
+};
+
 /**
  * Sync states
  */
@@ -302,54 +357,6 @@ Sync.error = {
     message.content = {error: 'The resource sent as a response cannot be processed'};
     return message;
   }
-};
-
-// In the case of server errors, we want to safely shut down
-// any currently active syncs. To start, we immediately
-// kill all active syncs that are not already writing to their
-// respective user's filesystems. Afterwards, we monitor the syncs
-// that are making write operations, and emit an event when they are
-// all complete.
-Sync.initiateSafeShutdown = function() {
-  // Checks to see if there are no active syncs left
-  // so we can safely shut down the server.
-  function areSyncsComplete() {
-    if (!activeSyncs.containsSyncs) {
-      Sync.emit('allSyncsComplete');
-    }
-  }
-
-  function closeActiveSync(username, activeSync) {
-    return function() {
-      activeSync.close();
-      activeSyncs.removeActive(username);
-
-      areSyncsComplete();
-    };
-  }
-
-  // Enable safe mode, effectively locking the server by
-  // preventing new websocket connections and preventing
-  // regular SyncMessage protocol actions.
-  Sync.safeMode = true;
-
-  var activeSync;
-  for (var username in connectedClients) {
-    activeSync = activeSyncs.byUsername(username);
-
-    if (activeSync) {
-      if (!activeSync.patching) {
-        activeSync.close();
-        activeSyncs.removeActive(username);
-      }
-
-      // Listen for an indicator that the patch is complete
-      // so we can safely close this sync
-      activeSync.once('patchComplete', closeActiveSync(username, activeSync));
-    }
-  }
-
-  areSyncsComplete();
 };
 
 // Handle requested resources
@@ -565,4 +572,4 @@ function broadcastUpdate(username, response) {
   });
 }
 
-module.exports = Sync;
+module.exports = controller;

@@ -89,7 +89,7 @@ function handleClient(ws) {
       }
 
       // Setup a sync session for this authorized user
-      sync = new Sync(username, token, ws);
+      sync = Sync.create(username, token, ws);
 
       // Deal with any failed socket access by sync
       sync.on('error', function(err) {
