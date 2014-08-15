@@ -6,6 +6,7 @@ var MakeDrive = require('../../../client/src');
 var Filer = require('../../../lib/filer.js');
 var fsUtils = require('../../../lib/fs-utils.js');
 var FILE_CONTENT = 'This is a file';
+var syncManager = require('../../../client/src/sync-manager.js');
 var async = require('async');
 
 describe('MakeDrive Client FileSystem Unsynced Attribute', function() {
@@ -155,6 +156,24 @@ describe('MakeDrive Client FileSystem Unsynced Attribute', function() {
       });
 
       sync.connect(util.socketURL, result.token);
+    });
+  });
+
+  it('should remove the \'unsynced\' attribute on non-existent files', function (done) {
+    util.authenticatedConnection(function(err, result) {
+      expect(err).not.to.exist;
+
+      var fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
+      var sync = fs.sync;
+      var manager = new syncManager(sync, fs);
+
+      var paths = ['/random/garbage/', '/woah/daddy/'];
+
+      manager.resetUnsynced(paths, function(err){
+        expect(err).not.to.exist;
+
+        done();
+      });
     });
   });
 });
