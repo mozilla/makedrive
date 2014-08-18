@@ -1,5 +1,3 @@
-/*jshint expr: true*/
-
 var expect = require('chai').expect;
 var util = require('../lib/util.js');
 var request = require('request');

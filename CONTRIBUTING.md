@@ -84,8 +84,6 @@ You can run the tests in a nodejs context by running `grunt test`.
 If you're writing tests, make sure you write them in the same style as existing tests. See `tests/lib/util.js` and how it gets used in various tests as
 an example.
 
-**NOTE:** *The entire test suite has been updated to be parsed by JSHint, so please make sure to prepend any newly added test files with* `/*jshint expr: true*/`.
-
 ## Communication
 
 If you'd like to talk to someone about the project, you can reach us on irc.mozilla.org in the #nimble or #mofodev channel. Look for "aali" or "humph".

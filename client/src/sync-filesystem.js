@@ -98,8 +98,13 @@ function SyncFileSystem(fs) {
   });
 
   // Wrapped fs methods that have path at second arg position
-  ['rename', 'link', 'symlink'].forEach(function(method) {
+  ['link', 'symlink'].forEach(function(method) {
     self[method] = wrapMethod(method, 1, setUnsynced);
+  });
+
+  // Wrapped fs methods that have path at second arg position, and need to use the parent path.
+  ['rename'].forEach(function(method) {
+    self[method] = wrapMethod(method, 1, setUnsynced, true);
   });
 
   // Wrapped fs methods that use file descriptors

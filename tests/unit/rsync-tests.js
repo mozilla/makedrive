@@ -1,5 +1,3 @@
-/*jshint expr: true*/
-
 var OPTION_SIZE = { size: 5 };
 var OPTION_REC_SIZE = { recursive: true, size: 5 };
 var CHUNK_SIZE = OPTION_SIZE.size;

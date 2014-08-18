@@ -19,10 +19,8 @@ describe('Two clients', function(){
   it('should be able to sync two files in one direction', function(done) {
     var file1 = {'/dir/file1.txt': 'This is file 1'};
     var file2 = {'/dir/file2.txt': 'This is file 2'};
-    var finalLayout = {};
-
-    for(var k in file1) finalLayout[k] = file1[k];
-    for(var k in file2) finalLayout[k] = file2[k];
+    var finalLayout = { '/dir/file1.txt': 'This is file 1',
+                        '/dir/file2.txt': 'This is file 2' };
 
     util.authenticatedConnection(function(err, result1) {
       expect(err).not.to.exist;

@@ -1,5 +1,3 @@
-/*jshint expr: true*/
-
 var request = require('request');
 var expect = require('chai').expect;
 var ws = require('ws');

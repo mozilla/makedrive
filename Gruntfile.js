@@ -151,13 +151,15 @@ module.exports = function(grunt) {
     },
 
     jshint: {
+      options: {
+        expr: true
+      },
       all: [
         "Gruntfile.js",
         "client/src/**/*.js",
         "server/**/*.js",
         "lib/**/*.js",
-        "tests/unit/**/*.js",
-        "tests/lib/*.js"
+        "tests/**/**/*.js"
       ]
     },
 
