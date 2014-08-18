@@ -237,7 +237,7 @@ Sync.prototype.init = function(path) {
 };
 
 // End a completed sync for a client
-Sync.prototype.end = function() {
+Sync.prototype.end = function(patchResponse) {
   var sync = this;
 
   // If there's no sync underway, bail
@@ -258,6 +258,7 @@ Sync.prototype.end = function() {
     sync.lastContact = null;
     broadcastUpdate(sync.username, response);
     activeSyncs.removeActive(sync.username);
+    sync.sendMessage(patchResponse);
   });
 };
 
@@ -495,8 +496,7 @@ function handleResponse(sync, data) {
 
         response = SyncMessage.response.patch;
         response.content = {syncedPaths: paths.synced};
-        sync.sendMessage(response);
-        sync.end();
+        sync.end(response);
       });
     } catch (e) {
       // Handle rsync failing badly on a patch step

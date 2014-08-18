@@ -24,11 +24,8 @@ describe('Renaming a file', function(){
             client.sync.disconnect();
           });
         });
-        // FIXME: This should not be setTimeout.
-        // Change this after https://github.com/mozilla/makedrive/issues/287 fixed.
-        setTimeout(function() {
-          client.sync.request();
-        }, 1000);
+
+        client.sync.request();
       });
     });
   });

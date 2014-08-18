@@ -37,3 +37,27 @@ describe("[Issue 169]", function() {
     });
   });
 });
+
+describe('[Issue 287]', function(){
+  it('should fix timing issue with server holding onto active sync for user after completed', function(done) {
+    var layout = {'/dir/file.txt': 'This is file 1'};
+
+    util.setupSyncClient({manual: true, layout: layout}, function(err, client) {
+      expect(err).not.to.exist;
+
+      var fs = client.fs;
+      var sync = client.sync;
+
+      fs.unlink('/dir/file.txt', function(err) {
+        expect(err).not.to.exist;
+
+        sync.once('completed', function() {
+          sync.once('disconnected', done);
+          sync.disconnect();
+        });
+
+        sync.request();
+      });
+    });
+  });
+});
