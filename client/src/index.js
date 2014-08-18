@@ -123,6 +123,18 @@ function createFS(options) {
   // Intitially we are not connected
   sync.state = sync.SYNC_DISCONNECTED;
 
+  function onWindowCloseHandler(event) {
+    if(!options.windowCloseWarning) {
+      return;
+    }
+    if(sync.state === sync.SYNC_SYNCING) {
+      var confirmationMessage = "Sync currently underway, are you sure you want to close?";
+      (event || global.event).returnValue = confirmationMessage;
+
+      return confirmationMessage;
+    }
+  }
+
   // Turn on auto-syncing if its not already on
   sync.auto = function(interval) {
     var syncInterval = interval|0 > 0 ? interval|0 : 60 * 1000;
@@ -247,17 +259,6 @@ function createFS(options) {
           return;
         }
 
-        // In a browser, try to clean-up after ourselves when window goes away
-        if("onbeforeunload" in global) {
-          sync.cleanupFn = function() {
-            if(manager) {
-              manager.close();
-              manager = null;
-            }
-          };
-          global.addEventListener('beforeunload', sync.cleanupFn);
-        }
-
         // Wait on initial downstream sync events to complete
         sync.onSyncing = function() {
           // do nothing, wait for onCompleted()
@@ -266,6 +267,20 @@ function createFS(options) {
           // Downstream sync is done, finish connect() setup
           downstreamSyncCompleted();
         };
+      });
+    }
+
+    // In a browser, try to clean-up after ourselves when window goes away
+    if("onbeforeunload" in global) {
+      global.addEventListener('beforeunload', onWindowCloseHandler);
+    }
+
+    if("onunload" in global){
+      global.addEventListener('unload', function(event) {
+        if(manager) {
+          manager.close();
+          manager = null;
+        }
       });
     }
 

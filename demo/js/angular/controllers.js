@@ -100,6 +100,9 @@ angular.module('makedriveApp')
         Make.getListing();
         console.log('server has connected');
       });
+      sync.on('syncing', function(){
+        console.log('syncing in progress');
+      });
       sync.connect(param('makedrive'));
       $rootScope.$on("mkfile", function(e, path) {
         // Need to wait till the tree refresh then we select the node again
