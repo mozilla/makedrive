@@ -189,10 +189,10 @@ describe('MakeDrive Client API', function(){
             expect(msg).to.deep.equal(SyncMessage.response.authz);
 
             ws.once('message', function(msg, flags) {
-              // The next message from the client should be a REQUEST RESET
+              // The next message from the client should be a RESPONSE RESET
               msg = parseMessage(msg);
 
-              expect(msg).to.deep.equal(SyncMessage.request.reset);
+              expect(msg).to.deep.equal(SyncMessage.response.reset);
               done();
             });
 
@@ -241,10 +241,10 @@ describe('MakeDrive Client API', function(){
               expect(msg.name).to.equal(SyncMessage.DIFFS);
 
               ws.once('message', function(msg) {
-                // The third message should be a REQUEST RESET
+                // The third message should be a RESPONSE RESET
                 msg = parseMessage(msg);
 
-                expect(msg).to.deep.equal(SyncMessage.request.reset);
+                expect(msg).to.deep.equal(SyncMessage.response.reset);
                 done();
               });
 
@@ -252,6 +252,148 @@ describe('MakeDrive Client API', function(){
               ws.send(diffsErrorMessage.stringify());
             });
 
+            rsync.sourceList(fs, '/', rsyncOptions, function(err, srcList) {
+              expect(err, "[SourceList generation error]").to.not.exist;
+              var chksumRequest = SyncMessage.request.chksum;
+              chksumRequest.content = {
+                srcList: srcList,
+                path: '/'
+              };
+
+              ws.send(chksumRequest.stringify());
+            });
+          });
+
+          ws.send(SyncMessage.response.authz.stringify());
+        });
+      });
+
+      clientLogic();
+    });
+
+    it('should reset a downstream sync on failing to patch', function(done){
+      var fs;
+      var sync;
+
+      function clientLogic() {
+        fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
+        sync = fs.sync;
+        sync.on('error', function(err) {
+          // Confirm our client-side error is emitted as expected
+          expect(err).to.exist;
+        });
+
+        sync.connect("ws://0.0.0.0:" + port);
+      }
+
+      // First, prepare the stub of the server.
+      testServer.on('connection', function(ws){
+        socket = ws;
+
+        // Stub WS auth
+        ws.once('message', function(msg, flags) {
+          msg = msg.data || msg;
+          msg = parseMessage(msg);
+
+          // after auth
+          ws.once('message', function(msg, flags){
+            msg = parseMessage(msg);
+            expect(msg).to.deep.equal(SyncMessage.response.authz);
+
+            ws.once('message', function(msg, flags) {
+              // The second message from the client should be a REQUEST DIFFS
+              msg = parseMessage(msg);
+              expect(msg.type).to.equal(SyncMessage.REQUEST);
+              expect(msg.name).to.equal(SyncMessage.DIFFS);
+              var message = SyncMessage.response.diffs;
+              message.content = {};
+              message.content.diffs = [];
+              message.content.diffs[0] = {};
+              message.content.diffs[0].diffs = [ { data: [ 102, 117, 110 ] } ];
+
+              ws.once('message', function(msg) {
+                // The third message should be a REQUEST RESET
+                msg = parseMessage(msg);
+                expect(msg).to.deep.equal(SyncMessage.response.reset);
+                done();
+              });
+
+              ws.send(message.stringify());
+            });
+            rsync.sourceList(fs, '/', rsyncOptions, function(err, srcList) {
+              expect(err, "[SourceList generation error]").to.not.exist;
+              var chksumRequest = SyncMessage.request.chksum;
+              chksumRequest.content = {
+                srcList: srcList,
+                path: '/'
+              };
+
+              ws.send(chksumRequest.stringify());
+            });
+          });
+
+          ws.send(SyncMessage.response.authz.stringify());
+        });
+      });
+
+      clientLogic();
+    });
+
+    it('should restart a downstream sync on receiving a verification error', function(done){
+      var fs;
+      var sync;
+
+      function clientLogic() {
+        fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
+        sync = fs.sync;
+        sync.on('error', function(err) {
+          // Confirm our client-side error is emitted as expected
+          expect(err).to.exist;
+        });
+
+        sync.connect("ws://0.0.0.0:" + port);
+      }
+
+      // First, prepare the stub of the server.
+      testServer.on('connection', function(ws){
+        socket = ws;
+
+        // Stub WS auth
+        ws.once('message', function(msg, flags) {
+          msg = msg.data || msg;
+          msg = parseMessage(msg);
+
+          // after auth
+          ws.once('message', function(msg, flags){
+            msg = parseMessage(msg);
+            expect(msg).to.deep.equal(SyncMessage.response.authz);
+
+            ws.once('message', function(msg, flags) {
+              // The second message from the client should be a REQUEST DIFFS
+              msg = parseMessage(msg);
+              expect(msg.type).to.equal(SyncMessage.REQUEST);
+              expect(msg.name).to.equal(SyncMessage.DIFFS);
+              var message = SyncMessage.response.diffs;
+              message.content = {};
+              message.content.diffs = [];
+              message.content.diffs[0] = {};
+              message.content.diffs[0].diffs = [ { data: [ 102, 117, 110 ] } ];
+              message.content.diffs[0].path = 'file.txt';
+
+              ws.once('message', function(msg) {
+                // The third message should be a REQUEST RESET
+                ws.once('message', function(msg) {
+                  msg = parseMessage(msg);
+                  expect(msg).to.deep.equal(SyncMessage.response.reset);
+                  done();
+                });
+                msg = parseMessage(msg);
+
+                ws.send(SyncMessage.error.verification.stringify());
+              });
+              ws.send(message.stringify());
+
+            });
             rsync.sourceList(fs, '/', rsyncOptions, function(err, srcList) {
               expect(err, "[SourceList generation error]").to.not.exist;
               var chksumRequest = SyncMessage.request.chksum;

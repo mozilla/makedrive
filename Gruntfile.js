@@ -169,7 +169,8 @@ module.exports = function(grunt) {
 
     jshint: {
       options: {
-        expr: true
+        expr: true,
+        "-W004": true
       },
       all: [
         "Gruntfile.js",

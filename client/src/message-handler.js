@@ -99,6 +99,8 @@ function handleResponse(syncManager, data) {
 
     rsync.patch(fs, session.path, diffs, rsyncOptions, function(err, paths) {
       if (err) {
+        var message = SyncMessage.response.reset;
+        socket.send(message.stringify());
         return onError(syncManager, err);
       }
 
@@ -106,6 +108,8 @@ function handleResponse(syncManager, data) {
 
       rsync.pathChecksums(fs, paths.synced, size, function(err, checksums) {
         if(err) {
+          var message = SyncMessage.response.reset;
+          socket.send(message.stringify());
           return onError(syncManager, err);
         }
 
@@ -142,16 +146,17 @@ function handleError(syncManager, data) {
   var sync = syncManager.sync;
   var session = syncManager.session;
   var socket = syncManager.socket;
+  var message = SyncMessage.response.reset;
 
   // DOWNSTREAM - ERROR
-  if((((data.is.srclist && session.is.synced) || 
-        (data.is.verification && session.is.synced)) &&
-       session.is.ready) ||
-      (data.is.diffs && session.is.patch && (session.is.ready || session.is.syncing))) {
+  if((((data.is.srclist && session.is.synced)) ||
+      (data.is.diffs && session.is.patch) && (session.is.ready || session.is.syncing))) {
     session.state = states.READY;
     session.step = steps.SYNCED;
 
-    var message = SyncMessage.request.reset;
+    socket.send(message.stringify());
+    onError(syncManager, new Error('Could not sync filesystem from server... trying again'));
+  } else if(data.is.verification && session.is.patch && session.is.ready) {
     socket.send(message.stringify());
     onError(syncManager, new Error('Could not sync filesystem from server... trying again'));
   } else if(data.is.locked && session.is.ready && session.is.synced) {
