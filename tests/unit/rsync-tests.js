@@ -1355,6 +1355,75 @@ describe('[Rsync Functional tests]', function() {
       });
     });
   });
+
+  it('should create a non-existent directory if the directory path is used to sync', function (done) {
+    fs.mkdir('/dir', function (err) {
+      expect(err).to.not.exist;
+      fs.mkdir('/dir/dir2', function (err) {
+        expect(err).to.not.exist;
+        rsync.sourceList(fs, '/dir', OPTION_REC_SIZE, function (err, srcList) {
+          expect(err).to.not.exist;
+          expect(srcList).to.exist;
+          rsync.checksums(fs2, '/dir', srcList, OPTION_REC_SIZE, function (err, checksums) {
+            expect(err).to.not.exist;
+            expect(checksums).to.exist;
+            rsync.diff(fs, '/dir', checksums, OPTION_REC_SIZE, function (err, diffs) {
+              expect(err).to.not.exist;
+              expect(diffs).to.exist;
+              rsync.patch(fs2, '/dir', diffs, OPTION_REC_SIZE, function (err, paths) {
+                expect(err).to.not.exist;
+                expect(paths).to.exist;
+                expect(paths.synced).to.have.members(['/dir/dir2']);
+                fs2.stat('/dir', function (err, stats) {
+                  expect(err).to.not.exist;
+                  expect(stats).to.exist;
+                  expect(stats.isDirectory()).to.be.true;
+                  fs2.stat('/dir/dir2', function (err, stats) {
+                    expect(err).to.not.exist;
+                    expect(stats).to.exist;
+                    expect(stats.isDirectory()).to.be.true;
+                    done();
+                  });
+                });
+              });
+            });
+          });
+        });
+      });
+    });
+  });
+
+  it('should create a non-existent directory if it is empty and the path is used to sync', function (done) {
+    fs.mkdir('/dir', function (err) {
+      expect(err).to.not.exist;
+      rsync.sourceList(fs, '/dir', OPTION_REC_SIZE, function (err, srcList) {
+        expect(err).to.not.exist;
+        expect(srcList).to.exist;
+        expect(srcList).to.have.length(0);
+        rsync.checksums(fs2, '/dir', srcList, OPTION_REC_SIZE, function (err, checksums) {
+          expect(err).to.not.exist;
+          expect(checksums).to.exist;
+          expect(checksums).to.have.length(0);
+          rsync.diff(fs, '/dir', checksums, OPTION_REC_SIZE, function (err, diffs) {
+            expect(err).to.not.exist;
+            expect(diffs).to.exist;
+            expect(diffs).to.have.length(0);
+            rsync.patch(fs2, '/dir', diffs, OPTION_REC_SIZE, function (err, paths) {
+              expect(err).to.not.exist;
+              expect(paths).to.exist;
+              expect(paths.synced).to.have.length(0);
+              fs2.stat('/dir', function (err, stats) {
+                expect(err).to.not.exist;
+                expect(stats).to.exist;
+                expect(stats.isDirectory()).to.be.true;
+                done();
+              });
+            });
+          });
+        });
+      });
+    });
+  });
 });
 
 describe('[Rsync Verification Tests]', function() {
@@ -1416,15 +1485,15 @@ describe('[Rsync Verification Tests]', function() {
       });
     });
 
-    it('should return an empty checksum for a directory path', function (done) {
+    it('should return empty contents for a directory path', function (done) {
       fs.mkdir('/dir', function (err) {
         expect(err).to.not.exist;
         rsync.pathChecksums(fs, ['/dir'], CHUNK_SIZE, function (err, checksums) {
           expect(err).to.not.exist;
           expect(checksums).to.exist;
           expect(checksums).to.have.length(1);
-          expect(checksums[0]).to.include.keys('checksum');
-          expect(checksums[0].checksum).to.have.length(0);
+          expect(checksums[0]).to.include.keys('contents');
+          expect(checksums[0].contents).to.have.length(0);
           done();
         });
       });
@@ -1451,16 +1520,18 @@ describe('[Rsync Verification Tests]', function() {
                     expect(err).to.not.exist;
                     expect(checksums).to.exist;
                     expect(checksums).to.have.length(paths.length);
-                    expect(checksums[0]).to.include.keys('checksum');
-                    expect(checksums[0].checksum).to.have.length(0);
+                    expect(checksums[0]).to.include.keys('contents');
+                    expect(checksums[0].contents).to.have.length(2);
+                    expect(checksums[0].contents).to.have.members(['myfile1.txt', 'subdir1']);
                     expect(checksums[1]).to.include.keys('checksum');
                     expect(checksums[1].checksum).to.have.length.above(0);
-                    expect(checksums[2]).to.include.keys('checksum');
-                    expect(checksums[2].checksum).to.have.length(0);
-                    expect(checksums[3]).to.include.keys('checksum');
-                    expect(checksums[3].checksum).to.have.length(0);
-                    expect(checksums[4]).to.include.keys('checksum');
-                    expect(checksums[4].checksum).to.have.length(0);
+                    expect(checksums[2]).to.include.keys('contents');
+                    expect(checksums[2].contents).to.have.length(0);
+                    expect(checksums[3]).to.include.keys('contents');
+                    expect(checksums[3].contents).to.have.length(0);
+                    expect(checksums[4]).to.include.keys('contents');
+                    expect(checksums[4].contents).to.have.length(1);
+                    expect(checksums[4].contents).to.have.members(['myfile2.txt']);
                     expect(checksums[5]).to.include.keys('checksum');
                     expect(checksums[5].checksum).to.have.length.above(0);
                     done();
@@ -1600,75 +1671,6 @@ describe('[Rsync Verification Tests]', function() {
                       });
                     });
                   });
-                });
-              });
-            });
-          });
-        });
-      });
-    });
-
-    it('should create a non-existent directory if the directory path is used to sync', function (done) {
-      fs.mkdir('/dir', function (err) {
-        expect(err).to.not.exist;
-        fs.mkdir('/dir/dir2', function (err) {
-          expect(err).to.not.exist;
-          rsync.sourceList(fs, '/dir', OPTION_REC_SIZE, function (err, srcList) {
-            expect(err).to.not.exist;
-            expect(srcList).to.exist;
-            rsync.checksums(fs2, '/dir', srcList, OPTION_REC_SIZE, function (err, checksums) {
-              expect(err).to.not.exist;
-              expect(checksums).to.exist;
-              rsync.diff(fs, '/dir', checksums, OPTION_REC_SIZE, function (err, diffs) {
-                expect(err).to.not.exist;
-                expect(diffs).to.exist;
-                rsync.patch(fs2, '/dir', diffs, OPTION_REC_SIZE, function (err, paths) {
-                  expect(err).to.not.exist;
-                  expect(paths).to.exist;
-                  expect(paths.synced).to.have.members(['/dir/dir2']);
-                  fs2.stat('/dir', function (err, stats) {
-                    expect(err).to.not.exist;
-                    expect(stats).to.exist;
-                    expect(stats.isDirectory()).to.be.true;
-                    fs2.stat('/dir/dir2', function (err, stats) {
-                      expect(err).to.not.exist;
-                      expect(stats).to.exist;
-                      expect(stats.isDirectory()).to.be.true;
-                      done();
-                    });
-                  });
-                });
-              });
-            });
-          });
-        });
-      });
-    });
-
-    it('should create a non-existent directory if it is empty and the path is used to sync', function (done) {
-      fs.mkdir('/dir', function (err) {
-        expect(err).to.not.exist;
-        rsync.sourceList(fs, '/dir', OPTION_REC_SIZE, function (err, srcList) {
-          expect(err).to.not.exist;
-          expect(srcList).to.exist;
-          expect(srcList).to.have.length(0);
-          rsync.checksums(fs2, '/dir', srcList, OPTION_REC_SIZE, function (err, checksums) {
-            expect(err).to.not.exist;
-            expect(checksums).to.exist;
-            expect(checksums).to.have.length(0);
-            rsync.diff(fs, '/dir', checksums, OPTION_REC_SIZE, function (err, diffs) {
-              expect(err).to.not.exist;
-              expect(diffs).to.exist;
-              expect(diffs).to.have.length(0);
-              rsync.patch(fs2, '/dir', diffs, OPTION_REC_SIZE, function (err, paths) {
-                expect(err).to.not.exist;
-                expect(paths).to.exist;
-                expect(paths.synced).to.have.length(0);
-                fs2.stat('/dir', function (err, stats) {
-                  expect(err).to.not.exist;
-                  expect(stats).to.exist;
-                  expect(stats.isDirectory()).to.be.true;
-                  done();
                 });
               });
             });
