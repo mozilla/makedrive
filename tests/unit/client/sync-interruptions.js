@@ -27,6 +27,13 @@ describe('[Interruptions during a sync]', function() {
     });
     afterEach(function() {
       provider = null;
+
+      if (socket) {
+        socket.close();
+      }
+
+      testServer.close();
+      testServer = null;
     });
 
     function parseMessage(msg) {
@@ -36,6 +43,15 @@ describe('[Interruptions during a sync]', function() {
       msg = SyncMessage.parse(msg);
 
       return msg;
+    }
+
+    function endTestSession(sync, done) {
+      sync.once('disconnected', function() {
+        sync = null;
+        done();
+      });
+
+      sync.disconnect();
     }
 
     it('should trigger a downstream reset if they occur during a downstream sync', function(done) {
@@ -63,17 +79,6 @@ describe('[Interruptions during a sync]', function() {
             msg = parseMessage(msg);
             expect(msg).to.deep.equal(SyncMessage.response.authz);
 
-            rsync.sourceList(fs, '/', rsyncOptions, function(err, srcList) {
-              expect(err, "[SourceList generation error]").to.not.exist;
-              var chksumRequest = SyncMessage.request.chksum;
-              chksumRequest.content = {
-                srcList: srcList,
-                path: '/'
-              };
-
-              ws.send(chksumRequest.stringify());
-            });
-
             ws.once('message', function(msg, flags) {
               // The second message from the client should be a REQUEST DIFFS
               msg = parseMessage(msg);
@@ -93,13 +98,24 @@ describe('[Interruptions during a sync]', function() {
                     msg = parseMessage(msg);
                     expect(msg.type).to.equal(SyncMessage.REQUEST);
                     expect(msg.name).to.equal(SyncMessage.DIFFS);
-                    done();
+                    endTestSession(sync, done);
                   });
 
                   message.content = {diffs: diffs};
                   ws.send(message.stringify());
                 });
               });
+            });
+
+            rsync.sourceList(fs, '/', rsyncOptions, function(err, srcList) {
+              expect(err, "[SourceList generation error]").to.not.exist;
+              var chksumRequest = SyncMessage.request.chksum;
+              chksumRequest.content = {
+                srcList: srcList,
+                path: '/'
+              };
+
+              ws.send(chksumRequest.stringify());
             });
           });
 

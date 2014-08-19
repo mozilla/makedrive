@@ -85,7 +85,7 @@ function handleResponse(syncManager, data) {
 
   function resendChecksums() {
     if(!session.srcList) {
-      // Source List was somehow reset, the entire downstream sync
+      // Sourcelist was somehow reset, the entire downstream sync
       // needs to be restarted
       session.step = steps.FAILED;
       socket.send(SyncMessage.response.reset.stringify());
@@ -133,7 +133,8 @@ function handleResponse(syncManager, data) {
     fs.modifiedPath = null;
 
     // If there was a change to the filesystem that shares a common path with
-    // the path being synced, reset the downstream(even if it is the initial one)
+    // the path being synced, regenerate the checksums and send them 
+    // (even if it is the initial one)
     if(modifiedPath && hasCommonPath(session.path, modifiedPath)) {
       return resendChecksums();
     }

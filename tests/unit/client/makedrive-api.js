@@ -148,6 +148,15 @@ describe('MakeDrive Client API', function(){
       testServer = null;
     });
 
+    function endTestSession(sync, done) {
+      sync.once('disconnected', function() {
+        sync = null;
+        done();
+      });
+
+      sync.disconnect();
+    }
+
     function parseMessage(msg) {
       msg = msg.data || msg;
 
@@ -312,10 +321,11 @@ describe('MakeDrive Client API', function(){
               message.content.diffs[0].diffs = [ { data: [ 102, 117, 110 ] } ];
 
               ws.once('message', function(msg) {
-                // The third message should be a REQUEST RESET
+                // The third message should be a RESPONSE RESET
                 msg = parseMessage(msg);
                 expect(msg).to.deep.equal(SyncMessage.response.reset);
-                done();
+
+                endTestSession(sync, done);
               });
 
               ws.send(message.stringify());
@@ -381,11 +391,11 @@ describe('MakeDrive Client API', function(){
               message.content.diffs[0].path = 'file.txt';
 
               ws.once('message', function(msg) {
-                // The third message should be a REQUEST RESET
+                // The third message should be a RESPONSE RESET
                 ws.once('message', function(msg) {
                   msg = parseMessage(msg);
                   expect(msg).to.deep.equal(SyncMessage.response.reset);
-                  done();
+                  endTestSession(sync, done);
                 });
                 msg = parseMessage(msg);
 
