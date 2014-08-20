@@ -109,30 +109,27 @@ describe('[Rsync Functional tests]', function() {
   });
 
   it('should succeed if the source file is different in content but not length from the destination file. (Destination edited)', function (done) {
-    fs.mkdir('/test', function (err) {
+    fs.writeFile('/1.txt', 'This is my file. It does not have any typos.', 'utf8', function (err) {
       expect(err).to.not.exist;
-      fs.writeFile('/1.txt', 'This is my file. It does not have any typos.', 'utf8', function (err) {
+      fs2.writeFile('/1.txt', 'This iz mi fiel. It doez not have any topos,', 'utf8', function (err) {
         expect(err).to.not.exist;
-        fs.writeFile('/test/1.txt', 'This iz mi fiel. It doez not have any topos,', 'utf8', function (err) {
+        rsync.sourceList(fs, '/1.txt', OPTION_SIZE, function (err, data) {
           expect(err).to.not.exist;
-          rsync.sourceList(fs, '/1.txt', OPTION_SIZE, function (err, data) {
+          rsync.checksums(fs2, '/1.txt', data, OPTION_SIZE, function (err, data) {
             expect(err).to.not.exist;
-            rsync.checksums(fs, '/test/1.txt', data, OPTION_SIZE, function (err, data) {
+            rsync.diff(fs, '/1.txt', data, OPTION_SIZE, function (err, data) {
               expect(err).to.not.exist;
-              rsync.diff(fs, '/1.txt', data, OPTION_SIZE, function (err, data) {
+              rsync.patch(fs2, '/1.txt', data, OPTION_SIZE, function (err, paths) {
                 expect(err).to.not.exist;
-                rsync.patch(fs, '/test/1.txt', data, OPTION_SIZE, function (err, paths) {
+                expect(paths).to.exist;
+                expect(paths.synced).to.have.length(1);
+                expect(paths.synced).to.have.members(['/1.txt']);
+                expect(paths.failed).to.have.length(0);
+                fs2.readFile('/1.txt', 'utf8', function (err, data) {
                   expect(err).to.not.exist;
-                  expect(paths).to.exist;
-                  expect(paths.synced).to.have.length(1);
-                  expect(paths.synced).to.have.members(['/test/1.txt']);
-                  expect(paths.failed).to.have.length(0);
-                  fs.readFile('/test/1.txt', 'utf8', function (err, data) {
-                    expect(err).to.not.exist;
-                    expect(data).to.exist;
-                    expect(data).to.equal('This is my file. It does not have any typos.');
-                    done();
-                  });
+                  expect(data).to.exist;
+                  expect(data).to.equal('This is my file. It does not have any typos.');
+                  done();
                 });
               });
             });
@@ -143,30 +140,27 @@ describe('[Rsync Functional tests]', function() {
   });
 
   it('should succeed if the source file is longer than the destination file. (Destination appended)', function (done) {
-    fs.mkdir('/test', function (err) {
+    fs.writeFile('/1.txt', 'This is my file. It is longer than the destination file.', 'utf8', function (err) {
       expect(err).to.not.exist;
-      fs.writeFile('/1.txt', 'This is my file. It is longer than the destination file.', 'utf8', function (err) {
+      fs2.writeFile('/1.txt', 'This is my file.', 'utf8', function (err) {
         expect(err).to.not.exist;
-        fs.writeFile('/test/1.txt', 'This is my file.', 'utf8', function (err) {
+        rsync.sourceList(fs, '/1.txt', OPTION_REC_SIZE, function (err, data) {
           expect(err).to.not.exist;
-          rsync.sourceList(fs, '/1.txt', OPTION_REC_SIZE, function (err, data) {
+          rsync.checksums(fs2, '/1.txt', data, OPTION_REC_SIZE, function (err, data) {
             expect(err).to.not.exist;
-            rsync.checksums(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err, data) {
+            rsync.diff(fs, '/1.txt', data, OPTION_REC_SIZE, function (err, data) {
               expect(err).to.not.exist;
-              rsync.diff(fs, '/1.txt', data, OPTION_REC_SIZE, function (err, data) {
+              rsync.patch(fs2, '/1.txt', data, OPTION_REC_SIZE, function (err, paths) {
                 expect(err).to.not.exist;
-                rsync.patch(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err, paths) {
+                expect(paths).to.exist;
+                expect(paths.synced).to.have.length(1);
+                expect(paths.synced).to.have.members(['/1.txt']);
+                expect(paths.failed).to.have.length(0);
+                fs2.readFile('/1.txt', 'utf8', function (err, data) {
                   expect(err).to.not.exist;
-                  expect(paths).to.exist;
-                  expect(paths.synced).to.have.length(1);
-                  expect(paths.synced).to.have.members(['/test/1.txt']);
-                  expect(paths.failed).to.have.length(0);
-                  fs.readFile('/test/1.txt', 'utf8', function (err, data) {
-                    expect(err).to.not.exist;
-                    expect(data).to.exist;
-                    expect(data).to.equal('This is my file. It is longer than the destination file.');
-                    done();
-                  });
+                  expect(data).to.exist;
+                  expect(data).to.equal('This is my file. It is longer than the destination file.');
+                  done();
                 });
               });
             });
@@ -177,30 +171,27 @@ describe('[Rsync Functional tests]', function() {
   });
 
   it('should succeed if the source file shorter than the destination file. (Destination truncated)', function (done) {
-    fs.mkdir('/test', function (err) {
+    fs.writeFile('/1.txt', 'This is my file.', 'utf8', function (err) {
       expect(err).to.not.exist;
-      fs.writeFile('/1.txt', 'This is my file.', 'utf8', function (err) {
+      fs2.writeFile('/1.txt', 'This is my file. It is longer than the source version.', 'utf8', function (err) {
         expect(err).to.not.exist;
-        fs.writeFile('/test/1.txt', 'This is my file. It is longer than the source version.', 'utf8', function (err) {
+        rsync.sourceList(fs, '/1.txt', OPTION_REC_SIZE, function (err, data) {
           expect(err).to.not.exist;
-          rsync.sourceList(fs, '/1.txt', OPTION_REC_SIZE, function (err, data) {
+          rsync.checksums(fs2, '/1.txt', data, OPTION_REC_SIZE, function (err, data) {
             expect(err).to.not.exist;
-            rsync.checksums(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err, data) {
+            rsync.diff(fs, '/1.txt', data, OPTION_REC_SIZE, function (err, data) {
               expect(err).to.not.exist;
-              rsync.diff(fs, '/1.txt', data, OPTION_REC_SIZE, function (err, data) {
+              rsync.patch(fs2, '/1.txt', data, OPTION_REC_SIZE, function (err, paths) {
                 expect(err).to.not.exist;
-                rsync.patch(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err, paths) {
+                expect(paths).to.exist;
+                expect(paths.synced).to.have.length(1);
+                expect(paths.synced).to.have.members(['/1.txt']);
+                expect(paths.failed).to.have.length(0);
+                fs2.readFile('/1.txt', 'utf8', function (err, data) {
                   expect(err).to.not.exist;
-                  expect(paths).to.exist;
-                  expect(paths.synced).to.have.length(1);
-                  expect(paths.synced).to.have.members(['/test/1.txt']);
-                  expect(paths.failed).to.have.length(0);
-                  fs.readFile('/test/1.txt', 'utf8', function (err, data) {
-                    expect(err).to.not.exist;
-                    expect(data).to.exist;
-                    expect(data).to.equal('This is my file.');
-                    done();
-                  });
+                  expect(data).to.exist;
+                  expect(data).to.equal('This is my file.');
+                  done();
                 });
               });
             });
@@ -211,28 +202,25 @@ describe('[Rsync Functional tests]', function() {
   });
 
   it('should succeed if the source file does not exist in the destination folder (Destination file created)', function (done) {
-    fs.mkdir('/test', function (err) {
+    fs.writeFile('/1.txt', 'This is my file. It does not exist in the destination folder.', 'utf8', function (err) {
       expect(err).to.not.exist;
-      fs.writeFile('/1.txt', 'This is my file. It does not exist in the destination folder.', 'utf8', function (err) {
+      rsync.sourceList(fs, '/1.txt', OPTION_REC_SIZE, function (err, data) {
         expect(err).to.not.exist;
-        rsync.sourceList(fs, '/1.txt', OPTION_REC_SIZE, function (err, data) {
+        rsync.checksums(fs2, '/1.txt', data, OPTION_REC_SIZE, function (err, data) {
           expect(err).to.not.exist;
-          rsync.checksums(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err, data) {
+          rsync.diff(fs, '/1.txt', data, OPTION_REC_SIZE, function (err, data) {
             expect(err).to.not.exist;
-            rsync.diff(fs, '/1.txt', data, OPTION_REC_SIZE, function (err, data) {
+            rsync.patch(fs2, '/1.txt', data, OPTION_REC_SIZE, function (err, paths) {
               expect(err).to.not.exist;
-              rsync.patch(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err, paths) {
+              expect(paths).to.exist;
+              expect(paths.synced).to.have.length(1);
+              expect(paths.synced).to.have.members(['/1.txt']);
+              expect(paths.failed).to.have.length(0);
+              fs2.readFile('/1.txt', 'utf8', function (err, data) {
                 expect(err).to.not.exist;
-                expect(paths).to.exist;
-                expect(paths.synced).to.have.length(1);
-                expect(paths.synced).to.have.members(['/test/1.txt']);
-                expect(paths.failed).to.have.length(0);
-                fs.readFile('/test/1.txt', 'utf8', function (err, data) {
-                  expect(err).to.not.exist;
-                  expect(data).to.exist;
-                  expect(data).to.equal('This is my file. It does not exist in the destination folder.');
-                  done();
-                });
+                expect(data).to.exist;
+                expect(data).to.equal('This is my file. It does not exist in the destination folder.');
+                done();
               });
             });
           });
@@ -242,28 +230,25 @@ describe('[Rsync Functional tests]', function() {
   });
 
   it('should succeed if no options are provided', function (done) {
-    fs.mkdir('/test', function (err) {
+    fs.writeFile('/1.txt', 'This is my file. It does not exist in the destination folder.', 'utf8', function (err) {
       expect(err).to.not.exist;
-      fs.writeFile('/1.txt', 'This is my file. It does not exist in the destination folder.', 'utf8', function (err) {
+      rsync.sourceList(fs, '/1.txt', function (err, data) {
         expect(err).to.not.exist;
-        rsync.sourceList(fs, '/1.txt', OPTION_REC_SIZE, function (err, data) {
+        rsync.checksums(fs2, '/1.txt', data, function (err, data) {
           expect(err).to.not.exist;
-          rsync.checksums(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err, data) {
+          rsync.diff(fs, '/1.txt', data, function (err, data) {
             expect(err).to.not.exist;
-            rsync.diff(fs, '/1.txt', data, OPTION_REC_SIZE, function (err, data) {
+            rsync.patch(fs2, '/1.txt', data, function (err, paths) {
               expect(err).to.not.exist;
-              rsync.patch(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err, paths) {
+              expect(paths).to.exist;
+              expect(paths.synced).to.have.length(1);
+              expect(paths.synced).to.have.members(['/1.txt']);
+              expect(paths.failed).to.have.length(0);
+              fs2.readFile('/1.txt', 'utf8', function (err, data) {
                 expect(err).to.not.exist;
-                expect(paths).to.exist;
-                expect(paths.synced).to.have.length(1);
-                expect(paths.synced).to.have.members(['/test/1.txt']);
-                expect(paths.failed).to.have.length(0);
-                fs.readFile('/test/1.txt', 'utf8', function (err, data) {
-                  expect(err).to.not.exist;
-                  expect(data).to.exist;
-                  expect(data).to.equal('This is my file. It does not exist in the destination folder.');
-                  done();
-                });
+                expect(data).to.exist;
+                expect(data).to.equal('This is my file. It does not exist in the destination folder.');
+                done();
               });
             });
           });
@@ -275,34 +260,33 @@ describe('[Rsync Functional tests]', function() {
   it('should do nothing if the source file and destination file have the same mtime and size with \'checksum = false\' flag (Default)', function (done) {
     OPTION_REC_SIZE.checksum = false;
     var date = Date.parse('1 Oct 2000 15:33:22');
-    fs.mkdir('/test', function (err) {
+
+    fs.writeFile('/1.txt', 'This is a file.', 'utf8', function (err) {
       expect(err).to.not.exist;
-      fs.writeFile('/1.txt', 'This is a file.', 'utf8', function (err) {
+      fs2.writeFile('/1.txt', 'Different file.', 'utf8', function (err) {
         expect(err).to.not.exist;
-        fs.writeFile('/test/1.txt', 'Different file.', 'utf8', function (err) {
+        fs.utimes('/1.txt', date, date, function (err) {
           expect(err).to.not.exist;
-          fs.utimes('/1.txt', date, date, function (err) {
+          fs2.utimes('/1.txt', date, date, function (err) {
             expect(err).to.not.exist;
-            fs.utimes('/test/1.txt', date, date, function (err) {
+            rsync.sourceList(fs, '/1.txt', OPTION_REC_SIZE, function (err, data) {
               expect(err).to.not.exist;
-              rsync.sourceList(fs, '/1.txt', OPTION_REC_SIZE, function (err, data) {
+              rsync.checksums(fs2, '/1.txt', data, OPTION_REC_SIZE, function (err, data) {
                 expect(err).to.not.exist;
-                rsync.checksums(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err, data) {
+                rsync.diff(fs, '/1.txt', data, OPTION_REC_SIZE, function (err, data) {
                   expect(err).to.not.exist;
-                  rsync.diff(fs, '/1.txt', data, OPTION_REC_SIZE, function (err, data) {
+                  rsync.patch(fs2, '/1.txt', data, OPTION_REC_SIZE, function (err, paths) {
                     expect(err).to.not.exist;
-                    rsync.patch(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err, paths) {
+                    expect(paths).to.exist;
+                    expect(paths.synced).to.have.length(1);
+                    expect(paths.synced).to.have.members(['/1.txt']);
+                    expect(paths.failed).to.have.length(0);
+                    fs2.readFile('/1.txt', 'utf8', function (err, data) {
                       expect(err).to.not.exist;
-                      expect(paths).to.exist;
-                      expect(paths.synced).to.have.length(0);
-                      expect(paths.failed).to.have.length(0);
-                      fs.readFile('/test/1.txt', 'utf8', function (err, data) {
-                        expect(err).to.not.exist;
-                        expect(data).to.exist;
-                        expect(data).to.equal('Different file.');
-                        delete OPTION_REC_SIZE.checksum;
-                        done();
-                      });
+                      expect(data).to.exist;
+                      expect(data).to.equal('Different file.');
+                      delete OPTION_REC_SIZE.checksum;
+                      done();
                     });
                   });
                 });
@@ -317,35 +301,33 @@ describe('[Rsync Functional tests]', function() {
   it('should succeed if the source file and destination file have the same mtime and size with \'checksum = true\' flag', function (done) {
     OPTION_SIZE.checksum = true;
     var date = Date.parse('1 Oct 2000 15:33:22');
-    fs.mkdir('/test', function (err) {
+
+    fs.writeFile('/1.txt', 'This is a file.', 'utf8', function (err) {
       expect(err).to.not.exist;
-      fs.writeFile('/1.txt', 'This is a file.', 'utf8', function (err) {
+      fs2.writeFile('/1.txt', 'Different file.', 'utf8', function (err) {
         expect(err).to.not.exist;
-        fs.writeFile('/test/1.txt', 'Different file.', 'utf8', function (err) {
+        fs.utimes('/1.txt', date, date, function (err) {
           expect(err).to.not.exist;
-          fs.utimes('/1.txt', date, date, function (err) {
+          fs2.utimes('/1.txt', date, date, function (err) {
             expect(err).to.not.exist;
-            fs.utimes('/test/1.txt', date, date, function (err) {
+            rsync.sourceList(fs, '/1.txt', OPTION_SIZE, function (err, data) {
               expect(err).to.not.exist;
-              rsync.sourceList(fs, '/1.txt', OPTION_SIZE, function (err, data) {
+              rsync.checksums(fs2, '/1.txt', data, OPTION_SIZE, function (err, data) {
                 expect(err).to.not.exist;
-                rsync.checksums(fs, '/test/1.txt', data, OPTION_SIZE, function (err, data) {
+                rsync.diff(fs, '/1.txt', data, OPTION_SIZE, function (err, data) {
                   expect(err).to.not.exist;
-                  rsync.diff(fs, '/1.txt', data, OPTION_SIZE, function (err, data) {
+                  rsync.patch(fs2, '/1.txt', data, OPTION_SIZE, function (err, paths) {
                     expect(err).to.not.exist;
-                    rsync.patch(fs, '/test/1.txt', data, OPTION_SIZE, function (err, paths) {
+                    expect(paths).to.exist;
+                    expect(paths.synced).to.have.length(1);
+                    expect(paths.synced).to.have.members(['/1.txt']);
+                    expect(paths.failed).to.have.length(0);
+                    fs2.readFile('/1.txt', 'utf8', function (err, data) {
                       expect(err).to.not.exist;
-                      expect(paths).to.exist;
-                      expect(paths.synced).to.have.length(1);
-                      expect(paths.synced).to.have.members(['/test/1.txt']);
-                      expect(paths.failed).to.have.length(0);
-                      fs.readFile('/test/1.txt', 'utf8', function (err, data) {
-                        expect(err).to.not.exist;
-                        expect(data).to.exist;
-                        expect(data).to.equal('This is a file.');
-                        delete OPTION_SIZE.checksum;
-                        done();
-                      });
+                      expect(data).to.exist;
+                      expect(data).to.equal('This is a file.');
+                      delete OPTION_SIZE.checksum;
+                      done();
                     });
                   });
                 });
@@ -361,37 +343,34 @@ describe('[Rsync Functional tests]', function() {
     var mtime;
     OPTION_REC_SIZE.time = true;
 
-    fs.mkdir('/test', function (err) {
+    fs.writeFile('/1.txt', 'This is my file.', 'utf8', function (err) {
       expect(err).to.not.exist;
-      fs.writeFile('/1.txt', 'This is my file.', 'utf8', function (err) {
+      fs.stat('/1.txt', function (err, stats) {
         expect(err).to.not.exist;
-        fs.stat('/1.txt', function (err, stats) {
+        expect(stats).to.exist;
+        mtime = stats.mtime;
+        rsync.sourceList(fs, '/1.txt', OPTION_REC_SIZE, function (err, data) {
           expect(err).to.not.exist;
-          expect(stats).to.exist;
-          mtime = stats.mtime;
-          rsync.sourceList(fs, '/1.txt', OPTION_REC_SIZE, function (err, data) {
+          rsync.checksums(fs2, '/1.txt', data, OPTION_REC_SIZE, function (err, data) {
             expect(err).to.not.exist;
-            rsync.checksums(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err, data) {
+            rsync.diff(fs, '/1.txt', data, OPTION_REC_SIZE, function (err, data) {
               expect(err).to.not.exist;
-              rsync.diff(fs, '/1.txt', data, OPTION_REC_SIZE, function (err, data) {
+              rsync.patch(fs2, '/1.txt', data, OPTION_REC_SIZE, function (err, paths) {
                 expect(err).to.not.exist;
-                rsync.patch(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err, paths) {
+                expect(paths).to.exist;
+                expect(paths.synced).to.have.length(1);
+                expect(paths.synced).to.have.members(['/1.txt']);
+                expect(paths.failed).to.have.length(0);
+                fs2.readFile('/1.txt', 'utf8', function (err, data) {
                   expect(err).to.not.exist;
-                  expect(paths).to.exist;
-                  expect(paths.synced).to.have.length(1);
-                  expect(paths.synced).to.have.members(['/test/1.txt']);
-                  expect(paths.failed).to.have.length(0);
-                  fs.readFile('/test/1.txt', 'utf8', function (err, data) {
+                  expect(data).to.exist;
+                  expect(data).to.equal('This is my file.');
+                  fs2.stat('/1.txt', function (err, stats) {
                     expect(err).to.not.exist;
-                    expect(data).to.exist;
-                    expect(data).to.equal('This is my file.');
-                    fs.stat('/test/1.txt', function (err, stats) {
-                      expect(err).to.not.exist;
-                      expect(stats).to.exist;
-                      expect(stats.mtime).to.equal(mtime);
-                      delete OPTION_REC_SIZE.time;
-                      done();
-                    });
+                    expect(stats).to.exist;
+                    expect(stats.mtime).to.equal(mtime);
+                    delete OPTION_REC_SIZE.time;
+                    done();
                   });
                 });
               });
@@ -403,37 +382,31 @@ describe('[Rsync Functional tests]', function() {
   });
 
   it('should copy a symlink as a file with \'links = false\' flag (Default)', function (done) {
-    fs.mkdir('/test', function (err) {
+    fs.writeFile('/1.txt', 'This is a file', function (err) {
       expect(err).to.not.exist;
-      fs.writeFile('/1.txt', 'This is a file', function (err) {
+      fs.symlink('/1.txt', '/2', function (err) {
         expect(err).to.not.exist;
-        fs.symlink('/1.txt', '/2', function (err) {
+        rsync.sourceList(fs, '/2', OPTION_REC_SIZE, function (err, data) {
           expect(err).to.not.exist;
-          rsync.sourceList(fs, '/2', OPTION_REC_SIZE, function (err, data) {
+          rsync.checksums(fs2, '/2', data, OPTION_REC_SIZE, function (err, data) {
             expect(err).to.not.exist;
-            rsync.checksums(fs, '/test/2', data, OPTION_REC_SIZE, function (err, data) {
+            rsync.diff(fs, '/2', data, OPTION_REC_SIZE, function (err, data) {
               expect(err).to.not.exist;
-              rsync.diff(fs, '/2', data, OPTION_REC_SIZE, function (err, data) {
+              rsync.patch(fs2, '/2', data, OPTION_REC_SIZE, function (err, paths) {
                 expect(err).to.not.exist;
-                rsync.patch(fs, '/test/2', data, OPTION_REC_SIZE, function (err, paths) {
+                expect(paths).to.exist;
+                expect(paths.synced).to.have.length(1);
+                expect(paths.synced).to.have.members(['/2']);
+                expect(paths.failed).to.have.length(0);
+                fs2.lstat('/2', function (err, stats) {
                   expect(err).to.not.exist;
-                  expect(paths).to.exist;
-                  expect(paths.synced).to.have.length(1);
-                  expect(paths.synced).to.have.members(['/test/2']);
-                  expect(paths.failed).to.have.length(0);
-                  fs.unlink('/1.txt', function (err) {
+                  expect(stats).to.exist;
+                  expect(stats.type).to.equal('FILE');
+                  fs2.readFile('/2', 'utf8', function (err, data) {
                     expect(err).to.not.exist;
-                    fs.lstat('/test/2', function (err, stats) {
-                      expect(err).to.not.exist;
-                      expect(stats).to.exist;
-                      expect(stats.type).to.equal('FILE');
-                      fs.readFile('/test/2', 'utf8', function (err, data) {
-                        expect(err).to.not.exist;
-                        expect(data).to.exist;
-                        expect(data).to.equal('This is a file');
-                        done();
-                      });
-                    });
+                    expect(data).to.exist;
+                    expect(data).to.equal('This is a file');
+                    done();
                   });
                 });
               });
@@ -446,29 +419,30 @@ describe('[Rsync Functional tests]', function() {
 
   it('should copy a symlink as a link with \'links = true\' flag', function (done) {
     OPTION_REC_SIZE.links = true;
-    fs.mkdir('/test', function (err) {
+
+    fs.writeFile('/apple.txt', 'This is a file', function (err) {
       expect(err).to.not.exist;
-      fs.writeFile('/apple.txt', 'This is a file', function (err) {
+      fs2.writeFile('/apple.txt', 'This is a file', function (err) {
         expect(err).to.not.exist;
         fs.symlink('/apple.txt', '/apple', function (err) {
           expect(err).to.not.exist;
           rsync.sourceList(fs, '/apple', OPTION_REC_SIZE, function (err, data) {
             expect(err).to.not.exist;
-            rsync.checksums(fs, '/test/apple', data, OPTION_REC_SIZE, function (err, data) {
+            rsync.checksums(fs2, '/apple', data, OPTION_REC_SIZE, function (err, data) {
               expect(err).to.not.exist;
               rsync.diff(fs, '/apple', data, OPTION_REC_SIZE, function (err, data) {
                 expect(err).to.not.exist;
-                rsync.patch(fs, '/test/apple', data, OPTION_REC_SIZE, function (err, paths) {
+                rsync.patch(fs2, '/apple', data, OPTION_REC_SIZE, function (err, paths) {
                   expect(err).to.not.exist;
                   expect(paths).to.exist;
                   expect(paths.synced).to.have.length(1);
-                  expect(paths.synced).to.have.members(['/test/apple']);
+                  expect(paths.synced).to.have.members(['/apple']);
                   expect(paths.failed).to.have.length(0);
-                  fs.lstat('/test/apple', function (err, stats) {
+                  fs2.lstat('/apple', function (err, stats) {
                     expect(err).to.not.exist;
                     expect(stats).to.exist;
                     expect(stats.type).to.equal('SYMLINK');
-                    fs.readFile('/test/apple', 'utf8', function (err, data) {
+                    fs2.readFile('/apple', 'utf8', function (err, data) {
                       expect(err).to.not.exist;
                       expect(data).to.exist;
                       expect(data).to.equal('This is a file');
@@ -485,13 +459,13 @@ describe('[Rsync Functional tests]', function() {
     });
   });
 
-  it('should copy a symlink as a file with \'links = false\' flag and update time with \'time: true\' flag', function (done) {
+  it('should copy a symlink as a file with \'links = false\' flag and update time with \'time = true\' flag', function (done) {
     var mtime;
     OPTION_REC_SIZE.time = true;
 
-    fs.mkdir('/test', function (err) {
+    fs.writeFile('/1.txt', 'This is a file', function (err) {
       expect(err).to.not.exist;
-      fs.writeFile('/1.txt', 'This is a file', function (err) {
+      fs2.writeFile('/1.txt', 'This is a file', function (err) {
         expect(err).to.not.exist;
         fs.symlink('/1.txt', '/2', function (err) {
           expect(err).to.not.exist;
@@ -501,24 +475,24 @@ describe('[Rsync Functional tests]', function() {
             mtime = stats.mtime;
             rsync.sourceList(fs, '/2', OPTION_REC_SIZE, function (err, data) {
               expect(err).to.not.exist;
-              rsync.checksums(fs, '/test/2', data, OPTION_REC_SIZE, function (err, data) {
+              rsync.checksums(fs2, '/2', data, OPTION_REC_SIZE, function (err, data) {
                 expect(err).to.not.exist;
                 rsync.diff(fs, '/2', data, OPTION_REC_SIZE, function (err, data) {
                   expect(err).to.not.exist;
-                  rsync.patch(fs, '/test/2', data, OPTION_REC_SIZE, function (err, paths) {
+                  rsync.patch(fs2, '/2', data, OPTION_REC_SIZE, function (err, paths) {
                     expect(err).to.not.exist;
                     expect(paths).to.exist;
                     expect(paths.synced).to.have.length(1);
-                    expect(paths.synced).to.have.members(['/test/2']);
+                    expect(paths.synced).to.have.members(['/2']);
                     expect(paths.failed).to.have.length(0);
-                    fs.unlink('/1.txt', function (err) {
+                    fs2.unlink('/1.txt', function (err) {
                       expect(err).to.not.exist;
-                      fs.lstat('/test/2', function (err, stats) {
+                      fs2.lstat('/2', function (err, stats) {
                         expect(err).to.not.exist;
                         expect(stats).to.exist;
                         expect(stats.mtime).to.equal(mtime);
                         expect(stats.type).to.equal('FILE');
-                        fs.readFile('/test/2', 'utf8', function (err, data) {
+                        fs2.readFile('/2', 'utf8', function (err, data) {
                           expect(err).to.not.exist;
                           expect(data).to.exist;
                           expect(data).to.equal('This is a file');
@@ -537,26 +511,29 @@ describe('[Rsync Functional tests]', function() {
     });
   });
 
-  it('should succeed if the destination folder does not exist (Destination directory created)', function (done) {
-    fs.writeFile('/1.txt', 'This is my file. It does not exist in the destination folder.', 'utf8', function (err) {
+  it('should succeed if the destination parent folder does not exist (Destination directory created)', function (done) {
+    fs.mkdir('/test', function (err) {
       expect(err).to.not.exist;
-      rsync.sourceList(fs, '/1.txt', OPTION_REC_SIZE, function (err, data) {
+      fs.writeFile('/test/1.txt', 'This is my file. It does not exist in the destination folder.', 'utf8', function (err) {
         expect(err).to.not.exist;
-        rsync.checksums(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err, data) {
+        rsync.sourceList(fs, '/test/1.txt', OPTION_REC_SIZE, function (err, data) {
           expect(err).to.not.exist;
-          rsync.diff(fs, '/1.txt', data, OPTION_REC_SIZE, function (err, data) {
+          rsync.checksums(fs2, '/test/1.txt', data, OPTION_REC_SIZE, function (err, data) {
             expect(err).to.not.exist;
-            rsync.patch(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err, paths) {
+            rsync.diff(fs, '/test/1.txt', data, OPTION_REC_SIZE, function (err, data) {
               expect(err).to.not.exist;
-              expect(paths).to.exist;
-              expect(paths.synced).to.have.length(1);
-              expect(paths.synced).to.have.members(['/test/1.txt']);
-              expect(paths.failed).to.have.length(0);
-              fs.readFile('/test/1.txt', 'utf8', function (err, data) {
+              rsync.patch(fs2, '/test/1.txt', data, OPTION_REC_SIZE, function (err, paths) {
                 expect(err).to.not.exist;
-                expect(data).to.exist;
-                expect(data).to.equal('This is my file. It does not exist in the destination folder.');
-                done();
+                expect(paths).to.exist;
+                expect(paths.synced).to.have.length(1);
+                expect(paths.synced).to.have.members(['/test/1.txt']);
+                expect(paths.failed).to.have.length(0);
+                fs2.readFile('/test/1.txt', 'utf8', function (err, data) {
+                  expect(err).to.not.exist;
+                  expect(data).to.exist;
+                  expect(data).to.equal('This is my file. It does not exist in the destination folder.');
+                  done();
+                });
               });
             });
           });
@@ -568,7 +545,7 @@ describe('[Rsync Functional tests]', function() {
   it('should succeed syncing a directory if the destination directory is empty', function (done) {
     fs.mkdir('/test', function (err) {
       expect(err).to.not.exist;
-      fs.mkdir('/test2', function (err) {
+      fs2.mkdir('/test', function (err) {
         expect(err).to.not.exist;
         fs.writeFile('/test/1.txt', 'This is my 1st file. It does not have any typos.', 'utf8', function (err) {
           expect(err).to.not.exist;
@@ -576,21 +553,21 @@ describe('[Rsync Functional tests]', function() {
             expect(err).to.not.exist;
             rsync.sourceList(fs, '/test', OPTION_REC_SIZE, function (err, data) {
               expect(err).to.not.exist;
-              rsync.checksums(fs, '/test2', data, OPTION_REC_SIZE, function (err, data) {
+              rsync.checksums(fs2, '/test', data, OPTION_REC_SIZE, function (err, data) {
                 expect(err).to.not.exist;
                 rsync.diff(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
                   expect(err).to.not.exist;
-                  rsync.patch(fs, '/test2', data, OPTION_REC_SIZE, function (err, paths) {
+                  rsync.patch(fs2, '/test', data, OPTION_REC_SIZE, function (err, paths) {
                     expect(err).to.not.exist;
                     expect(paths).to.exist;
                     expect(paths.synced).to.have.length(2);
-                    expect(paths.synced).to.have.members(['/test2/1.txt', '/test2/2.txt']);
+                    expect(paths.synced).to.have.members(['/test/1.txt', '/test/2.txt']);
                     expect(paths.failed).to.have.length(0);
-                    fs.readFile('/test2/1.txt', 'utf8', function (err, data) {
+                    fs2.readFile('/test/1.txt', 'utf8', function (err, data) {
                       expect(err).to.not.exist;
                       expect(data).to.exist;
                       expect(data).to.equal('This is my 1st file. It does not have any typos.');
-                      fs.readFile('/test2/2.txt', 'utf8', function (err, data) {
+                      fs2.readFile('/test/2.txt', 'utf8', function (err, data) {
                         expect(err).to.not.exist;
                         expect(data).to.exist;
                         expect(data).to.equal('This is my 2nd file. It is longer than the destination file.');
@@ -610,43 +587,37 @@ describe('[Rsync Functional tests]', function() {
   it('should succeed syncing a directory if the destination directory doesn\'t exist', function (done) {
     fs.mkdir('/test', function (err) {
       expect(err).to.not.exist;
-      fs.mkdir('/test2', function (err) {
+      fs.mkdir('/test/folder', function (err) {
         expect(err).to.not.exist;
-        fs.mkdir('/test/folder', function (err) {
+        fs.writeFile('/test/folder/1.txt', 'This is my 1st file. It does not have any typos.', 'utf8', function (err) {
           expect(err).to.not.exist;
-          fs.writeFile('/test/folder/1.txt', 'This is my 1st file. It does not have any typos.', 'utf8', function (err) {
+          fs.writeFile('/test/folder/2.txt', 'This is my 2nd file. It is longer than the destination file.', 'utf8', function (err) {
             expect(err).to.not.exist;
-            fs.writeFile('/test/folder/2.txt', 'This is my 2nd file. It is longer than the destination file.', 'utf8', function (err) {
+            rsync.sourceList(fs, '/test', OPTION_REC_SIZE, function (err, data) {
               expect(err).to.not.exist;
-              rsync.sourceList(fs, '/test', {
-                recursive: true,
-                size: 5
-              }, function (err, data) {
+              rsync.checksums(fs2, '/test', data, OPTION_REC_SIZE, function (err, data) {
                 expect(err).to.not.exist;
-                rsync.checksums(fs, '/test2', data, OPTION_REC_SIZE, function (err, data) {
+                rsync.diff(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
                   expect(err).to.not.exist;
-                  rsync.diff(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
+                  rsync.patch(fs2, '/test', data, OPTION_REC_SIZE, function (err, paths) {
                     expect(err).to.not.exist;
-                    rsync.patch(fs, '/test2', data, OPTION_REC_SIZE, function (err, paths) {
+                    expect(paths).to.exist;
+                    expect(paths.synced).to.have.length(3);
+                    expect(paths.synced).to.have.members(['/test/folder', '/test/folder/1.txt', '/test/folder/2.txt']);
+                    expect(paths.failed).to.have.length(0);
+                    fs2.stat('/test/folder', function (err, stats) {
                       expect(err).to.not.exist;
-                      expect(paths).to.exist;
-                      expect(paths.synced).to.have.length(3);
-                      expect(paths.synced).to.have.members(['/test2/folder', '/test2/folder/1.txt', '/test2/folder/2.txt']);
-                      expect(paths.failed).to.have.length(0);
-                      fs.stat('/test2/folder', function (err, stats) {
+                      expect(stats).to.exist;
+                      expect(stats.type).to.equal('DIRECTORY');
+                      fs2.readFile('/test/folder/1.txt', 'utf8', function (err, data) {
                         expect(err).to.not.exist;
-                        expect(stats).to.exist;
-                        expect(stats.type).to.equal('DIRECTORY');
-                        fs.readFile('/test2/folder/1.txt', 'utf8', function (err, data) {
+                        expect(data).to.exist;
+                        expect(data).to.equal('This is my 1st file. It does not have any typos.');
+                        fs2.readFile('/test/folder/2.txt', 'utf8', function (err, data) {
                           expect(err).to.not.exist;
                           expect(data).to.exist;
-                          expect(data).to.equal('This is my 1st file. It does not have any typos.');
-                          fs.readFile('/test2/folder/2.txt', 'utf8', function (err, data) {
-                            expect(err).to.not.exist;
-                            expect(data).to.exist;
-                            expect(data).to.equal('This is my 2nd file. It is longer than the destination file.');
-                            done();
-                          });
+                          expect(data).to.equal('This is my 2nd file. It is longer than the destination file.');
+                          done();
                         });
                       });
                     });
@@ -668,9 +639,9 @@ describe('[Rsync Functional tests]', function() {
       expect(err).to.not.exist;
       fs.mkdir('/test/sync', function (err) {
         expect(err).to.not.exist;
-        fs.mkdir('/test2', function (err) {
+        fs2.mkdir('/test', function (err) {
           expect(err).to.not.exist;
-          fs.mkdir('/test2/sync', function (err) {
+          fs2.mkdir('/test/sync', function (err) {
             expect(err).to.not.exist;
             fs.writeFile('/test/1.txt', 'This is my 1st file.', 'utf8', function (err) {
               expect(err).to.not.exist;
@@ -678,33 +649,33 @@ describe('[Rsync Functional tests]', function() {
                 expect(err).to.not.exist;
                 fs.writeFile('/test/sync/3.txt', 'This is my 3rd file.', 'utf8', function (err) {
                   expect(err).to.not.exist;
-                  fs.writeFile('/test2/sync/3.txt', 'This shouldn\'t sync.', 'utf8', function (err) {
+                  fs2.writeFile('/test/sync/3.txt', 'This shouldn\'t sync.', 'utf8', function (err) {
                     expect(err).to.not.exist;
                     fs.utimes('/test/sync/3.txt', date, date, function (err) {
                       expect(err).to.not.exist;
-                      fs.utimes('/test2/sync/3.txt', date, date, function (err) {
+                      fs2.utimes('/test/sync/3.txt', date, date, function (err) {
                         expect(err).to.not.exist;
                         rsync.sourceList(fs, '/test', OPTION_REC_SIZE, function (err, data) {
                           expect(err).to.not.exist;
-                          rsync.checksums(fs, '/test2', data, OPTION_REC_SIZE, function (err, data) {
+                          rsync.checksums(fs2, '/test', data, OPTION_REC_SIZE, function (err, data) {
                             expect(err).to.not.exist;
                             rsync.diff(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
                               expect(err).to.not.exist;
-                              rsync.patch(fs, '/test2', data, OPTION_REC_SIZE, function (err, paths) {
+                              rsync.patch(fs2, '/test', data, OPTION_REC_SIZE, function (err, paths) {
                                 expect(err).to.not.exist;
                                 expect(paths).to.exist;
-                                expect(paths.synced).to.have.length(3);
-                                expect(paths.synced).to.have.members(['/test2/1.txt', '/test2/sync', '/test2/sync/2.txt']);
+                                expect(paths.synced).to.have.length(4);
+                                expect(paths.synced).to.have.members(['/test/1.txt', '/test/sync', '/test/sync/2.txt', '/test/sync/3.txt']);
                                 expect(paths.failed).to.have.length(0);
-                                fs.readFile('/test2/1.txt', 'utf8', function (err, data) {
+                                fs2.readFile('/test/1.txt', 'utf8', function (err, data) {
                                   expect(err).to.not.exist;
                                   expect(data).to.exist;
                                   expect(data).to.equal('This is my 1st file.');
-                                  fs.readFile('/test2/sync/2.txt', 'utf8', function (err, data) {
+                                  fs2.readFile('/test/sync/2.txt', 'utf8', function (err, data) {
                                     expect(err).to.not.exist;
                                     expect(data).to.exist;
                                     expect(data).to.equal('This is my 2nd file.');
-                                    fs.readFile('/test2/sync/3.txt', 'utf8', function (err, data) {
+                                    fs2.readFile('/test/sync/3.txt', 'utf8', function (err, data) {
                                       expect(err).to.not.exist;
                                       expect(data).to.exist;
                                       expect(data).to.equal('This shouldn\'t sync.');
@@ -744,31 +715,31 @@ describe('[Rsync Functional tests]', function() {
                 expect(err).to.not.exist;
                 fs.mkdir('/projects/proj_2/inside_proj_2', function (err) {
                   expect(err).to.not.exist;
-                  rsync.sourceList(fs, '/projects', OPTION_REC_SIZE, function (err, data) {
+                  rsync.sourceList(fs, '/', OPTION_REC_SIZE, function (err, data) {
                     expect(err).to.not.exist;
                     rsync.checksums(fs2, '/', data, OPTION_REC_SIZE, function (err, data) {
                       expect(err).to.not.exist;
-                      rsync.diff(fs, '/projects', data, OPTION_REC_SIZE, function (err, data) {
+                      rsync.diff(fs, '/', data, OPTION_REC_SIZE, function (err, data) {
                         expect(err).to.not.exist;
                         rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
                           expect(err).to.not.exist;
                           expect(paths).to.exist;
-                          expect(paths.synced).to.have.length(6);
-                          expect(paths.synced).to.have.members(['/proj_1', '/proj_2', '/proj_1/index.html', '/proj_1/styles.css', '/proj_2/styles2.css', '/proj_2/inside_proj_2']);
+                          expect(paths.synced).to.have.length(7);
+                          expect(paths.synced).to.have.members(['/projects', '/projects/proj_1', '/projects/proj_2', '/projects/proj_1/index.html', '/projects/proj_1/styles.css', '/projects/proj_2/styles2.css', '/projects/proj_2/inside_proj_2']);
                           expect(paths.failed).to.have.length(0);
-                          fs2.readFile('/proj_1/index.html', 'utf8', function (err, data) {
+                          fs2.readFile('/projects/proj_1/index.html', 'utf8', function (err, data) {
                             expect(err).to.not.exist;
                             expect(data).to.exist;
                             expect(data).to.equal('Hello world');
-                            fs2.readFile('/proj_1/styles.css', 'utf8', function (err, data) {
+                            fs2.readFile('/projects/proj_1/styles.css', 'utf8', function (err, data) {
                               expect(err).to.not.exist;
                               expect(data).to.exist;
                               expect(data).to.equal('CSS');
-                              fs2.readFile('/proj_2/styles2.css', 'utf8', function (err, data) {
+                              fs2.readFile('/projects/proj_2/styles2.css', 'utf8', function (err, data) {
                                 expect(err).to.not.exist;
                                 expect(data).to.exist;
                                 expect(data).to.equal('CSS');
-                                fs2.stat('/proj_2/inside_proj_2', function (err, stats) {
+                                fs2.stat('/projects/proj_2/inside_proj_2', function (err, stats) {
                                   expect(err).to.not.exist;
                                   done();
                                 });
@@ -797,19 +768,20 @@ describe('[Rsync Functional tests]', function() {
           expect(err).to.not.exist;
           fs.writeFile('/test/dir/dirdir/1.txt', 'This is my 1st file. It does not have any typos.', 'utf8', function (err) {
             expect(err).to.not.exist;
-            rsync.sourceList(fs, '/test', OPTION_REC_SIZE, function (err, data) {
+            rsync.sourceList(fs, '/', OPTION_REC_SIZE, function (err, data) {
               expect(err).to.not.exist;
               rsync.checksums(fs2, '/', data, OPTION_REC_SIZE, function (err, data) {
                 expect(err).to.not.exist;
-                rsync.diff(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
+                rsync.diff(fs, '/', data, OPTION_REC_SIZE, function (err, data) {
                   expect(err).to.not.exist;
                   rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
                     expect(err).to.not.exist;
                     expect(paths).to.exist;
-                    expect(paths.synced).to.have.length(3);
-                    expect(paths.synced).to.have.members(['/dir', '/dir/dirdir', '/dir/dirdir/1.txt']);
+                    expect(paths.synced).to.have.length(4);
+
+                    expect(paths.synced).to.have.members(['/test', '/test/dir', '/test/dir/dirdir', '/test/dir/dirdir/1.txt']);
                     expect(paths.failed).to.have.length(0);
-                    fs2.readFile('/dir/dirdir/1.txt', 'utf8', function (err, data) {
+                    fs2.readFile('/test/dir/dirdir/1.txt', 'utf8', function (err, data) {
                       expect(err).to.not.exist;
                       expect(data).to.exist;
                       expect(data).to.equal('This is my 1st file. It does not have any typos.');
@@ -834,33 +806,33 @@ describe('[Rsync Functional tests]', function() {
           expect(err).to.not.exist;
           fs.mkdir('/test/dir1/dir12', function (err) {
             expect(err).to.not.exist;
-            fs.mkdir('/test2', function (err) {
+            fs2.mkdir('/test', function (err) {
               expect(err).to.not.exist;
               rsync.sourceList(fs, '/test', OPTION_REC_SIZE, function (err, data) {
                 expect(err).to.not.exist;
-                rsync.checksums(fs, '/test2', data, OPTION_REC_SIZE, function (err, data) {
+                rsync.checksums(fs2, '/test', data, OPTION_REC_SIZE, function (err, data) {
                   expect(err).to.not.exist;
                   rsync.diff(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
                     expect(err).to.not.exist;
-                    rsync.patch(fs, '/test2', data, OPTION_REC_SIZE, function (err, paths) {
+                    rsync.patch(fs2, '/test', data, OPTION_REC_SIZE, function (err, paths) {
                       expect(err).to.not.exist;
                       expect(paths).to.exist;
                       expect(paths.synced).to.have.length(3);
-                      expect(paths.synced).to.have.members(['/test2/dir1', '/test2/dir2', '/test2/dir1/dir12']);
+                      expect(paths.synced).to.have.members(['/test/dir1', '/test/dir2', '/test/dir1/dir12']);
                       expect(paths.failed).to.have.length(0);
-                      fs.stat('/test2', function (err, stats) {
+                      fs2.stat('/test', function (err, stats) {
                         expect(err).to.not.exist;
                         expect(stats).to.exist;
                         expect(stats.type).to.equal('DIRECTORY');
-                        fs.stat('/test2/dir1', function (err, stats) {
+                        fs2.stat('/test/dir1', function (err, stats) {
                           expect(err).to.not.exist;
                           expect(stats).to.exist;
                           expect(stats.type).to.equal('DIRECTORY');
-                          fs.stat('/test2/dir2', function (err, stats) {
+                          fs2.stat('/test/dir2', function (err, stats) {
                             expect(err).to.not.exist;
                             expect(stats).to.exist;
                             expect(stats.type).to.equal('DIRECTORY');
-                            fs.stat('/test2/dir1/dir12', function (err, stats) {
+                            fs2.stat('/test/dir1/dir12', function (err, stats) {
                               expect(err).to.not.exist;
                               expect(stats).to.exist;
                               expect(stats.type).to.equal('DIRECTORY');
@@ -881,52 +853,49 @@ describe('[Rsync Functional tests]', function() {
   });
 
   it('should succeed syncing a file that has been renamed', function (done) {
-    fs.mkdir('/test', function (err) {
+    fs.writeFile('/file1.txt', 'This is the file I created', 'utf8', function (err) {
       expect(err).to.not.exist;
-      fs.writeFile('/test/file1.txt', 'This is the file I created', 'utf8', function (err) {
+      rsync.sourceList(fs, '/', OPTION_REC_SIZE, function (err, data) {
         expect(err).to.not.exist;
-        rsync.sourceList(fs, '/test', OPTION_REC_SIZE, function (err, data) {
+        rsync.checksums(fs2, '/', data, OPTION_REC_SIZE, function (err, data) {
           expect(err).to.not.exist;
-          rsync.checksums(fs2, '/', data, OPTION_REC_SIZE, function (err, data) {
+          rsync.diff(fs, '/', data, OPTION_REC_SIZE, function (err, data) {
             expect(err).to.not.exist;
-            rsync.diff(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
+            rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
               expect(err).to.not.exist;
-              rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
+              expect(paths).to.exist;
+              expect(paths.synced).to.have.length(1);
+              expect(paths.synced).to.have.members(['/file1.txt']);
+              expect(paths.failed).to.have.length(0);
+              fs2.readFile('/file1.txt', 'utf8', function (err, data) {
                 expect(err).to.not.exist;
-                expect(paths).to.exist;
-                expect(paths.synced).to.have.length(1);
-                expect(paths.synced).to.have.members(['/file1.txt']);
-                expect(paths.failed).to.have.length(0);
-                fs2.readFile('/file1.txt', 'utf8', function (err, data) {
+                expect(data).to.exist;
+                expect(data).to.equal('This is the file I created');
+                fs.rename('/file1.txt', '/myfile.txt', function (err) {
                   expect(err).to.not.exist;
-                  expect(data).to.exist;
-                  expect(data).to.equal('This is the file I created');
-                  fs.rename('/test/file1.txt', '/test/myfile.txt', function (err) {
-                    expect(err).to.not.exist;
-                    fs.readFile('/test/file1.txt', 'utf8', function (err, data) {
-                      expect(err).to.exist;
-                      expect(err.code).to.equal('ENOENT');
-                      rsync.sourceList(fs, '/test', OPTION_REC_SIZE, function (err, data) {
+                  fs.readFile('/file1.txt', 'utf8', function (err, data) {
+                    expect(err).to.exist;
+                    expect(err.code).to.equal('ENOENT');
+                    rsync.sourceList(fs, '/', OPTION_REC_SIZE, function (err, data) {
+                      expect(err).to.not.exist;
+                      rsync.checksums(fs2, '/', data, OPTION_REC_SIZE, function (err, data) {
                         expect(err).to.not.exist;
-                        rsync.checksums(fs2, '/', data, OPTION_REC_SIZE, function (err, data) {
+                        rsync.diff(fs, '/', data, OPTION_REC_SIZE, function (err, data) {
                           expect(err).to.not.exist;
-                          rsync.diff(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
+                          rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
                             expect(err).to.not.exist;
-                            rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
+                            expect(paths).to.exist;
+                            expect(paths.synced).to.have.length(2);
+                            expect(paths.synced).to.have.members(['/myfile.txt', '/file1.txt']);
+                            expect(paths.failed).to.have.length(0);
+                            fs2.readFile('/myfile.txt', 'utf8', function (err, data) {
                               expect(err).to.not.exist;
-                              expect(paths).to.exist;
-                              expect(paths.synced).to.have.length(2);
-                              expect(paths.synced).to.have.members(['/myfile.txt', '/file1.txt']);
-                              expect(paths.failed).to.have.length(0);
-                              fs2.readFile('/myfile.txt', 'utf8', function (err, data) {
-                                expect(err).to.not.exist;
-                                expect(data).to.exist;
-                                expect(data).to.equal('This is the file I created');
-                                fs2.readFile('/file1.txt', 'utf8', function (err, data) {
-                                  expect(err).to.exist;
-                                  expect(err.code).to.equal('ENOENT');
-                                  done();
-                                });
+                              expect(data).to.exist;
+                              expect(data).to.equal('This is the file I created');
+                              fs2.readFile('/file1.txt', 'utf8', function (err, data) {
+                                expect(err).to.exist;
+                                expect(err.code).to.equal('ENOENT');
+                                done();
                               });
                             });
                           });
@@ -944,74 +913,71 @@ describe('[Rsync Functional tests]', function() {
   });
 
   it('should succeed syncing a directory that has been renamed', function (done) {
-    fs.mkdir('/test', function (err) {
+    fs.mkdir('/olddir', function (err) {
       expect(err).to.not.exist;
-      fs.mkdir('/test/olddir', function (err) {
+      fs.mkdir('/mydir', function (err) {
         expect(err).to.not.exist;
-        fs.mkdir('/test/mydir', function (err) {
+        fs.writeFile('/olddir/file1.txt', 'This is the file I created', 'utf8', function (err) {
           expect(err).to.not.exist;
-          fs.writeFile('/test/olddir/file1.txt', 'This is the file I created', 'utf8', function (err) {
+          rsync.sourceList(fs, '/', OPTION_REC_SIZE, function (err, data) {
             expect(err).to.not.exist;
-            rsync.sourceList(fs, '/test', OPTION_REC_SIZE, function (err, data) {
+            rsync.checksums(fs2, '/', data, OPTION_REC_SIZE, function (err, data) {
               expect(err).to.not.exist;
-              rsync.checksums(fs2, '/', data, OPTION_REC_SIZE, function (err, data) {
+              rsync.diff(fs, '/', data, OPTION_REC_SIZE, function (err, data) {
                 expect(err).to.not.exist;
-                rsync.diff(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
+                rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
                   expect(err).to.not.exist;
-                  rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
+                  expect(paths).to.exist;
+                  expect(paths.synced).to.have.length(3);
+                  expect(paths.synced).to.have.members(['/olddir', '/mydir', '/olddir/file1.txt']);
+                  expect(paths.failed).to.have.length(0);
+                  fs2.stat('/olddir', function (err, stats) {
                     expect(err).to.not.exist;
-                    expect(paths).to.exist;
-                    expect(paths.synced).to.have.length(3);
-                    expect(paths.synced).to.have.members(['/olddir', '/mydir', '/olddir/file1.txt']);
-                    expect(paths.failed).to.have.length(0);
-                    fs2.stat('/olddir', function (err, stats) {
+                    expect(stats).to.exist;
+                    expect(stats.type).to.equal('DIRECTORY');
+                    fs2.readFile('/olddir/file1.txt', 'utf8', function (err, data) {
                       expect(err).to.not.exist;
-                      expect(stats).to.exist;
-                      expect(stats.type).to.equal('DIRECTORY');
-                      fs2.readFile('/olddir/file1.txt', 'utf8', function (err, data) {
+                      expect(data).to.exist;
+                      expect(data).to.equal('This is the file I created');
+                      fs2.stat('/mydir', function (err, stats) {
                         expect(err).to.not.exist;
-                        expect(data).to.exist;
-                        expect(data).to.equal('This is the file I created');
-                        fs2.stat('/mydir', function (err, stats) {
+                        expect(stats).to.exist;
+                        expect(stats.type).to.equal('DIRECTORY');
+                        fs.rename('/olddir', '/newdir', function (err) {
                           expect(err).to.not.exist;
-                          expect(stats).to.exist;
-                          expect(stats.type).to.equal('DIRECTORY');
-                          fs.rename('/test/olddir', '/test/newdir', function (err) {
+                          fs.rename('/mydir', '/notmydir', function (err) {
                             expect(err).to.not.exist;
-                            fs.rename('/test/mydir', '/test/notmydir', function (err) {
+                            rsync.sourceList(fs, '/', OPTION_REC_SIZE, function (err, data) {
                               expect(err).to.not.exist;
-                              rsync.sourceList(fs, '/test', OPTION_REC_SIZE, function (err, data) {
+                              rsync.checksums(fs2, '/', data, OPTION_REC_SIZE, function (err, data) {
                                 expect(err).to.not.exist;
-                                rsync.checksums(fs2, '/', data, OPTION_REC_SIZE, function (err, data) {
+                                rsync.diff(fs, '/', data, OPTION_REC_SIZE, function (err, data) {
                                   expect(err).to.not.exist;
-                                  rsync.diff(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
+                                  rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
                                     expect(err).to.not.exist;
-                                    rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
+                                    expect(paths).to.exist;
+                                    expect(paths.synced).to.have.length(6);
+                                    expect(paths.synced).to.have.members(['/newdir', '/newdir/file1.txt', '/olddir/file1.txt', '/notmydir', '/olddir', '/mydir']);
+                                    expect(paths.failed).to.have.length(0);
+                                    fs2.stat('/newdir', function (err, stats) {
                                       expect(err).to.not.exist;
-                                      expect(paths).to.exist;
-                                      expect(paths.synced).to.have.length(5);
-                                      expect(paths.synced).to.have.members(['/newdir', '/newdir/file1.txt', '/notmydir', '/olddir', '/mydir']);
-                                      expect(paths.failed).to.have.length(0);
-                                      fs2.stat('/newdir', function (err, stats) {
+                                      expect(stats).to.exist;
+                                      expect(stats.type).to.equal('DIRECTORY');
+                                      fs2.readFile('/newdir/file1.txt', 'utf8', function (err, data) {
                                         expect(err).to.not.exist;
-                                        expect(stats).to.exist;
-                                        expect(stats.type).to.equal('DIRECTORY');
-                                        fs2.readFile('/newdir/file1.txt', 'utf8', function (err, data) {
+                                        expect(data).to.exist;
+                                        expect(data).to.equal('This is the file I created');
+                                        fs2.stat('/notmydir', function (err, stats) {
                                           expect(err).to.not.exist;
-                                          expect(data).to.exist;
-                                          expect(data).to.equal('This is the file I created');
-                                          fs2.stat('/notmydir', function (err, stats) {
-                                            expect(err).to.not.exist;
-                                            expect(stats).to.exist;
-                                            expect(stats.type).to.equal('DIRECTORY');
-                                            fs2.stat('/olddir', function (err, stats) {
+                                          expect(stats).to.exist;
+                                          expect(stats.type).to.equal('DIRECTORY');
+                                          fs2.stat('/olddir', function (err, stats) {
+                                            expect(err).to.exist;
+                                            expect(err.code).to.equal('ENOENT');
+                                            fs2.stat('/mydir', function (err, stats) {
                                               expect(err).to.exist;
                                               expect(err.code).to.equal('ENOENT');
-                                              fs2.stat('/mydir', function (err, stats) {
-                                                expect(err).to.exist;
-                                                expect(err.code).to.equal('ENOENT');
-                                                done();
-                                              });
+                                              done();
                                             });
                                           });
                                         });
@@ -1036,47 +1002,43 @@ describe('[Rsync Functional tests]', function() {
   });
 
   it('should not sync a file deleted at the source', function (done) {
-
-    fs.mkdir('/test', function (err) {
+    fs.writeFile('/myfile.txt', 'My file', 'utf8', function (err) {
       expect(err).to.not.exist;
-      fs.writeFile('/test/myfile.txt', 'My file', 'utf8', function (err) {
+      rsync.sourceList(fs, '/', OPTION_REC_SIZE, function (err, data) {
         expect(err).to.not.exist;
-        rsync.sourceList(fs, '/test', OPTION_REC_SIZE, function (err, data) {
+        rsync.checksums(fs2, '/', data, OPTION_REC_SIZE, function (err, data) {
           expect(err).to.not.exist;
-          rsync.checksums(fs2, '/', data, OPTION_REC_SIZE, function (err, data) {
+          rsync.diff(fs, '/', data, OPTION_REC_SIZE, function (err, data) {
             expect(err).to.not.exist;
-            rsync.diff(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
+            rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
               expect(err).to.not.exist;
-              rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
+              expect(paths).to.exist;
+              expect(paths.synced).to.have.length(1);
+              expect(paths.synced).to.have.members(['/myfile.txt']);
+              expect(paths.failed).to.have.length(0);
+              fs2.readFile('/myfile.txt', 'utf8', function (err, data) {
                 expect(err).to.not.exist;
-                expect(paths).to.exist;
-                expect(paths.synced).to.have.length(1);
-                expect(paths.synced).to.have.members(['/myfile.txt']);
-                expect(paths.failed).to.have.length(0);
-                fs2.readFile('/myfile.txt', 'utf8', function (err, data) {
+                expect(data).to.exist;
+                expect(data).to.equal('My file');
+                fs.unlink('/myfile.txt', function (err) {
                   expect(err).to.not.exist;
-                  expect(data).to.exist;
-                  expect(data).to.equal('My file');
-                  fs.unlink('/test/myfile.txt', function (err) {
+                  rsync.sourceList(fs, '/', OPTION_REC_SIZE, function (err, data) {
                     expect(err).to.not.exist;
-                    rsync.sourceList(fs, '/test', OPTION_REC_SIZE, function (err, data) {
+                    rsync.checksums(fs2, '/', data, OPTION_REC_SIZE, function (err, data) {
                       expect(err).to.not.exist;
-                      rsync.checksums(fs2, '/', data, OPTION_REC_SIZE, function (err, data) {
+                      rsync.diff(fs, '/', data, OPTION_REC_SIZE, function (err, data) {
                         expect(err).to.not.exist;
-                        rsync.diff(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
+                        rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
                           expect(err).to.not.exist;
-                          rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
-                            expect(err).to.not.exist;
-                            expect(paths).to.exist;
-                            expect(paths.synced).to.have.length(1);
-                            expect(paths.synced).to.have.members(['/myfile.txt']);
-                            expect(paths.failed).to.have.length(0);
-                            fs2.readFile('/myfile.txt', 'utf8', function (err, data) {
-                              expect(err).to.exist;
-                              expect(err.code).to.equal('ENOENT');
-                              expect(data).to.not.exist;
-                              done();
-                            });
+                          expect(paths).to.exist;
+                          expect(paths.synced).to.have.length(1);
+                          expect(paths.synced).to.have.members(['/myfile.txt']);
+                          expect(paths.failed).to.have.length(0);
+                          fs2.readFile('/myfile.txt', 'utf8', function (err, data) {
+                            expect(err).to.exist;
+                            expect(err.code).to.equal('ENOENT');
+                            expect(data).to.not.exist;
+                            done();
                           });
                         });
                       });
@@ -1094,6 +1056,7 @@ describe('[Rsync Functional tests]', function() {
   it('should successfully sync changes in a long file', function (done) {
     var content;
     var strcontent = "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <title>Sample HTML File</title>\n</head>\n<body>\n  <h1>Webmaker</h1>\n  <img src=\"webmaker-logo.jpg\">\n</body>\n</html>\n I have now changed this file";
+
     fs.mkdir('/test', function (err) {
       expect(err).to.not.exist;
       fs2.mkdir('/test', function (err) {
@@ -1119,26 +1082,23 @@ describe('[Rsync Functional tests]', function() {
                     strcontent += ' I have now changed this file';
                     fs2.writeFile('/test/index', strcontent, function (err) {
                       expect(err).to.not.exist;
-                      fs2.readFile('/test/index', 'utf8', function (err, data) {
-                        expect(data).to.equal(strcontent);
-                        rsync.sourceList(fs2, '/test', OPTION_REC_SIZE, function (err, data) {
+                      rsync.sourceList(fs2, '/test', OPTION_REC_SIZE, function (err, data) {
+                        expect(err).to.not.exist;
+                        rsync.checksums(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
                           expect(err).to.not.exist;
-                          rsync.checksums(fs, '/test', data, OPTION_REC_SIZE, function (err, data) {
+                          rsync.diff(fs2, '/test', data, OPTION_REC_SIZE, function (err, data) {
                             expect(err).to.not.exist;
-                            rsync.diff(fs2, '/test', data, OPTION_REC_SIZE, function (err, data) {
+                            rsync.patch(fs, '/test', data, OPTION_REC_SIZE, function (err, paths) {
                               expect(err).to.not.exist;
-                              rsync.patch(fs, '/test', data, OPTION_REC_SIZE, function (err, paths) {
+                              expect(paths).to.exist;
+                              expect(paths.synced).to.have.length(1);
+                              expect(paths.synced).to.have.members(['/test/index']);
+                              expect(paths.failed).to.have.length(0);
+                              fs.readFile('/test/index', 'utf8', function (err, data) {
                                 expect(err).to.not.exist;
-                                expect(paths).to.exist;
-                                expect(paths.synced).to.have.length(1);
-                                expect(paths.synced).to.have.members(['/test/index']);
-                                expect(paths.failed).to.have.length(0);
-                                fs.readFile('/test/index', 'utf8', function (err, data) {
-                                  expect(err).to.not.exist;
-                                  expect(data).to.exist;
-                                  expect(data).to.equal(strcontent);
-                                  done();
-                                });
+                                expect(data).to.exist;
+                                expect(data).to.equal(strcontent);
+                                done();
                               });
                             });
                           });
@@ -1157,6 +1117,7 @@ describe('[Rsync Functional tests]', function() {
 
   it('should succeed with files with special utf-8 characters', function (done) {
     OPTION_REC_SIZE.time = true;
+
     fs.mkdir('/projects', function (err) {
       expect(err).to.not.exist;
       fs2.mkdir('/projects', function (err) {
