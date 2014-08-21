@@ -971,7 +971,8 @@ function setupSyncClient(options, callback) {
     });
 
     sync.once('error', function(err) {
-      callback(err);
+      // This should never happen, and if it does, we need to fail loudly.
+      throw new Error('Unexpected client sync error: ' + err);
     });
 
     sync.connect(socketURL, result.token);
