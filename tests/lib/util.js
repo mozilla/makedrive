@@ -941,7 +941,7 @@ function setupSyncClient(options, callback) {
     // Make sure we have sane defaults on the options object for a filesystem
     options.provider = options.provider ||
       new Filer.FileSystem.providers.Memory(result.username + Date.now());
-    options.manual = !!options.manual;
+    options.manual = options.manual !== false;
     options.forceCreate = true;
 
     var fs = MakeDrive.fs(options);
