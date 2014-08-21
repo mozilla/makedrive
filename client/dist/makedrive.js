@@ -102,11 +102,11 @@ module.exports = global.WebSocket;
  * Finally, the `sync` propery also exposes a `state`, which is the
  * current sync state and can be one of:
  *
- * sync.SYNC_DISCONNECTED = 0 (also the initial state)
- * sync.SYNC_CONNECTING = 1
- * sync.SYNC_CONNECTED = 2
- * sync.SYNC_SYNCING = 3
- * sync.SYNC_ERROR = 4
+ * sync.SYNC_DISCONNECTED = "SYNC DISCONNECTED" (also the initial state)
+ * sync.SYNC_CONNECTING = "SYNC CONNECTING"
+ * sync.SYNC_CONNECTED = "SYNC CONNECTED"
+ * sync.SYNC_SYNCING = "SYNC SYNCING"
+ * sync.SYNC_ERROR = "SYNC ERROR"
  */
 
 var SyncManager = _dereq_('./sync-manager.js');
@@ -146,14 +146,26 @@ function createFS(options) {
   var pathCache;
 
   // State of the sync connection
-  sync.SYNC_DISCONNECTED = 0;
-  sync.SYNC_CONNECTING = 1;
-  sync.SYNC_CONNECTED = 2;
-  sync.SYNC_SYNCING = 3;
-  sync.SYNC_ERROR = 4;
+  sync.SYNC_DISCONNECTED = "SYNC DISCONNECTED";
+  sync.SYNC_CONNECTING = "SYNC CONNECTING";
+  sync.SYNC_CONNECTED = "SYNC CONNECTED";
+  sync.SYNC_SYNCING = "SYNC SYNCING";
+  sync.SYNC_ERROR = "SYNC ERROR";
 
   // Intitially we are not connected
   sync.state = sync.SYNC_DISCONNECTED;
+
+  function onWindowCloseHandler(event) {
+    if(!options.windowCloseWarning) {
+      return;
+    }
+    if(sync.state === sync.SYNC_SYNCING) {
+      var confirmationMessage = "Sync currently underway, are you sure you want to close?";
+      (event || global.event).returnValue = confirmationMessage;
+
+      return confirmationMessage;
+    }
+  }
 
   // Turn on auto-syncing if its not already on
   sync.auto = function(interval) {
@@ -279,17 +291,6 @@ function createFS(options) {
           return;
         }
 
-        // In a browser, try to clean-up after ourselves when window goes away
-        if("onbeforeunload" in global) {
-          sync.cleanupFn = function() {
-            if(manager) {
-              manager.close();
-              manager = null;
-            }
-          };
-          global.addEventListener('beforeunload', sync.cleanupFn);
-        }
-
         // Wait on initial downstream sync events to complete
         sync.onSyncing = function() {
           // do nothing, wait for onCompleted()
@@ -298,6 +299,20 @@ function createFS(options) {
           // Downstream sync is done, finish connect() setup
           downstreamSyncCompleted();
         };
+      });
+    }
+
+    // In a browser, try to clean-up after ourselves when window goes away
+    if("onbeforeunload" in global) {
+      global.addEventListener('beforeunload', onWindowCloseHandler);
+    }
+
+    if("onunload" in global){
+      global.addEventListener('unload', function(event) {
+        if(manager) {
+          manager.close();
+          manager = null;
+        }
       });
     }
 
@@ -470,8 +485,8 @@ function handleRequest(syncManager, data) {
     // UPSTREAM - DIFFS
     handleDiffRequest();
   } else {
-    onError(syncManager, new Error(data.content));
-  }
+    onError(syncManager, new Error('Failed to sync with the server. Current step is: ' +
+                                    session.step + '. Current state is: ' + session.state));  }
 }
 
 function handleResponse(syncManager, data) {
@@ -591,8 +606,8 @@ function handleResponse(syncManager, data) {
   }  else if (data.is.reset && session.is.failed) {
     handleUpstreamResetResponse();
   } else {
-    onError(syncManager, new Error(data.content));
-  }
+    onError(syncManager, new Error('Failed to sync with the server. Current step is: ' +
+                                    session.step + '. Current state is: ' + session.state));  }
 }
 
 function handleError(syncManager, data) {
@@ -623,7 +638,8 @@ function handleError(syncManager, data) {
     socket.send(message.stringify());
     onError(syncManager, new Error('Could not sync filesystem from server... trying again'));
   } else {
-    onError(syncManager, new Error(data.content));
+    onError(syncManager, new Error('Failed to sync with the server. Current step is: ' +
+                                    session.step + '. Current state is: ' + session.state));
   }
 }
 
