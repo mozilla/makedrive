@@ -83,11 +83,15 @@ describe('Two clients', function(){
             });
           });
 
-          sync2.connect(util.socketURL, result2.token);
+          sync2.connect(util.socketURL, {
+            token: result2.token
+          });
         });
       });
 
-      sync1.connect(util.socketURL, result1.token);
+      sync1.connect(util.socketURL, {
+        token: result1.token
+      });
     });
   });
 });
