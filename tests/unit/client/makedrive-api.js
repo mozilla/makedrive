@@ -386,9 +386,10 @@ describe('MakeDrive Client API', function(){
               var message = SyncMessage.response.diffs;
               message.content = {};
               message.content.diffs = [];
-              message.content.diffs[0] = {};
-              message.content.diffs[0].diffs = [ { data: [ 102, 117, 110 ] } ];
-              message.content.diffs[0].path = 'file.txt';
+              message.content.diffs[0] = {path: '/'};
+              message.content.diffs[0].diffs = [];
+              message.content.diffs[1] = {path: '/file.txt'};
+              message.content.diffs[1].diffs = [ { data: [ 102, 117, 110 ] } ];
 
               ws.once('message', function(msg) {
                 // The third message should be a RESPONSE RESET

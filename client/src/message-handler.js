@@ -1,5 +1,6 @@
 var SyncMessage = require('../../lib/syncmessage');
 var rsync = require('../../lib/rsync');
+var rsyncUtils = require('../../lib/rsync-utils');
 var rsyncOptions = require('../../lib/constants').rsyncDefaults;
 var serializeDiff = require('../../lib/diff').serialize;
 var deserializeDiff = require('../../lib/diff').deserialize;
@@ -151,7 +152,7 @@ function handleResponse(syncManager, data) {
 
       var size = rsyncOptions.size || 5;
 
-      rsync.pathChecksums(fs, paths.synced, size, function(err, checksums) {
+      rsyncUtils.pathChecksums(fs, paths.synced, size, function(err, checksums) {
         if(err) {
           var message = SyncMessage.response.reset;
           syncManager.send(message.stringify());

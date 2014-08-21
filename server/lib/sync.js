@@ -5,6 +5,7 @@
 var filesystem = require( "./filesystem" );
 var SyncMessage = require('../../lib/syncmessage');
 var rsync = require('../../lib/rsync');
+var rsyncUtils = require('../../lib/rsync-utils');
 var diffHelper = require('../../lib/diff');
 var rsyncOptions = require('../../lib/constants').rsyncDefaults;
 var env = require('../../server/lib/environment');
@@ -519,7 +520,7 @@ function handleResponse(sync, data) {
     var checksums = data.content.checksums;
     var size = data.content.size || 5;
 
-    rsync.compareContents(sync.fs, checksums, size, function(err, equal) {
+    rsyncUtils.compareContents(sync.fs, checksums, size, function(err, equal) {
       // We need to check if equal is true because equal can have three possible
       // return value. 1. equal = true, 2. equal = false, 3. equal = undefined
       // we want to send error verification in case of err return or equal is false.

@@ -1,6 +1,5 @@
 var OPTION_SIZE = { size: 5 };
 var OPTION_REC_SIZE = { recursive: true, size: 5 };
-var CHUNK_SIZE = OPTION_SIZE.size;
 
 var Filer = require('../../lib/filer.js'),
     Buffer = Filer.Buffer,
@@ -60,8 +59,7 @@ describe('[Rsync Functional tests]', function() {
     rsync.patch(null, '/', [], function (err, paths) {
       expect(err).to.exist;
       expect(err.code).to.equal('EINVAL');
-      expect(paths).to.exist;
-      expect(paths.synced).to.have.length(0);
+      expect(paths).to.not.exist;
       done();
     });
   });
@@ -94,8 +92,7 @@ describe('[Rsync Functional tests]', function() {
     rsync.patch(fs, null, [], function (err, paths) {
       expect(err).to.exist;
       expect(err.code).to.equal('EINVAL');
-      expect(paths).to.exist;
-      expect(paths.synced).to.have.length(0);
+      expect(paths).to.not.exist;
       done();
     });
   });
@@ -560,8 +557,8 @@ describe('[Rsync Functional tests]', function() {
                   rsync.patch(fs2, '/test', data, OPTION_REC_SIZE, function (err, paths) {
                     expect(err).to.not.exist;
                     expect(paths).to.exist;
-                    expect(paths.synced).to.have.length(2);
-                    expect(paths.synced).to.have.members(['/test/1.txt', '/test/2.txt']);
+                    expect(paths.synced).to.have.length(3);
+                    expect(paths.synced).to.have.members(['/test', '/test/1.txt', '/test/2.txt']);
                     expect(paths.failed).to.have.length(0);
                     fs2.readFile('/test/1.txt', 'utf8', function (err, data) {
                       expect(err).to.not.exist;
@@ -602,8 +599,8 @@ describe('[Rsync Functional tests]', function() {
                   rsync.patch(fs2, '/test', data, OPTION_REC_SIZE, function (err, paths) {
                     expect(err).to.not.exist;
                     expect(paths).to.exist;
-                    expect(paths.synced).to.have.length(3);
-                    expect(paths.synced).to.have.members(['/test/folder', '/test/folder/1.txt', '/test/folder/2.txt']);
+                    expect(paths.synced).to.have.length(4);
+                    expect(paths.synced).to.have.members(['/test', '/test/folder', '/test/folder/1.txt', '/test/folder/2.txt']);
                     expect(paths.failed).to.have.length(0);
                     fs2.stat('/test/folder', function (err, stats) {
                       expect(err).to.not.exist;
@@ -664,8 +661,8 @@ describe('[Rsync Functional tests]', function() {
                               rsync.patch(fs2, '/test', data, OPTION_REC_SIZE, function (err, paths) {
                                 expect(err).to.not.exist;
                                 expect(paths).to.exist;
-                                expect(paths.synced).to.have.length(4);
-                                expect(paths.synced).to.have.members(['/test/1.txt', '/test/sync', '/test/sync/2.txt', '/test/sync/3.txt']);
+                                expect(paths.synced).to.have.length(5);
+                                expect(paths.synced).to.have.members(['/test', '/test/1.txt', '/test/sync', '/test/sync/2.txt', '/test/sync/3.txt']);
                                 expect(paths.failed).to.have.length(0);
                                 fs2.readFile('/test/1.txt', 'utf8', function (err, data) {
                                   expect(err).to.not.exist;
@@ -724,8 +721,8 @@ describe('[Rsync Functional tests]', function() {
                         rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
                           expect(err).to.not.exist;
                           expect(paths).to.exist;
-                          expect(paths.synced).to.have.length(7);
-                          expect(paths.synced).to.have.members(['/projects', '/projects/proj_1', '/projects/proj_2', '/projects/proj_1/index.html', '/projects/proj_1/styles.css', '/projects/proj_2/styles2.css', '/projects/proj_2/inside_proj_2']);
+                          expect(paths.synced).to.have.length(8);
+                          expect(paths.synced).to.have.members(['/', '/projects', '/projects/proj_1', '/projects/proj_2', '/projects/proj_1/index.html', '/projects/proj_1/styles.css', '/projects/proj_2/styles2.css', '/projects/proj_2/inside_proj_2']);
                           expect(paths.failed).to.have.length(0);
                           fs2.readFile('/projects/proj_1/index.html', 'utf8', function (err, data) {
                             expect(err).to.not.exist;
@@ -777,9 +774,9 @@ describe('[Rsync Functional tests]', function() {
                   rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
                     expect(err).to.not.exist;
                     expect(paths).to.exist;
-                    expect(paths.synced).to.have.length(4);
+                    expect(paths.synced).to.have.length(5);
 
-                    expect(paths.synced).to.have.members(['/test', '/test/dir', '/test/dir/dirdir', '/test/dir/dirdir/1.txt']);
+                    expect(paths.synced).to.have.members(['/', '/test', '/test/dir', '/test/dir/dirdir', '/test/dir/dirdir/1.txt']);
                     expect(paths.failed).to.have.length(0);
                     fs2.readFile('/test/dir/dirdir/1.txt', 'utf8', function (err, data) {
                       expect(err).to.not.exist;
@@ -817,8 +814,8 @@ describe('[Rsync Functional tests]', function() {
                     rsync.patch(fs2, '/test', data, OPTION_REC_SIZE, function (err, paths) {
                       expect(err).to.not.exist;
                       expect(paths).to.exist;
-                      expect(paths.synced).to.have.length(3);
-                      expect(paths.synced).to.have.members(['/test/dir1', '/test/dir2', '/test/dir1/dir12']);
+                      expect(paths.synced).to.have.length(4);
+                      expect(paths.synced).to.have.members(['/test', '/test/dir1', '/test/dir2', '/test/dir1/dir12']);
                       expect(paths.failed).to.have.length(0);
                       fs2.stat('/test', function (err, stats) {
                         expect(err).to.not.exist;
@@ -864,8 +861,8 @@ describe('[Rsync Functional tests]', function() {
             rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
               expect(err).to.not.exist;
               expect(paths).to.exist;
-              expect(paths.synced).to.have.length(1);
-              expect(paths.synced).to.have.members(['/file1.txt']);
+              expect(paths.synced).to.have.length(2);
+              expect(paths.synced).to.have.members(['/', '/file1.txt']);
               expect(paths.failed).to.have.length(0);
               fs2.readFile('/file1.txt', 'utf8', function (err, data) {
                 expect(err).to.not.exist;
@@ -885,8 +882,8 @@ describe('[Rsync Functional tests]', function() {
                           rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
                             expect(err).to.not.exist;
                             expect(paths).to.exist;
-                            expect(paths.synced).to.have.length(2);
-                            expect(paths.synced).to.have.members(['/myfile.txt', '/file1.txt']);
+                            expect(paths.synced).to.have.length(3);
+                            expect(paths.synced).to.have.members(['/', '/myfile.txt', '/file1.txt']);
                             expect(paths.failed).to.have.length(0);
                             fs2.readFile('/myfile.txt', 'utf8', function (err, data) {
                               expect(err).to.not.exist;
@@ -928,8 +925,8 @@ describe('[Rsync Functional tests]', function() {
                 rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
                   expect(err).to.not.exist;
                   expect(paths).to.exist;
-                  expect(paths.synced).to.have.length(3);
-                  expect(paths.synced).to.have.members(['/olddir', '/mydir', '/olddir/file1.txt']);
+                  expect(paths.synced).to.have.length(4);
+                  expect(paths.synced).to.have.members(['/', '/olddir', '/mydir', '/olddir/file1.txt']);
                   expect(paths.failed).to.have.length(0);
                   fs2.stat('/olddir', function (err, stats) {
                     expect(err).to.not.exist;
@@ -956,8 +953,8 @@ describe('[Rsync Functional tests]', function() {
                                   rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
                                     expect(err).to.not.exist;
                                     expect(paths).to.exist;
-                                    expect(paths.synced).to.have.length(6);
-                                    expect(paths.synced).to.have.members(['/newdir', '/newdir/file1.txt', '/olddir/file1.txt', '/notmydir', '/olddir', '/mydir']);
+                                    expect(paths.synced).to.have.length(7);
+                                    expect(paths.synced).to.have.members(['/', '/newdir', '/newdir/file1.txt', '/olddir/file1.txt', '/notmydir', '/olddir', '/mydir']);
                                     expect(paths.failed).to.have.length(0);
                                     fs2.stat('/newdir', function (err, stats) {
                                       expect(err).to.not.exist;
@@ -1013,8 +1010,8 @@ describe('[Rsync Functional tests]', function() {
             rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
               expect(err).to.not.exist;
               expect(paths).to.exist;
-              expect(paths.synced).to.have.length(1);
-              expect(paths.synced).to.have.members(['/myfile.txt']);
+              expect(paths.synced).to.have.length(2);
+              expect(paths.synced).to.have.members(['/', '/myfile.txt']);
               expect(paths.failed).to.have.length(0);
               fs2.readFile('/myfile.txt', 'utf8', function (err, data) {
                 expect(err).to.not.exist;
@@ -1031,8 +1028,8 @@ describe('[Rsync Functional tests]', function() {
                         rsync.patch(fs2, '/', data, OPTION_REC_SIZE, function (err, paths) {
                           expect(err).to.not.exist;
                           expect(paths).to.exist;
-                          expect(paths.synced).to.have.length(1);
-                          expect(paths.synced).to.have.members(['/myfile.txt']);
+                          expect(paths.synced).to.have.length(2);
+                          expect(paths.synced).to.have.members(['/', '/myfile.txt']);
                           expect(paths.failed).to.have.length(0);
                           fs2.readFile('/myfile.txt', 'utf8', function (err, data) {
                             expect(err).to.exist;
@@ -1072,8 +1069,8 @@ describe('[Rsync Functional tests]', function() {
                 rsync.patch(fs2, '/test', data, OPTION_REC_SIZE, function (err, paths) {
                   expect(err).to.not.exist;
                   expect(paths).to.exist;
-                  expect(paths.synced).to.have.length(1);
-                  expect(paths.synced).to.have.members(['/test/index']);
+                  expect(paths.synced).to.have.length(2);
+                  expect(paths.synced).to.have.members(['/test', '/test/index']);
                   expect(paths.failed).to.have.length(0);
                   fs2.readFile('/test/index', 'utf8', function (err, data) {
                     expect(err).to.not.exist;
@@ -1091,8 +1088,8 @@ describe('[Rsync Functional tests]', function() {
                             rsync.patch(fs, '/test', data, OPTION_REC_SIZE, function (err, paths) {
                               expect(err).to.not.exist;
                               expect(paths).to.exist;
-                              expect(paths.synced).to.have.length(1);
-                              expect(paths.synced).to.have.members(['/test/index']);
+                              expect(paths.synced).to.have.length(2);
+                              expect(paths.synced).to.have.members(['/test', '/test/index']);
                               expect(paths.failed).to.have.length(0);
                               fs.readFile('/test/index', 'utf8', function (err, data) {
                                 expect(err).to.not.exist;
@@ -1332,7 +1329,8 @@ describe('[Rsync Functional tests]', function() {
               rsync.patch(fs2, '/dir', diffs, OPTION_REC_SIZE, function (err, paths) {
                 expect(err).to.not.exist;
                 expect(paths).to.exist;
-                expect(paths.synced).to.have.members(['/dir/dir2']);
+                expect(paths.synced).to.have.length(2);
+                expect(paths.synced).to.have.members(['/dir', '/dir/dir2']);
                 fs2.stat('/dir', function (err, stats) {
                   expect(err).to.not.exist;
                   expect(stats).to.exist;
@@ -1358,279 +1356,25 @@ describe('[Rsync Functional tests]', function() {
       rsync.sourceList(fs, '/dir', OPTION_REC_SIZE, function (err, srcList) {
         expect(err).to.not.exist;
         expect(srcList).to.exist;
-        expect(srcList).to.have.length(0);
+        expect(srcList).to.have.length(1);
         rsync.checksums(fs2, '/dir', srcList, OPTION_REC_SIZE, function (err, checksums) {
           expect(err).to.not.exist;
           expect(checksums).to.exist;
-          expect(checksums).to.have.length(0);
+          expect(checksums).to.have.length(1);
           rsync.diff(fs, '/dir', checksums, OPTION_REC_SIZE, function (err, diffs) {
             expect(err).to.not.exist;
             expect(diffs).to.exist;
-            expect(diffs).to.have.length(0);
+            expect(diffs).to.have.length(1);
             rsync.patch(fs2, '/dir', diffs, OPTION_REC_SIZE, function (err, paths) {
               expect(err).to.not.exist;
               expect(paths).to.exist;
-              expect(paths.synced).to.have.length(0);
+              expect(paths.synced).to.have.length(1);
+              expect(paths.synced).to.have.members(['/dir']);
               fs2.stat('/dir', function (err, stats) {
                 expect(err).to.not.exist;
                 expect(stats).to.exist;
                 expect(stats.isDirectory()).to.be.true;
                 done();
-              });
-            });
-          });
-        });
-      });
-    });
-  });
-});
-
-describe('[Rsync Verification Tests]', function() {
-  describe('Rsync PathChecksums', function() {
-    beforeEach(fsInit);
-    afterEach(fsCleanup);
-
-    it('should be a function', function (done) {
-      expect(rsync.pathChecksums).to.be.a.function;
-      done();
-    });
-
-    it('should return an EINVAL error if a filesystem is not provided', function (done) {
-      var filesystem;
-
-      rsync.pathChecksums(filesystem, [], CHUNK_SIZE, function (err, checksums) {
-        expect(err).to.exist;
-        expect(err.code).to.equal('EINVAL');
-        expect(checksums).to.not.exist;
-        done();
-      });
-    });
-
-    it('should return an EINVAL error if no paths are provided', function (done) {
-      rsync.pathChecksums(fs, null, CHUNK_SIZE, function (err, checksums) {
-        expect(err).to.exist;
-        expect(err.code).to.equal('EINVAL');
-        expect(checksums).to.not.exist;
-        done();
-      });
-    });
-
-    it('should return an error if chunk size is not provided', function (done) {
-      rsync.pathChecksums(fs, [], null, function (err, checksums) {
-        expect(err).to.exist;
-        expect(err.code).to.equal('EINVAL');
-        expect(checksums).to.not.exist;
-        done();
-      });
-    });
-
-    it('should return empty checksums if empty paths are provided', function (done) {
-      rsync.pathChecksums(fs, [], CHUNK_SIZE, function (err, checksums) {
-        expect(err).to.not.exist;
-        expect(checksums).to.exist;
-        expect(checksums).to.have.length(0);
-        done();
-      });
-    });
-
-    it('should return an empty checksum if the path to the node provided does not exist', function (done) {
-      rsync.pathChecksums(fs, ['/myfile.txt'], CHUNK_SIZE, function (err, checksums) {
-        expect(err).to.not.exist;
-        expect(checksums).to.exist;
-        expect(checksums).to.have.length(1);
-        expect(checksums[0]).to.include.keys('checksum');
-        expect(checksums[0].checksum).to.have.length(0);
-        done();
-      });
-    });
-
-    it('should return empty contents for a directory path', function (done) {
-      fs.mkdir('/dir', function (err) {
-        expect(err).to.not.exist;
-        rsync.pathChecksums(fs, ['/dir'], CHUNK_SIZE, function (err, checksums) {
-          expect(err).to.not.exist;
-          expect(checksums).to.exist;
-          expect(checksums).to.have.length(1);
-          expect(checksums[0]).to.include.keys('contents');
-          expect(checksums[0].contents).to.have.length(0);
-          done();
-        });
-      });
-    });
-
-    it('should succeed generating checksums for a list of paths', function (done) {
-      var paths = ['/dir1', '/dir1/myfile1.txt', '/dir1/subdir1',
-                   '/dir2',
-                   '/dir3', '/dir3/myfile2.txt'];
-
-      fs.mkdir('/dir1', function (err) {
-        expect(err).to.not.exist;
-        fs.writeFile('/dir1/myfile1.txt', 'This is a file', function (err) {
-          expect(err).to.not.exist;
-          fs.mkdir('/dir2', function (err) {
-            expect(err).to.not.exist;
-            fs.mkdir('/dir1/subdir1', function (err) {
-              expect(err).to.not.exist;
-              fs.mkdir('/dir3', function (err) {
-                expect(err).to.not.exist;
-                fs.writeFile('/dir3/myfile2.txt', 'This is also a file', function (err) {
-                  expect(err).to.not.exist;
-                  rsync.pathChecksums(fs, paths, CHUNK_SIZE, function (err, checksums) {
-                    expect(err).to.not.exist;
-                    expect(checksums).to.exist;
-                    expect(checksums).to.have.length(paths.length);
-                    expect(checksums[0]).to.include.keys('contents');
-                    expect(checksums[0].contents).to.have.length(2);
-                    expect(checksums[0].contents).to.have.members(['myfile1.txt', 'subdir1']);
-                    expect(checksums[1]).to.include.keys('checksum');
-                    expect(checksums[1].checksum).to.have.length.above(0);
-                    expect(checksums[2]).to.include.keys('contents');
-                    expect(checksums[2].contents).to.have.length(0);
-                    expect(checksums[3]).to.include.keys('contents');
-                    expect(checksums[3].contents).to.have.length(0);
-                    expect(checksums[4]).to.include.keys('contents');
-                    expect(checksums[4].contents).to.have.length(1);
-                    expect(checksums[4].contents).to.have.members(['myfile2.txt']);
-                    expect(checksums[5]).to.include.keys('checksum');
-                    expect(checksums[5].checksum).to.have.length.above(0);
-                    done();
-                  });
-                });
-              });
-            });
-          });
-        });
-      });
-    });
-  });
-
-  describe('Rsync CompareContents', function() {
-    beforeEach(fsInit);
-    afterEach(fsCleanup);
-
-    it('should be a function', function (done) {
-      expect(rsync.compareContents).to.be.a.function;
-      done();
-    });
-
-    it('should return an EINVAL error if a filesystem is not provided', function (done) {
-      var filesystem;
-
-      rsync.compareContents(filesystem, [], CHUNK_SIZE, function (err, equal) {
-        expect(err).to.exist;
-        expect(err.code).to.equal('EINVAL');
-        expect(equal).to.not.exist;
-        done();
-      });
-    });
-
-    it('should return an EINVAL error if no checksums are provided', function (done) {
-      rsync.compareContents(fs, null, CHUNK_SIZE, function (err, equal) {
-        expect(err).to.exist;
-        expect(err.code).to.equal('EINVAL');
-        expect(equal).to.not.exist;
-        done();
-      });
-    });
-
-    it('should return an error if chunk size is not provided', function (done) {
-      rsync.compareContents(fs, [], null, function (err, equal) {
-        expect(err).to.exist;
-        expect(err.code).to.equal('EINVAL');
-        expect(equal).to.not.exist;
-        done();
-      });
-    });
-
-    it('should return true if a checksum is provided for a path that does not exist', function (done) {
-      rsync.compareContents(fs, [{path: '/non-existent-file.txt', checksum: []}], CHUNK_SIZE, function (err, equal) {
-        expect(err).to.not.exist;
-        expect(equal).to.equal(true);
-        done();
-      });
-    });
-
-    it('should return true if checksums match contents for a set of paths', function (done) {
-      var paths = ['/dir1', '/dir1/myfile1.txt', '/dir1/subdir1',
-                   '/dir2',
-                   '/dir3', '/dir3/myfile2.txt'];
-
-      fs.mkdir('/dir1', function (err) {
-        expect(err).to.not.exist;
-        fs.writeFile('/dir1/myfile1.txt', 'This is a file', function (err) {
-          expect(err).to.not.exist;
-          fs.mkdir('/dir2', function (err) {
-            expect(err).to.not.exist;
-            fs.mkdir('/dir1/subdir1', function (err) {
-              expect(err).to.not.exist;
-              fs.mkdir('/dir3', function (err) {
-                expect(err).to.not.exist;
-                fs.writeFile('/dir3/myfile2.txt', 'This is also a file', function (err) {
-                  expect(err).to.not.exist;
-                  rsync.pathChecksums(fs, paths, CHUNK_SIZE, function (err, checksums) {
-                    expect(err).to.not.exist;
-                    expect(checksums).to.exist;
-                    rsync.compareContents(fs, checksums, CHUNK_SIZE, function (err, equal) {
-                      expect(err).to.not.exist;
-                      expect(equal).to.equal(true);
-                      done();
-                    });
-                  });
-                });
-              });
-            });
-          });
-        });
-      });
-    });
-
-    it('should return false if checksums do not match contents for a set of paths', function (done) {
-      var paths = ['/dir1', '/dir1/myfile1.txt', '/dir1/subdir1',
-                   '/dir2',
-                   '/dir3', '/dir3/myfile2.txt'];
-
-      fs.mkdir('/dir1', function (err) {
-        expect(err).to.not.exist;
-        fs.writeFile('/dir1/myfile1.txt', 'This is a file', function (err) {
-          expect(err).to.not.exist;
-          fs.mkdir('/dir2', function (err) {
-            expect(err).to.not.exist;
-            fs.mkdir('/dir1/subdir1', function (err) {
-              expect(err).to.not.exist;
-              fs.mkdir('/dir3', function (err) {
-                expect(err).to.not.exist;
-                fs.writeFile('/dir3/myfile2.txt', 'This is also a file', function (err) {
-                  expect(err).to.not.exist;
-                  fs2.mkdir('/dir1', function (err) {
-                    expect(err).to.not.exist;
-                    fs2.writeFile('/dir1/myfile1.txt', 'This is a file', function (err) {
-                      expect(err).to.not.exist;
-                      fs2.mkdir('/dir2', function (err) {
-                        expect(err).to.not.exist;
-                        fs2.mkdir('/dir1/subdir1', function (err) {
-                          expect(err).to.not.exist;
-                          fs2.mkdir('/dir3', function (err) {
-                            expect(err).to.not.exist;
-                            fs2.writeFile('/dir3/myfile2.txt', 'This is also a filr', function (err) {
-                              expect(err).to.not.exist;
-                              rsync.pathChecksums(fs, paths, CHUNK_SIZE, function (err, checksums) {
-                                expect(err).to.not.exist;
-                                expect(checksums).to.exist;
-                                rsync.pathChecksums(fs2, paths, CHUNK_SIZE, function (err, checksums2) {
-                                  rsync.compareContents(fs2, checksums, CHUNK_SIZE, function (err, equal) {
-                                    expect(err).to.not.exist;
-                                    expect(equal).to.equal(false);
-                                    done();
-                                  });
-                                });
-                              });
-                            });
-                          });
-                        });
-                      });
-                    });
-                  });
-                });
               });
             });
           });
