@@ -70,11 +70,11 @@
  * Finally, the `sync` propery also exposes a `state`, which is the
  * current sync state and can be one of:
  *
- * sync.SYNC_DISCONNECTED = 0 (also the initial state)
- * sync.SYNC_CONNECTING = 1
- * sync.SYNC_CONNECTED = 2
- * sync.SYNC_SYNCING = 3
- * sync.SYNC_ERROR = 4
+ * sync.SYNC_DISCONNECTED = "SYNC DISCONNECTED" (also the initial state)
+ * sync.SYNC_CONNECTING = "SYNC CONNECTING"
+ * sync.SYNC_CONNECTED = "SYNC CONNECTED"
+ * sync.SYNC_SYNCING = "SYNC SYNCING"
+ * sync.SYNC_ERROR = "SYNC ERROR"
  */
 
 var SyncManager = require('./sync-manager.js');
@@ -114,11 +114,11 @@ function createFS(options) {
   var pathCache;
 
   // State of the sync connection
-  sync.SYNC_DISCONNECTED = 0;
-  sync.SYNC_CONNECTING = 1;
-  sync.SYNC_CONNECTED = 2;
-  sync.SYNC_SYNCING = 3;
-  sync.SYNC_ERROR = 4;
+  sync.SYNC_DISCONNECTED = "SYNC DISCONNECTED";
+  sync.SYNC_CONNECTING = "SYNC CONNECTING";
+  sync.SYNC_CONNECTED = "SYNC CONNECTED";
+  sync.SYNC_SYNCING = "SYNC SYNCING";
+  sync.SYNC_ERROR = "SYNC ERROR";
 
   // Intitially we are not connected
   sync.state = sync.SYNC_DISCONNECTED;

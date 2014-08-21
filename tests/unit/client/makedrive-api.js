@@ -40,11 +40,11 @@ describe('MakeDrive Client API', function(){
       expect(fs.sync.sync).to.be.a.function;
 
       // Sync States
-      expect(fs.sync.SYNC_DISCONNECTED).to.equal(0);
-      expect(fs.sync.SYNC_CONNECTING).to.equal(1);
-      expect(fs.sync.SYNC_CONNECTED).to.equal(2);
-      expect(fs.sync.SYNC_SYNCING).to.equal(3);
-      expect(fs.sync.SYNC_ERROR).to.equal(4);
+      expect(fs.sync.SYNC_DISCONNECTED).to.equal("SYNC DISCONNECTED");
+      expect(fs.sync.SYNC_CONNECTING).to.equal("SYNC CONNECTING");
+      expect(fs.sync.SYNC_CONNECTED).to.equal("SYNC CONNECTED");
+      expect(fs.sync.SYNC_SYNCING).to.equal("SYNC SYNCING");
+      expect(fs.sync.SYNC_ERROR).to.equal("SYNC ERROR");
       expect(fs.sync.state).to.equal(fs.sync.SYNC_DISCONNECTED);
     });
 

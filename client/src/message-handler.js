@@ -73,8 +73,8 @@ function handleRequest(syncManager, data) {
     // UPSTREAM - DIFFS
     handleDiffRequest();
   } else {
-    onError(syncManager, new Error(data.content));
-  }
+    onError(syncManager, new Error('Failed to sync with the server. Current step is: ' +
+                                    session.step + '. Current state is: ' + session.state));  }
 }
 
 function handleResponse(syncManager, data) {
@@ -194,8 +194,8 @@ function handleResponse(syncManager, data) {
   }  else if (data.is.reset && session.is.failed) {
     handleUpstreamResetResponse();
   } else {
-    onError(syncManager, new Error(data.content));
-  }
+    onError(syncManager, new Error('Failed to sync with the server. Current step is: ' +
+                                    session.step + '. Current state is: ' + session.state));  }
 }
 
 function handleError(syncManager, data) {
@@ -226,7 +226,8 @@ function handleError(syncManager, data) {
     socket.send(message.stringify());
     onError(syncManager, new Error('Could not sync filesystem from server... trying again'));
   } else {
-    onError(syncManager, new Error(data.content));
+    onError(syncManager, new Error('Failed to sync with the server. Current step is: ' +
+                                    session.step + '. Current state is: ' + session.state));
   }
 }
 

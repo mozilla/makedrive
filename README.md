@@ -153,11 +153,11 @@ Method | Purpose
  current sync state and can be one of:
 
 ```javascript
- sync.SYNC_DISCONNECTED = 0 /* also the initial state */
- sync.SYNC_CONNECTING = 1
- sync.SYNC_CONNECTED = 2
- sync.SYNC_SYNCING = 3
- sync.SYNC_ERROR = 4
+ sync.SYNC_DISCONNECTED = "SYNC DISCONNECTED" /* also the initial state */
+ sync.SYNC_CONNECTING = "SYNC CONNECTING"
+ sync.SYNC_CONNECTED = "SYNC CONNECTED"
+ sync.SYNC_SYNCING = "SYNC SYNCING"
+ sync.SYNC_ERROR = "SYNC ERROR"
 ```
 
 ## Testing and Contributing
