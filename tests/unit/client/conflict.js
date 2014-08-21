@@ -120,7 +120,7 @@ describe('MakeDrive Client Conflicts', function(){
   it('should error when passing directory path to makeConflictedCopy()', function(done) {
     conflict.makeConflictedCopy(fs, '/dir', function(err, conflictedPath) {
       expect(err).to.exist;
-      expect(err.code).to.equal('EPERM');
+      expect(err.code).to.equal('EISDIR');
 
       done();
     });
