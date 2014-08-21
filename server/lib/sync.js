@@ -332,8 +332,10 @@ function handleRequest(sync, data) {
   var response;
 
   function handleUpstreamReset() {
-    sync.end();
+    activeSyncs.removeActive(sync.username);
+    sync.lastContact = null;
     sync.state = Sync.LISTENING;
+    sync.sendMessage(SyncMessage.response.reset, true);
   }
 
   function handleDiffRequest() {

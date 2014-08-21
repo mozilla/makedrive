@@ -94,6 +94,7 @@ function handleResponse(syncManager, data) {
 
     rsync.checksums(fs, session.path, session.srcList, rsyncOptions, function(err, checksums) {
       if(err) {
+        socket.send(SyncMessage.response.reset.stringify());
         return onError(syncManager, err);
       }
 
@@ -111,6 +112,7 @@ function handleResponse(syncManager, data) {
 
     rsync.sourceList(fs, session.path, rsyncOptions, function(err, srcList) {
       if(err){
+        socket.send(SyncMessage.request.reset.stringify());
         return onError(syncManager, err);
       }
 
@@ -133,7 +135,7 @@ function handleResponse(syncManager, data) {
     fs.modifiedPath = null;
 
     // If there was a change to the filesystem that shares a common path with
-    // the path being synced, regenerate the checksums and send them 
+    // the path being synced, regenerate the checksums and send them
     // (even if it is the initial one)
     if(modifiedPath && hasCommonPath(session.path, modifiedPath)) {
       return resendChecksums();
@@ -171,6 +173,12 @@ function handleResponse(syncManager, data) {
     sync.onCompleted();
   }
 
+  function handleUpstreamResetResponse() {
+    var message = SyncMessage.request.sync;
+    message.content = {path: session.path};
+    socket.send(message.stringify());
+  }
+
   if(data.is.sync) {
     // UPSTREAM - INIT
     handleSrcListResponse();
@@ -183,6 +191,8 @@ function handleResponse(syncManager, data) {
   } else if(data.is.verification && session.is.ready && session.is.patch) {
     // DOWNSTREAM - PATCH VERIFICATION
     handleVerificationResponse();
+  }  else if (data.is.reset && session.is.failed) {
+    handleUpstreamResetResponse();
   } else {
     onError(syncManager, new Error(data.content));
   }
@@ -212,7 +222,9 @@ function handleError(syncManager, data) {
              (data.is.patch && session.is.patch)) &&
             session.is.syncing) {
     // UPSTREAM - ERROR
-    onError(syncManager, new Error('Fatal error: Failed to sync to server'));
+    var message = SyncMessage.request.reset;
+    socket.send(message.stringify());
+    onError(syncManager, new Error('Could not sync filesystem from server... trying again'));
   } else {
     onError(syncManager, new Error(data.content));
   }
