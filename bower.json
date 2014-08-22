@@ -17,7 +17,7 @@
     "filer-dialogs": "https://github.com/ScottDowne/filer-dialogs.git",
     "font-awesome": "~4.1.0"
   },
-  "version": "0.0.34",
+  "version": "0.0.35",
   "resolutions": {
     "jquery": "2.1.1"
   }
