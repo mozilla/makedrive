@@ -53,7 +53,6 @@
   "dependencies": {
     "archiver": "^0.10.1",
     "MD5": "^1.2.1",
-    "async": "^0.9.0",
     "bower": "1.3.8",
     "browser-request": "^0.3.1",
     "events": "^1.0.1",
@@ -96,8 +95,8 @@
   },
   "main": "./server/index.js",
   "browser": {
-    "filer": "./node_modules/filer/dist/filer.js",
     "request": "browser-request",
-    "ws": "./client/src/client-ws.js"
+    "ws": "./client/src/client-ws.js",
+    "async": "./client/thirdparty/filer/lib/async.js"
   }
 }
