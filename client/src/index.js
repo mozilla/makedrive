@@ -123,16 +123,28 @@ function createFS(options) {
   // Intitially we are not connected
   sync.state = sync.SYNC_DISCONNECTED;
 
-  function onWindowCloseHandler(event) {
+  // Optionally warn when closing the window if still syncing
+  function windowCloseHandler(event) {
     if(!options.windowCloseWarning) {
       return;
     }
-    if(sync.state === sync.SYNC_SYNCING) {
-      var confirmationMessage = "Sync currently underway, are you sure you want to close?";
-      (event || global.event).returnValue = confirmationMessage;
 
-      return confirmationMessage;
+    if(sync.state !== sync.SYNC_SYNCING) {
+      return;
     }
+
+    var confirmationMessage = "Sync currently underway, are you sure you want to close?";
+    (event || global.event).returnValue = confirmationMessage;
+
+    return confirmationMessage;
+  }
+
+  function cleanupManager() {
+    if(!manager) {
+      return;
+    }
+    manager.close();
+    manager = null;
   }
 
   // Turn on auto-syncing if its not already on
@@ -163,6 +175,14 @@ function createFS(options) {
   };
 
   sync.onDisconnected = function() {
+    // Remove listeners so we don't leak instance variables
+    if("onbeforeunload" in global) {
+      global.removeEventListener('beforeunload', windowCloseHandler);
+    }
+    if("onunload" in global){
+      global.removeEventListener('unload', cleanupManager);
+    }
+
     sync.state = sync.SYNC_DISCONNECTED;
     sync.emit('disconnected');
   };
@@ -245,6 +265,14 @@ function createFS(options) {
         sync.auto(options.interval);
       }
 
+      // In a browser, try to clean-up after ourselves when window goes away
+      if("onbeforeunload" in global) {
+        global.addEventListener('beforeunload', windowCloseHandler);
+      }
+      if("onunload" in global){
+        global.addEventListener('unload', cleanupManager);
+      }
+
       sync.emit('connected');
     }
 
@@ -267,20 +295,6 @@ function createFS(options) {
           // Downstream sync is done, finish connect() setup
           downstreamSyncCompleted();
         };
-      });
-    }
-
-    // In a browser, try to clean-up after ourselves when window goes away
-    if("onbeforeunload" in global) {
-      global.addEventListener('beforeunload', onWindowCloseHandler);
-    }
-
-    if("onunload" in global){
-      global.addEventListener('unload', function(event) {
-        if(manager) {
-          manager.close();
-          manager = null;
-        }
       });
     }
 
@@ -321,23 +335,11 @@ function createFS(options) {
 
   // Disconnect from the server
   sync.disconnect = function() {
-    // Remove our browser cleanup
-    if("onbeforeunload" in global && sync.cleanupFn) {
-      global.removeEventListener('beforeunload', sync.cleanupFn);
-      sync.cleanupFn = null;
-    }
-
     // Bail if we're not already connected
     if(sync.state === sync.SYNC_DISCONNECTED ||
        sync.state === sync.ERROR) {
       sync.emit('error', new Error("MakeDrive: Attempted to disconnect, but no server connection exists!"));
       return;
-    }
-
-    // Do a proper shutdown
-    if(manager) {
-      manager.close();
-      manager = null;
     }
 
     // Stop auto-syncing
@@ -346,6 +348,9 @@ function createFS(options) {
       autoSync = null;
       fs.pathToSync = null;
     }
+
+    // Do a proper network shutdown
+    cleanupManager();
 
     sync.onDisconnected();
   };
