@@ -36,22 +36,6 @@ function handleClient(ws) {
       console.error(error.log);
     }
 
-    // Shutdown sync session if it exists
-    if(sync) {
-      var closeSync = function() {
-        sync.close();
-        sync = null;
-      };
-
-      // Closing the sync while it is in the middle of a `patch` step
-      // could cause data loss, so we confirm that it is safe.
-      if (sync.patching) {
-        sync.once('patchComplete', closeSync);
-      } else {
-        closeSync();
-      }
-    }
-
     // Dump all listeners, tear down socket, and kill client reference.
     ws.terminate();
     ws = null;
@@ -90,11 +74,6 @@ function handleClient(ws) {
 
       // Setup a sync session for this authorized user
       sync = Sync.create(username, token, ws);
-
-      // Deal with any failed socket access by sync
-      sync.on('error', function(err) {
-        cleanup({log: 'Unable to write to client WebSocket: ' + err.stack});
-      });
 
       run();
     };

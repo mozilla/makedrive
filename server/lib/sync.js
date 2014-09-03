@@ -26,6 +26,7 @@ function Sync(username, id, ws) {
 
   var sync = this;
 
+  sync.ws = ws;
   sync.id = id;
   sync.username = username;
 
@@ -53,7 +54,18 @@ function Sync(username, id, ws) {
   sync.sendMessage = function(syncMessage, shouldUpdateLastContact) {
     function error(msg) {
       sync.state = Sync.ERROR;
-      sync.emit('error', new Error(msg));
+      // Shutdown sync session if it exists
+      function closeSync() {
+        sync.close();
+      }
+
+      // Closing the sync while it is in the middle of a `patch` step
+      // could cause data loss, so we confirm that it is safe.
+      if (sync.patching) {
+        sync.once('patchComplete', closeSync);
+      } else {
+        closeSync();
+      }
     }
 
     // Bail if we're shutdown (or in the process of shutting down).
@@ -281,6 +293,7 @@ Sync.prototype.close = function() {
   }
 
   sync.state = Sync.CLOSED;
+  sync.ws.terminate();
 
   // Get rid of any error listeners
   sync.removeAllListeners();
