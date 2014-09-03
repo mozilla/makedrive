@@ -36,7 +36,7 @@ describe('[Rsync Util Tests]', function() {
     it('should return an EINVAL error if a filesystem is not provided', function (done) {
       var filesystem;
 
-      rsyncUtils.pathChecksums(filesystem, [], CHUNK_SIZE, function (err, checksums) {
+      rsyncUtils.generateChecksums(filesystem, [], CHUNK_SIZE, function (err, checksums) {
         expect(err).to.exist;
         expect(err.code).to.equal('EINVAL');
         expect(checksums).to.not.exist;
@@ -45,7 +45,7 @@ describe('[Rsync Util Tests]', function() {
     });
 
     it('should return an EINVAL error if no paths are provided', function (done) {
-      rsyncUtils.pathChecksums(fs, null, CHUNK_SIZE, function (err, checksums) {
+      rsyncUtils.generateChecksums(fs, null, CHUNK_SIZE, function (err, checksums) {
         expect(err).to.exist;
         expect(err.code).to.equal('EINVAL');
         expect(checksums).to.not.exist;
@@ -54,7 +54,7 @@ describe('[Rsync Util Tests]', function() {
     });
 
     it('should return an error if chunk size is not provided', function (done) {
-      rsyncUtils.pathChecksums(fs, [], null, function (err, checksums) {
+      rsyncUtils.generateChecksums(fs, [], null, function (err, checksums) {
         expect(err).to.exist;
         expect(err.code).to.equal('EINVAL');
         expect(checksums).to.not.exist;
@@ -63,7 +63,7 @@ describe('[Rsync Util Tests]', function() {
     });
 
     it('should return empty checksums if empty paths are provided', function (done) {
-      rsyncUtils.pathChecksums(fs, [], CHUNK_SIZE, function (err, checksums) {
+      rsyncUtils.generateChecksums(fs, [], CHUNK_SIZE, function (err, checksums) {
         expect(err).to.not.exist;
         expect(checksums).to.exist;
         expect(checksums).to.have.length(0);
@@ -72,7 +72,7 @@ describe('[Rsync Util Tests]', function() {
     });
 
     it('should return an empty checksum if the path to the node provided does not exist', function (done) {
-      rsyncUtils.pathChecksums(fs, ['/myfile.txt'], CHUNK_SIZE, function (err, checksums) {
+      rsyncUtils.generateChecksums(fs, ['/myfile.txt'], CHUNK_SIZE, function (err, checksums) {
         expect(err).to.not.exist;
         expect(checksums).to.exist;
         expect(checksums).to.have.length(1);
@@ -85,7 +85,7 @@ describe('[Rsync Util Tests]', function() {
     it('should return empty contents for a directory path', function (done) {
       fs.mkdir('/dir', function (err) {
         expect(err).to.not.exist;
-        rsyncUtils.pathChecksums(fs, ['/dir'], CHUNK_SIZE, function (err, checksums) {
+        rsyncUtils.generateChecksums(fs, ['/dir'], CHUNK_SIZE, function (err, checksums) {
           expect(err).to.not.exist;
           expect(checksums).to.exist;
           expect(checksums).to.have.length(1);
@@ -113,7 +113,7 @@ describe('[Rsync Util Tests]', function() {
                 expect(err).to.not.exist;
                 fs.writeFile('/dir3/myfile2.txt', 'This is also a file', function (err) {
                   expect(err).to.not.exist;
-                  rsyncUtils.pathChecksums(fs, paths, CHUNK_SIZE, function (err, checksums) {
+                  rsyncUtils.generateChecksums(fs, paths, CHUNK_SIZE, function (err, checksums) {
                     expect(err).to.not.exist;
                     expect(checksums).to.exist;
                     expect(checksums).to.have.length(paths.length);
@@ -205,7 +205,7 @@ describe('[Rsync Util Tests]', function() {
                 expect(err).to.not.exist;
                 fs.writeFile('/dir3/myfile2.txt', 'This is also a file', function (err) {
                   expect(err).to.not.exist;
-                  rsyncUtils.pathChecksums(fs, paths, CHUNK_SIZE, function (err, checksums) {
+                  rsyncUtils.generateChecksums(fs, paths, CHUNK_SIZE, function (err, checksums) {
                     expect(err).to.not.exist;
                     expect(checksums).to.exist;
                     rsyncUtils.compareContents(fs, checksums, CHUNK_SIZE, function (err, equal) {
@@ -251,10 +251,10 @@ describe('[Rsync Util Tests]', function() {
                             expect(err).to.not.exist;
                             fs2.writeFile('/dir3/myfile2.txt', 'This is also a filr', function (err) {
                               expect(err).to.not.exist;
-                              rsyncUtils.pathChecksums(fs, paths, CHUNK_SIZE, function (err, checksums) {
+                              rsyncUtils.generateChecksums(fs, paths, CHUNK_SIZE, function (err, checksums) {
                                 expect(err).to.not.exist;
                                 expect(checksums).to.exist;
-                                rsyncUtils.pathChecksums(fs2, paths, CHUNK_SIZE, function (err, checksums2) {
+                                rsyncUtils.generateChecksums(fs2, paths, CHUNK_SIZE, function (err, checksums2) {
                                   rsyncUtils.compareContents(fs2, checksums, CHUNK_SIZE, function (err, equal) {
                                     expect(err).to.not.exist;
                                     expect(equal).to.equal(false);

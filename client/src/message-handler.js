@@ -152,7 +152,7 @@ function handleResponse(syncManager, data) {
 
       var size = rsyncOptions.size || 5;
 
-      rsyncUtils.pathChecksums(fs, paths.synced, size, function(err, checksums) {
+      rsyncUtils.generateChecksums(fs, paths.synced, size, function(err, checksums) {
         if(err) {
           var message = SyncMessage.response.reset;
           syncManager.send(message.stringify());
