@@ -69,6 +69,7 @@
     "mime": "^1.2.11",
     "newrelic": "1.4.0",
     "node-uuid": "^1.4.1",
+    "recluster": "^0.3.7",
     "webmaker-auth": "0.0.14",
     "ws": "^0.4.31"
   },
