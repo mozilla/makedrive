@@ -30,7 +30,7 @@ module.exports = function(grunt) {
         src: "./client/src/index.js",
         dest: "./client/dist/makedrive.js",
         options: {
-          bundleOptions: {
+          browserifyOptions: {
             standalone: "MakeDrive"
           }
         }
