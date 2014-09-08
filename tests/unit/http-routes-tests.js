@@ -7,6 +7,7 @@ var Path = Filer.Path;
 var env = require('../../server/lib/environment');
 env.set('ALLOWED_CORS_DOMAINS', util.serverURL);
 var ALLOW_DOMAINS = process.env.ALLOWED_CORS_DOMAINS;
+var unzip = require("../lib/unzip.js");
 
 describe('[HTTP route tests]', function() {
 
@@ -197,7 +198,7 @@ describe('[HTTP route tests]', function() {
               fs.writeFile('/exports.zip', body, function(err) {
                 if(err) throw err;
 
-                sh.unzip('/exports.zip', { destination: tmp }, function(err) {
+                unzip(fs, '/exports.zip', { destination: tmp }, function(err) {
                   if(err) throw err;
 
                   fs.readFile(Path.join(tmp, 'export/index.html'), 'utf8', function(err, data) {

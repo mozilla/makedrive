@@ -74,7 +74,6 @@
   },
   "devDependencies": {
     "browserify": "^4.1.8",
-    "node-deep-equal": "git://github.com/humphd/node-deep-equal.git#b9f1fbd8397691e246529152678595b00ee5f468",
     "chai": "^1.9.1",
     "grunt": "~0.4.1",
     "grunt-browserify": "^3.0.1",
@@ -88,7 +87,9 @@
     "grunt-npm": "git://github.com/sedge/grunt-npm.git#branchcheck",
     "grunt-prompt": "^1.1.0",
     "jit-grunt": "^0.7.0",
+    "jszip": "^2.4.0",
     "mocha": "*",
+    "node-deep-equal": "git://github.com/humphd/node-deep-equal.git#b9f1fbd8397691e246529152678595b00ee5f468",
     "request": "2.36.x",
     "semver": "^2.3.1",
     "supertest": "0.13.x",
