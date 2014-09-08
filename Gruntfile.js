@@ -156,7 +156,7 @@ module.exports = function(grunt) {
         stderr: true
       },
       npm_install_submodule: {
-        command: 'cd ' + __dirname + '/client/thirdparty/filer && npm install && rm -rf client',
+        command: 'cd ./client/thirdparty/filer && npm install && rm -rf client',
         stdout: false,
         stderr: true
       },
