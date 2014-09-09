@@ -18,7 +18,7 @@ var MakeDrive = require('../../client/src/index.js');
 var env = require('../../server/lib/environment');
 env.set('CLIENT_TIMEOUT_MS', 1000);
 
-var app = require('../../server/index.js');
+var app = require('../../server/server.js');
 
 var serverURL = 'http://0.0.0.0:' + env.get('PORT'),
     socketURL = serverURL.replace( 'http', 'ws' );
