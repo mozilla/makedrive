@@ -89,7 +89,7 @@
     "grunt-prompt": "^1.1.0",
     "jit-grunt": "^0.7.0",
     "jszip": "^2.4.0",
-    "mocha": "*",
+    "mocha": "^1.21.4",
     "node-deep-equal": "git://github.com/humphd/node-deep-equal.git#b9f1fbd8397691e246529152678595b00ee5f468",
     "request": "2.36.x",
     "semver": "^2.3.1",
