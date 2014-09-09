@@ -62,7 +62,7 @@ describe('[Interruptions during a sync]', function() {
         fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
         sync = fs.sync;
 
-        sync.connect("ws://0.0.0.0:" + port);
+        sync.connect("ws://127.0.0.1:" + port);
       }
 
       // First, prepare the stub of the server.
