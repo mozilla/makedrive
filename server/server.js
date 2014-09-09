@@ -1,3 +1,7 @@
+if(process.env.NEW_RELIC_ENABLED) {
+  require('newrelic');
+}
+
 var cluster = require('cluster');
 var domain = require('domain');
 var express = require('express');
