@@ -175,7 +175,7 @@ describe('MakeDrive Client API', function(){
           expect(err).to.deep.equal(new Error('Could not sync filesystem from server'));
         });
 
-        sync.connect("ws://0.0.0.0:" + port, "this-is-not-relevant");
+        sync.connect("ws://127.0.0.1:" + port, "this-is-not-relevant");
       }
 
 
@@ -227,7 +227,7 @@ describe('MakeDrive Client API', function(){
           expect(err).to.deep.equal(new Error('Could not sync filesystem from server'));
         });
 
-        sync.connect("ws://0.0.0.0:" + port, "this-is-not-relevant");
+        sync.connect("ws://127.0.0.1:" + port, "this-is-not-relevant");
       }
 
       // First, prepare the stub of the server.
@@ -292,7 +292,7 @@ describe('MakeDrive Client API', function(){
           expect(err).to.exist;
         });
 
-        sync.connect("ws://0.0.0.0:" + port);
+        sync.connect("ws://127.0.0.1:" + port);
       }
 
       // First, prepare the stub of the server.
@@ -361,7 +361,7 @@ describe('MakeDrive Client API', function(){
           expect(err).to.exist;
         });
 
-        sync.connect("ws://0.0.0.0:" + port);
+        sync.connect("ws://127.0.0.1:" + port);
       }
 
       // First, prepare the stub of the server.
