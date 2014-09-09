@@ -4,7 +4,7 @@ var SyncMessage = require( '../../lib/syncmessage' ),
     steps = require('./sync-steps'),
     WebSocket = require('ws'),
     fsUtils = require('../../lib/fs-utils'),
-    async = require('async');
+    async = require('../../lib/async-lite.js');
 
 function SyncManager(sync, fs) {
   var manager = this;
