@@ -43,22 +43,24 @@ describe('MakeDrive Client - conflicted copy integration', function(){
 
   // Create 2 sync clients, do downstream syncs, then dirty both filesystems
   beforeEach(function(done) {
-    var username = util.username();
+    util.ready(function() {
+      var username = util.username();
 
-    util.setupSyncClient({username: username, layout: layout, manual: true}, function(err, client) {
-      if(err) throw err;
-
-      client1 = client;
-      util.setupSyncClient({username: username, manual: true}, function(err, client) {
+      util.setupSyncClient({username: username, layout: layout, manual: true}, function(err, client) {
         if(err) throw err;
 
-        client2 = client;
-
-        // Make sure the initial downstream sync produced the same layout as client1
-        util.ensureFilesystem(client2.fs, layout, function(err) {
+        client1 = client;
+        util.setupSyncClient({username: username, manual: true}, function(err, client) {
           if(err) throw err;
 
-          modifyClients(done);
+          client2 = client;
+
+          // Make sure the initial downstream sync produced the same layout as client1
+          util.ensureFilesystem(client2.fs, layout, function(err) {
+            if(err) throw err;
+
+            modifyClients(done);
+          });
         });
       });
     });

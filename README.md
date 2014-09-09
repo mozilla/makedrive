@@ -1,7 +1,10 @@
 MakeDrive
 =========
 
-A cloud-based Dropbox&reg; equivalent for browser filesystems. Designed for use with Mozilla Webmaker tools and services.
+An offline-first, always available, syncing filesystem for the web. MakeDrive gives web pages and apps a
+complete filesystem that can be used offline, and also synced with the cloud.
+
+MakeDrive is designed for use with Mozilla Webmaker tools and services, but could be adapted to any use.
 
 See the [Mozilla MakeDrive Wiki](https://wiki.mozilla.org/Webmaker/MakeDrive) page for background info.
 
@@ -22,13 +25,15 @@ See the [Mozilla MakeDrive Wiki](https://wiki.mozilla.org/Webmaker/MakeDrive) pa
 - Node.js: v0.10+
 
 ## Installation and Use
-1) Clone the [MakeDrive](https://github.com/mozilla/makedrive) repository.
+1) Install and run [redis](http://redis.io/), which MakeDrive uses for distributed locks.
+
+2) Clone the [MakeDrive](https://github.com/mozilla/makedrive) repository.
 
 ```
 $ git clone https://github.com/mozilla/makedrive.git
 ```
 
-2) In your MakeDrive directory, install all of the necessary MakeDrive dependencies:
+3) In your MakeDrive directory, install all of the necessary MakeDrive dependencies:
 
 If you don't already have `grunt-cli` and `bower` installed globally, here is the console command using `npm` -
 
@@ -39,6 +44,9 @@ $ sudo npm install bower -g
 ```
 $ sudo npm install grunt-cli -g
 ```
+
+The server's log level can be set in the environment or the .env file using `LOG_LEVEL=*`
+with one of `fatal`, `error`, `warn`, `info`, `debug`, `trace`. If none is given `info` is used.
 
 Afterwards, install the npm modules -
 
@@ -51,13 +59,13 @@ Next, install dependencies -
 $ bower install
 ```
 
-3) Copy the distributed environment file via command line, or manually using a code editor:
+4) Copy the distributed environment file via command line, or manually using a code editor:
 
 ```
 $ cp env.dist .env
 ```
 
-4) Run the MakeDrive server:
+5) Run the MakeDrive server at the default log level:
 
 ```
 $ npm start

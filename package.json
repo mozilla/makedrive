@@ -3,7 +3,7 @@
   "version": "0.0.47",
   "description": "Webmaker Filesystem",
   "scripts": {
-    "start": "node ./server/index.js",
+    "start": "node ./server/index.js | ./node_modules/.bin/bunyan",
     "test": "grunt test"
   },
   "repository": {
@@ -63,13 +63,18 @@
     "habitat": "1.1.0",
     "helmet": "0.2.0",
     "knox": "0.8.9",
-    "messina": "0.1.2",
+    "lodash": "^2.4.1",
+    "bunyan": "^1.1.3",
     "mime": "^1.2.11",
     "newrelic": "1.4.0",
     "node-uuid": "^1.4.1",
     "recluster": "^0.3.7",
+    "redis": "^0.12.1",
     "webmaker-auth": "0.0.14",
     "ws": "^0.4.31"
+  },
+  "optionalDependencies": {
+    "hiredis": "^0.1.17"
   },
   "devDependencies": {
     "browserify": "^4.1.8",

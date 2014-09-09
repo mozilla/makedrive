@@ -10,8 +10,11 @@ var async = require('async');
 describe('MakeDrive Client FileSystem Unsynced Attribute', function() {
   var provider;
 
-  beforeEach(function() {
-    provider = new Filer.FileSystem.providers.Memory(util.username());
+  beforeEach(function(done) {
+    util.ready(function() {
+      provider = new Filer.FileSystem.providers.Memory(util.username());
+      done();
+    });
   });
   afterEach(function() {
     provider = null;

@@ -226,6 +226,9 @@ function handleError(syncManager, data) {
   } else if(data.is.maxsizeExceeded) {
     // We are only emitting the error since this is can be sync again from the client
     syncManager.sync.emit('error', new Error('Maximum file size exceeded'));
+  } else if(data.is.interrupted && session.is.syncing) {
+    // SERVER INTERRUPTED SYNC (LOCK RELEASED EARLY)
+    sync.onInterrupted();
   } else {
     onError(syncManager, new Error('Failed to sync with the server. Current step is: ' +
                                     session.step + '. Current state is: ' + session.state));

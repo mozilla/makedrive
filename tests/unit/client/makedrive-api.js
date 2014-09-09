@@ -11,8 +11,11 @@ describe('MakeDrive Client API', function(){
   describe('Core API', function() {
     var provider;
 
-    beforeEach(function() {
-      provider = new Filer.FileSystem.providers.Memory(util.username());
+    beforeEach(function(done) {
+      util.ready(function() {
+        provider = new Filer.FileSystem.providers.Memory(util.username());
+        done();
+      });
     });
     afterEach(function() {
       provider = null;
@@ -128,14 +131,16 @@ describe('MakeDrive Client API', function(){
     var testServer;
 
     beforeEach(function(done) {
-      provider = new Filer.FileSystem.providers.Memory(util.username());
+      util.ready(function() {
+        provider = new Filer.FileSystem.providers.Memory(util.username());
 
-      testServer = new WebSocketServer({port: port});
-      testServer.once('error', function(err){
-        expect(err, "[Error creating socket server]").to.not.exist;
-      });
-      testServer.once('listening', function() {
-        done();
+        testServer = new WebSocketServer({port: port});
+        testServer.once('error', function(err){
+          expect(err, "[Error creating socket server]").to.not.exist;
+        });
+        testServer.once('listening', function() {
+          done();
+        });
       });
     });
     afterEach(function() {

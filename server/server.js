@@ -2,105 +2,107 @@ if(process.env.NEW_RELIC_ENABLED) {
   require('newrelic');
 }
 
+var EventEmitter = require('events').EventEmitter;
 var cluster = require('cluster');
-var domain = require('domain');
-var express = require('express');
-var helmet = require('helmet');
-var WebmakerAuth = require('webmaker-auth');
-var Path = require('path');
-var http = require('http');
+var log = require('./lib/logger.js');
 
-var env = require('./lib/environment');
-var middleware = require('./middleware');
-var routes = require('./routes');
-var socketServer = require('./lib/socket-server');
+var WebServer = require('./web-server.js');
+var SocketServer = require('./socket-server.js');
+var RedisClients = require('./redis-clients.js');
 
-var app = express();
-var distDir = Path.resolve(__dirname, 'dist');
-var webmakerAuth = new WebmakerAuth({
-  loginURL: env.get('LOGIN'),
-  secretKey: env.get('SESSION_SECRET'),
-  forceSSL: env.get('FORCE_SSL'),
-  domain: env.get('COOKIE_DOMAIN')
-});
-var logger;
-var server;
-var port;
+module.exports = new EventEmitter();
 
-// Logging middleware
-if(env.get('ENABLE_GELF_LOGS')) {
-  messina = require("messina");
-  logger = messina("makedrive-" + env.get("NODE_ENV") || "development");
-  logger.init();
-  app.use(logger.middleware());
-} else {
-  app.use(express.logger('dev'));
+/**
+ * The server isn't really ready until various bits
+ * all get started. Any callers who want to use app
+ * should be careful to make sure everything is actually
+ * running (e.g., listen for 'ready' and/or check the
+ * module's ready property.
+ */
+var isReady = false;
+function ready() {
+  if(process.send) {
+    process.send({cmd: 'ready'});
+  }
+
+  // Signal (to recluster master if we're a child process,
+  // and any event listeners like tests, and console) that
+  // server is running
+  isReady = true;
+  module.exports.emit('ready');
+
+  log.info('Started Server Worker.');
 }
 
-// General middleware
-app.disable('x-powered-by');
-app.use(function(req, res, next) {
-  var d = domain.create();
-  d.add(req);
-  d.add(res);
+function shutdown(err) {
+  // Deal with multiple things dying at once
+  if(shutdown.inProcess) {
+    log.error(err, 'Shutdown already in process, additional error received');
+    return;
+  }
 
-  function done() {
+  shutdown.inProcess = true;
+
+  log.fatal(err, 'Starting shutdown process');
+
+  function kill() {
     if (cluster.worker) {
       cluster.worker.disconnect();
     }
-    res.send(500);
-    d.dispose();
+    log.fatal('Killing server process');
     process.exit(1);
   }
 
-  d.once('error', function(err) {
-    console.error('Server worker error:', err.stack);
-    try {
-      // make sure we close down within 30 seconds
-      var killtimer = setTimeout(function() {
-        process.exit(1);
-      }, 30000);
-      // But don't keep the process open just for that!
-      killtimer.unref();
-
-      if(server) {
-        server.close(done);
-      } else {
-        done();
-      }
-    } catch(err2) {
-      console.error('Server worker shutdown error:', err2.stack);
-    }
-  });
-
-  d.run(next);
-});
-app.use(middleware.crossOriginHandler);
-app.use(helmet.contentTypeOptions());
-app.use(helmet.hsts());
-app.enable('trust proxy');
-app.use(express.compress());
-app.use(express.static(Path.join(__dirname, '../client')));
-if(env.get('NODE_ENV') === 'development') {
-  app.use('/demo', express.static(Path.join(__dirname, '../demo')));
+  try {
+    log.info('Attempting to shut down Socket Server [1/3]...');
+    SocketServer.close(function() {
+      log.info('Attempting to shut down Web Server [2/3]...');
+      WebServer.close(function() {
+        log.info('Attempting to shut down Redis Clients [3/3]...');
+        RedisClients.close(function() {
+          log.info('Finished clean shutdown.');
+          kill();
+        });
+      });
+    });
+  } catch(err2) {
+    log.error(err2, 'Unable to complete clean shutdown process');
+    kill();
+  }
 }
-app.use(express.json());
-app.use(express.urlencoded());
-app.use(webmakerAuth.cookieParser());
-app.use(webmakerAuth.cookieSession());
 
-app.use(app.router);
+// If any of these three major server components blow up,
+// we need to shutdown this process, since things aren't stable.
+WebServer.on('error', shutdown);
+SocketServer.on('error', shutdown);
+RedisClients.on('error', shutdown);
 
-app.use(middleware.errorHandler);
-app.use(middleware.fourOhFourHandler);
+RedisClients.start(function(err) {
+  if(err) {
+    log.fatal(err, 'Redis Clients Startup Error');
+    return shutdown(err);
+  }
 
-// Declare routes
-routes(app, webmakerAuth);
+  WebServer.start(function(err, server) {
+    if(err) {
+      log.fatal(err, 'Web Server Startup Error');
+      return shutdown(err);
+    }
 
-port = process.env.PORT || env.get('PORT') || 9090;
-server = http.createServer(app);
-server.listen(port);
+    SocketServer.start(server, function(err) {
+      if(err) {
+        log.fatal(err, 'Socket Server Startup Error');
+        return shutdown(err);
+      }
 
-socketServer(server);
+      ready();
+    });
+  });
+});
 
-module.exports = app;
+module.exports.app = WebServer.app;
+Object.defineProperty(module.exports, 'ready', {
+  get: function() {
+    return isReady;
+  }
+});

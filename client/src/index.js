@@ -171,6 +171,13 @@ function createFS(options) {
     }
   };
 
+  // The server stopped our upstream sync mid-way through.
+  sync.onInterrupted = function() {
+    fs.pathToSync = pathCache;
+    sync.state = sync.SYNC_CONNECTED;
+    sync.emit('error', new Error('Sync interrupted by server.'));
+  };
+
   sync.onError = function(err) {
     // Regress to the path that needed to be synced but failed
     // (likely because of a sync LOCK)

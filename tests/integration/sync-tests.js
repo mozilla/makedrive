@@ -6,10 +6,13 @@ var Filer = require('../../lib/filer.js');
 describe('Two clients', function(){
   var provider1, provider2;
 
-  beforeEach(function() {
-    var username = util.username();
-    provider1 = new Filer.FileSystem.providers.Memory(username + '_1');
-    provider2 = new Filer.FileSystem.providers.Memory(username + '_2');
+  beforeEach(function(done) {
+    util.ready(function() {
+      var username = util.username();
+      provider1 = new Filer.FileSystem.providers.Memory(username + '_1');
+      provider2 = new Filer.FileSystem.providers.Memory(username + '_2');
+      done();
+    });
   });
   afterEach(function() {
     provider1 = null;

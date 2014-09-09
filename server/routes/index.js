@@ -3,7 +3,7 @@ var middleware = require('../middleware.js');
 var env = require('../lib/environment');
 var version = require('../../package.json').version;
 var FilerWebServer = require('../lib/filer-www');
-var websocketAuth = require('../lib/websocket-auth');
+var WebsocketAuth = require('../lib/websocket-auth');
 
 module.exports = function createRoutes(app, webmakerAuth) {
 
@@ -50,7 +50,7 @@ module.exports = function createRoutes(app, webmakerAuth) {
 
   app.get( "/api/sync", middleware.crossOriginHandler, middleware.authenticationHandler, function( req, res ) {
     var username = req.params.username;
-    var token = websocketAuth.generateTokenForClient(username);
+    var token = WebsocketAuth.generateTokenForClient(username);
 
     res.json(200, token);
   });

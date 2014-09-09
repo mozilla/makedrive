@@ -156,7 +156,7 @@ module.exports = function(grunt) {
      */
     exec: {
       run_mocha: {
-        command: '"./node_modules/.bin/mocha" --timeout 70000 --recursive --reporter spec ./tests',
+        command: '"./node_modules/.bin/mocha" --timeout 70000 --recursive --reporter spec ./tests | ./node_modules/.bin/bunyan -l error',
         stdout: true,
         stderr: true
       }

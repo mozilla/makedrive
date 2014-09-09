@@ -15,14 +15,16 @@ describe('[Interruptions during a sync]', function() {
     var testServer;
 
     beforeEach(function(done) {
-      provider = new Filer.FileSystem.providers.Memory(util.username());
-      testServer = new WebSocketServer({port: port});
+      util.ready(function() {
+        provider = new Filer.FileSystem.providers.Memory(util.username());
+        testServer = new WebSocketServer({port: port});
 
-      testServer.once('error', function(err){
-        expect(err, "[Error creating socket server]").to.not.exist;
-      });
-      testServer.once('listening', function() {
-        done();
+        testServer.once('error', function(err){
+          expect(err, "[Error creating socket server]").to.not.exist;
+        });
+        testServer.once('listening', function() {
+          done();
+        });
       });
     });
     afterEach(function() {

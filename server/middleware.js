@@ -1,6 +1,4 @@
-var Sync = require('./lib/sync');
 var env = require('./lib/environment');
-var websocketAuth = require('./lib/websocket-auth');
 
 // Get list of basic auth usernames:passwords from .env (if any)
 // Username/password pairs should be listed like "username1:password1,username2:password2"

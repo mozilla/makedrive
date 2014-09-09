@@ -24,7 +24,8 @@ env.set('MAX_SYNC_SIZE_BYTES', 2000000);
 // Enable a username:password for BASIC_AUTH_USERS to enable /api/get route
 env.set('BASIC_AUTH_USERS', 'testusername:testpassword');
 
-var app = require('../../server/server.js');
+var server = require('../../server/server.js');
+var app = server.app;
 
 var serverURL = 'http://127.0.0.1:' + env.get('PORT'),
     socketURL = serverURL.replace( 'http', 'ws' );
@@ -79,21 +80,31 @@ app.post('/upload/*', function(req, res) {
 /**
  * Misc Helpers
  */
+function ready(callback) {
+  if(server.ready) {
+    callback();
+  } else {
+    server.once('ready', callback);
+  }
+}
+
 function uniqueUsername() {
   return 'user' + uuid.v4();
 }
 
 function upload(username, path, contents, callback) {
-  request.post({
-    url: serverURL + '/upload/' + username + path,
-    headers: {
-      'Content-Type': 'application/octet-stream'
-    },
-    body: contents
-  }, function(err, res, body) {
-    expect(err).not.to.exist;
-    expect(res.statusCode).to.equal(200);
-    callback();
+  ready(function() {
+    request.post({
+      url: serverURL + '/upload/' + username + path,
+      headers: {
+        'Content-Type': 'application/octet-stream'
+      },
+      body: contents
+    }, function(err, res, body) {
+      expect(err).not.to.exist;
+      expect(res.statusCode).to.equal(200);
+      callback();
+    });
   });
 }
 
@@ -111,18 +122,19 @@ function comparePaths(a, b) {
 // Ensure that the file is downloadable via /p/ route
 // and has the proper contents
 function ensureFile(path, contents, jar, callback) {
-  request.get({
-    url: serverURL + '/p' + path,
-    jar: jar
-  }, function(err, res, body) {
-    expect(err).not.to.exist;
-    expect(res.statusCode).to.equal(200);
-    expect(body).to.equal(contents);
+  ready(function() {
+    request.get({
+      url: serverURL + '/p' + path,
+      jar: jar
+    }, function(err, res, body) {
+      expect(err).not.to.exist;
+      expect(res.statusCode).to.equal(200);
+      expect(body).to.equal(contents);
 
-    callback();
+      callback();
+    });
   });
 }
-
 
 function toSyncMessage(string) {
   try {
@@ -143,16 +155,18 @@ function getWebsocketToken(options, callback){
     throw('Expected options.jar');
   }
 
-  request({
-    url: serverURL + '/api/sync',
-    jar: options.jar,
-    json: true
-  }, function(err, response, body) {
-    expect(err, "[Error getting a token: " + err + "]").to.not.exist;
-    expect(response.statusCode, "[Error getting a token: " + response.body.message + "]").to.equal(200);
+  ready(function() {
+    request({
+      url: serverURL + '/api/sync',
+      jar: options.jar,
+      json: true
+    }, function(err, response, body) {
+      expect(err, "[Error getting a token: " + err + "]").to.not.exist;
+      expect(response.statusCode, "[Error getting a token: " + response.body.message + "]").to.equal(200);
 
-    options.token = body;
-    callback(null, options);
+      options.token = body;
+      callback(null, options);
+    });
   });
 }
 
@@ -170,16 +184,18 @@ function authenticate(options, callback){
     cb();
   };
 
-  request.post({
-    url: serverURL + '/mocklogin/' + options.username,
-    jar: options.jar
-  }, function(err, res, body) {
-    if(err) {
-      return callback(err);
-    }
+  ready(function() {
+    request.post({
+      url: serverURL + '/mocklogin/' + options.username,
+      jar: options.jar
+    }, function(err, res, body) {
+      if(err) {
+        return callback(err);
+      }
 
-    expect(res.statusCode).to.equal(200);
-    callback(null, options);
+      expect(res.statusCode).to.equal(200);
+      callback(null, options);
+    });
   });
 }
 
@@ -782,21 +798,25 @@ function ensureRemoteFilesystemLayout(layout, jar, callback) {
         return callback(err);
       }
 
-      // Now grab the remote server listing using the /j/* route
-      request.get({
-        url: serverURL + '/j/',
-        jar: jar,
-        json: true
-      }, function(err, res, remoteFSListing) {
-        expect(err).not.to.exist;
-        expect(res.statusCode).to.equal(200);
+      ready(function() {
+        // Now grab the remote server listing using the /j/* route
+        request.get({
+          url: serverURL + '/j/',
+          jar: jar,
+          json: true
+        }, function(err, res, remoteFSListing) {
+          expect(err).not.to.exist;
+          expect(res.statusCode).to.equal(200);
 
-        // Remove modified
-        layoutFSListing = stripModified(layoutFSListing);
-        remoteFSListing = stripModified(remoteFSListing);
+          // Remove modified
+          layoutFSListing = stripModified(layoutFSListing);
+          remoteFSListing = stripModified(remoteFSListing);
 
-        expect(deepEqual(remoteFSListing, layoutFSListing, {ignoreArrayOrder: true, compareFn: comparePaths})).to.be.true;
-        callback(err);
+          expect(deepEqual(remoteFSListing,
+                           layoutFSListing,
+                           {ignoreArrayOrder: true, compareFn: comparePaths})).to.be.true;
+          callback(err);
+        });
       });
     });
   });
@@ -895,12 +915,14 @@ function ensureRemoteFilesystemContents(layout, jar, callback) {
   }
 
   function processPath(path, callback) {
-    var contents = layout[path];
-    if(contents) {
-      ensureRemoteFileContents(path, contents, callback);
-    } else {
-      ensureRemoteEmptyDir(path, callback);
-    }
+    ready(function() {
+      var contents = layout[path];
+      if(contents) {
+        ensureRemoteFileContents(path, contents, callback);
+      } else {
+        ensureRemoteEmptyDir(path, callback);
+      }
+    });
   }
 
   async.eachSeries(Object.keys(layout), processPath, callback);
@@ -978,7 +1000,8 @@ function setupSyncClient(options, callback) {
 
     sync.once('error', function(err) {
       // This should never happen, and if it does, we need to fail loudly.
-      throw new Error('Unexpected client sync error: ' + err);
+      console.error('Unexepcted sync `error` event', err.stack);
+      throw err;
     });
 
     sync.connect(socketURL, result.token);
@@ -987,6 +1010,7 @@ function setupSyncClient(options, callback) {
 
 module.exports = {
   // Misc helpers
+  ready: ready,
   app: app,
   serverURL: serverURL,
   socketURL: socketURL,
