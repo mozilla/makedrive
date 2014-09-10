@@ -311,25 +311,49 @@ function createFS(options) {
       // Also add /api/sync to the end:
       apiSync = apiSync.replace(/\/?$/, '/api/sync');
 
-      request({
-        url: apiSync,
-        method: 'GET',
-        json: true,
-        withCredentials: true
-      }, function(err, msg, body) {
-        var statusCode;
-        var error;
+      if("XMLHttpRequest" in global) {
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", apiSync, true);
+        xhr.withCredentials = true;
+        xhr.onload = function (e) {
+          if (xhr.readyState === 4) {
+            var error;
+            error = xhr.status !== 200 ?
+            { message: err || 'Unable to get token', code: xhr.status } : null;
 
-        statusCode = msg && msg.statusCode;
-        error = statusCode !== 200 ?
-          { message: err || 'Unable to get token', code: statusCode } : null;
+            if(error) {
+              sync.onError(error);
+            } else {
+              try {
+                connect(JSON.parse(xhr.responseText));
+              } catch(catchError) {
+                sync.onError(catchError);
+              }
+            }
+          }
+        };
+        xhr.send(null);
+      } else {
+        request({
+          url: apiSync,
+          method: 'GET',
+          json: true,
+          withCredentials: true
+        }, function(err, msg, body) {
+          var statusCode;
+          var error;
 
-        if(error) {
-          sync.onError(error);
-        } else {
-          connect(body);
-        }
-      });
+          statusCode = msg && msg.statusCode;
+          error = statusCode !== 200 ?
+            { message: err || 'Unable to get token', code: statusCode } : null;
+
+          if(error) {
+            sync.onError(error);
+          } else {
+            connect(body);
+          }
+        });
+      }
     }
   };
 
