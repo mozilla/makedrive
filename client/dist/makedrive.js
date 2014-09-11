@@ -414,7 +414,7 @@ MakeDrive.Path = Filer.Path;
 MakeDrive.Errors = Filer.Errors;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../../lib/filer.js":39,"../../lib/sync-path-resolver":43,"./sync-filesystem.js":4,"./sync-manager.js":5,"events":49,"request":48}],3:[function(require,module,exports){
+},{"../../lib/filer.js":13,"../../lib/sync-path-resolver":17,"./sync-filesystem.js":4,"./sync-manager.js":5,"events":23,"request":22}],3:[function(require,module,exports){
 var SyncMessage = require('../../lib/syncmessage');
 var rsync = require('../../lib/rsync');
 var rsyncOptions = require('../../lib/constants').rsyncDefaults;
@@ -669,7 +669,7 @@ function handleMessage(syncManager, data) {
 
 module.exports = handleMessage;
 
-},{"../../lib/constants":36,"../../lib/diff":37,"../../lib/filer":39,"../../lib/rsync":42,"../../lib/syncmessage":44,"./sync-states":6,"./sync-steps":7}],4:[function(require,module,exports){
+},{"../../lib/constants":10,"../../lib/diff":11,"../../lib/filer":13,"../../lib/rsync":16,"../../lib/syncmessage":18,"./sync-states":6,"./sync-steps":7}],4:[function(require,module,exports){
 /**
  * An extended Filer FileSystem with wrapped methods
  * for writing that manage file metadata (xattribs)
@@ -851,7 +851,7 @@ function SyncFileSystem(fs) {
 
 module.exports = SyncFileSystem;
 
-},{"../../lib/conflict.js":35,"../../lib/constants.js":36,"../../lib/filer-shell.js":38,"../../lib/filer.js":39,"../../lib/fs-utils.js":40,"../../lib/sync-path-resolver.js":43}],5:[function(require,module,exports){
+},{"../../lib/conflict.js":9,"../../lib/constants.js":10,"../../lib/filer-shell.js":12,"../../lib/filer.js":13,"../../lib/fs-utils.js":14,"../../lib/sync-path-resolver.js":17}],5:[function(require,module,exports){
 var SyncMessage = require( '../../lib/syncmessage' ),
     messageHandler = require('./message-handler'),
     states = require('./sync-states'),
@@ -1015,7 +1015,7 @@ SyncManager.prototype.close = function() {
 
 module.exports = SyncManager;
 
-},{"../../lib/async-lite.js":34,"../../lib/fs-utils":40,"../../lib/syncmessage":44,"./message-handler":3,"./sync-states":6,"./sync-steps":7,"ws":1}],6:[function(require,module,exports){
+},{"../../lib/async-lite.js":8,"../../lib/fs-utils":14,"../../lib/syncmessage":18,"./message-handler":3,"./sync-states":6,"./sync-steps":7,"ws":1}],6:[function(require,module,exports){
 module.exports = {
   SYNCING: "SYNC IN PROGRESS",
   READY: "READY",
@@ -1032,6 +1032,2809 @@ module.exports = {
   FAILED: "FAILED"
 };
 },{}],8:[function(require,module,exports){
+// We're sharing Filer's same stripped-down version of async, in order to save space.
+module.exports = require('../node_modules/filer/lib/async.js');
+
+},{"../node_modules/filer/lib/async.js":24}],9:[function(require,module,exports){
+/**
+ * Utility functions for working with Conflicted Files.
+ */
+var Filer = require('./filer.js');
+var Path = Filer.Path;
+var constants = require('./constants.js');
+var fsUtils = require('./fs-utils.js');
+
+// Turn "/index.html" into "/index.html (Conflicted Copy 2014-07-23 12:00:00).html"
+function generateConflictedPath(fs, path, callback) {
+  var dirname = Path.dirname(path);
+  var basename = Path.basename(path);
+  var extname = Path.extname(path);
+
+  var now = new Date();
+  var dateStamp = now.getFullYear() + '-' +
+        now.getMonth() + '-' +
+        now.getDay() + ' ' +
+        now.getHours() + ':' +
+        now.getMinutes() + ':' +
+        now.getSeconds();
+  var conflictedCopy = ' (Conflicted Copy ' + dateStamp + ')';
+  var conflictedPath = Path.join(dirname, basename + conflictedCopy + extname);
+
+  // Copy the file using the conflicted filename. If there is
+  // already a conflicted file, replace it with this one.
+  fsUtils.forceCopy(fs, path, conflictedPath, function(err) {
+    if(err) {
+      return callback(err);
+    }
+
+    // Send the new path back on the callback
+    callback(null, conflictedPath);
+  });
+}
+
+function filenameContainsConflicted(path) {
+  // Look for path to be a conflicted copy, e.g.,
+  // /dir/index (Conflicted Copy 2014-07-23 12:00:00).html
+  return /\(Conflicted Copy \d{4}-\d{1,2}-\d{1,2} \d{1,2}:\d{1,2}:\d{1,2}\)/.test(path);
+}
+
+function isConflictedCopy(fs, path, callback) {
+  fs.getxattr(path, constants.attributes.conflict, function(err, value) {
+    if(err && err.code !== 'ENOATTR') {
+      return callback(err);
+    }
+
+    callback(null, !!value);
+  });
+}
+
+function makeConflictedCopy(fs, path, callback) {
+  fs.lstat(path, function(err, stats) {
+    if(err) {
+      return callback(err);
+    }
+
+    // If this is a dir, err now
+    if(stats.isDirectory()) {
+      return callback(new Filer.Errors.EISDIR('conflict not permitted on directory'));
+    }
+
+    // Otherwise, copy to a conflicted filename, and mark as makedrive-conflict
+    generateConflictedPath(fs, path, function(err, conflictedPath) {
+      if(err) {
+        return callback(err);
+      }
+      fs.setxattr(conflictedPath, constants.attributes.conflict, true, function(err) {
+        if(err) {
+          return callback(err);
+        }
+
+        callback(null, conflictedPath);
+      });
+    });
+  });
+}
+
+function removeFileConflict(fs, path, callback) {
+  fs.removexattr(path, constants.attributes.conflict, function(err) {
+    if(err && err.code !== 'ENOATTR') {
+      return callback(err);
+    }
+
+    callback();
+  });
+}
+
+module.exports = {
+  filenameContainsConflicted: filenameContainsConflicted,
+  isConflictedCopy: isConflictedCopy,
+  makeConflictedCopy: makeConflictedCopy,
+  removeFileConflict: removeFileConflict
+};
+
+},{"./constants.js":10,"./filer.js":13,"./fs-utils.js":14}],10:[function(require,module,exports){
+module.exports = {
+  rsyncDefaults: {
+    size: 5,
+    time: true,
+    recursive: true
+  },
+
+  attributes: {
+    unsynced: 'makedrive-unsynced',
+    conflict: 'makedrive-conflict'
+  }
+};
+
+},{}],11:[function(require,module,exports){
+/**
+ * Functions to process lists of Node Diff objects (i.e.,
+ * diffs of files, folders). A Node Diff object takes the
+ * following form:
+ *
+ * // Node Diff for file path (note presence of .diffs)
+ * {
+ *   modified: 1404926919696,
+ *   path: 'index.html',
+ *   diffs: [
+ *     {
+ *       length: 56,
+ *       index: 17,
+ *       data: Buffer([...])
+ *     },
+ *     ...
+ *   ]
+ * }
+ *
+ * // Node Diff for directory path (note presence of .contents)
+ * {
+ *   modified: 1404926919696,
+ *   path: 'index.html',
+ *   contents: [
+ *     nodeDiffObject,
+ *     ...
+ *   ]
+ * }
+ */
+
+ var Buffer = require('./filer.js').Buffer;
+
+function processNodeDiff(nodeDiff, processDataFn) {
+  // Check if this is a directory or file, process, and return
+  if(nodeDiff.contents) {
+    nodeDiff.contents = nodeDiff.contents.map(function(nodeDiff) {
+      return processNodeDiff(nodeDiff, processDataFn);
+    });
+  } else {
+    nodeDiff.diffs = nodeDiff.diffs.map(function(diff) {
+      diff.data = processDataFn(diff.data);
+      return diff;
+    });
+  }
+
+  return nodeDiff;
+}
+
+function bufferToJSON(data) {
+  if(!Buffer.isBuffer(data)) {
+    return data;
+  }
+  var json = data.toJSON();
+  // Note: when we're in node.js, json will be the raw array.
+  // In browserify it will be {type:'Buffer', data:[...]}
+  return json.data || json;
+}
+
+function jsonToBuffer(data) {
+  return new Buffer(data);
+}
+
+function processFn(nodeDiffs, processDataFn) {
+  if(!nodeDiffs.length) {
+    return nodeDiffs;
+  }
+  return nodeDiffs.map(function(nodeDiff){
+    return processNodeDiff(nodeDiff, processDataFn);
+  });
+}
+
+module.exports.serialize = function(nodeDiffs) {
+  return processFn(nodeDiffs, bufferToJSON);
+};
+
+module.exports.deserialize = function(nodeDiffs) {
+  return processFn(nodeDiffs, jsonToBuffer);
+};
+
+},{"./filer.js":13}],12:[function(require,module,exports){
+// Filer doesn't expose the Shell() ctor directly, so provide a shortcut.
+// See client/src/sync-filesystem.js
+module.exports = require('../node_modules/filer/src/shell/shell.js');
+
+},{"../node_modules/filer/src/shell/shell.js":47}],13:[function(require,module,exports){
+module.exports = require('filer');
+
+},{"filer":37}],14:[function(require,module,exports){
+/**
+ * Extra common fs operations we do throughout MakeDrive.
+ */
+var constants = require('./constants.js');
+
+// copy oldPath to newPath, deleting newPath if it exists
+function forceCopy(fs, oldPath, newPath, callback) {
+  fs.unlink(newPath, function(err) {
+    if(err && err.code !== 'ENOENT') {
+      return callback(err);
+    }
+
+    fs.readFile(oldPath, function(err, buf) {
+      if(err) {
+        return callback(err);
+      }
+
+      fs.writeFile(newPath, buf, callback);
+    });
+  });
+}
+
+// See if a given path a) exists, and whether it is marked unsynced.
+function isPathUnsynced(fs, path, callback) {
+  fs.getxattr(path, constants.attributes.unsynced, function(err, unsynced) {
+    // File doesn't exist locally at all
+    if(err && err.code === 'ENOENT') {
+      return callback(null, false);
+    }
+
+    // Deal with unexpected error
+    if(err && err.code !== 'ENOATTR') {
+      return callback(err);
+    }
+
+    callback(null, !!unsynced);
+  });
+}
+
+// Remove the unsynced metadata from a path
+function removeUnsynced(fs, path, callback) {
+  fs.removexattr(path, constants.attributes.unsynced, function(err) {
+    if(err && err.code !== 'ENOATTR') {
+      return callback(err);
+    }
+
+    callback();
+  });
+}
+function fremoveUnsynced(fs, fd, callback) {
+  fs.fremovexattr(fd, constants.attributes.unsynced, function(err) {
+    if(err && err.code !== 'ENOATTR') {
+      return callback(err);
+    }
+
+    callback();
+  });
+}
+
+// Set the unsynced metadata for a path
+function setUnsynced(fs, path, callback) {
+  fs.setxattr(path, constants.attributes.unsynced, Date.now(), function(err) {
+    if(err) {
+      return callback(err);
+    }
+
+    callback();
+  });
+}
+function fsetUnsynced(fs, fd, callback) {
+  fs.fsetxattr(fd, constants.attributes.unsynced, Date.now(), function(err) {
+    if(err) {
+      return callback(err);
+    }
+
+    callback();
+  });
+}
+
+// Get the unsynced metadata for a path
+function getUnsynced(fs, path, callback) {
+  fs.getxattr(path, constants.attributes.unsynced, function(err, value) {
+    if(err && err.code !== 'ENOATTR') {
+      return callback(err);
+    }
+
+    callback(null, value);
+  });
+}
+function fgetUnsynced(fs, fd, callback) {
+  fs.fgetxattr(fd, constants.attributes.unsynced, function(err, value) {
+    if(err && err.code !== 'ENOATTR') {
+      return callback(err);
+    }
+
+    callback(null, value);
+  });
+}
+
+module.exports = {
+  forceCopy: forceCopy,
+  isPathUnsynced: isPathUnsynced,
+  removeUnsynced: removeUnsynced,
+  fremoveUnsynced: fremoveUnsynced,
+  setUnsynced: setUnsynced,
+  fsetUnsynced: fsetUnsynced,
+  getUnsynced: getUnsynced,
+  fgetUnsynced: fgetUnsynced
+};
+
+},{"./constants.js":10}],15:[function(require,module,exports){
+module.exports = {
+  difference: function(arr,farr) {
+    return arr.filter(function(v) {
+      return farr.indexOf(v) === -1;
+    });
+  },
+  sortBy: function(list,prop) {
+    return list.sort(function(a,b) {
+      a = a[prop];
+      b = b[prop];
+      return (a === b) ? 0 : (a < b) ? -1 : 1;
+    });
+  },
+  isArray: Array.isArray || function(obj) {
+    return toString.call(obj) === '[object Array]';
+  },
+  map: function(input, fn) {
+    if (this.isArray(input)) {
+      return input.map(fn);
+    }
+    return Object.keys(input).map(function(v) {
+      return fn(input[v]);
+    });
+  },
+  values: function(obj) {
+    return Object.keys(obj).map(function(v) {
+      return obj[v];
+    });
+  }
+};
+
+},{}],16:[function(require,module,exports){
+// rsync.js
+// Implement rsync to sync between two Filer filesystems
+// Portions used from Node.js Anchor module
+// Copyright(c) 2011 Mihai Tomescu <matomesc@gmail.com>
+// Copyright(c) 2011 Tolga Tezel <tolgatezel11@gmail.com>
+// MIT Licensed
+// https://github.com/ttezel/anchor
+
+var Filer = require('./filer.js');
+var Buffer = Filer.Buffer;
+var Path = Filer.Path;
+var fsUtils = require('./fs-utils.js');
+var Errors = Filer.Errors;
+var async = require('./async-lite.js');
+var MD5 = require('MD5');
+var rsync = {};
+var constants = require('./constants.js');
+var conflict = require('./conflict.js');
+var ld_shim = require('./lodash-lite.js');
+
+// Rsync Options that can be passed are:
+// size       -   the size of each chunk of data in bytes that should be checksumed
+// checksum   -   true: always calculate checksums [default]
+//                false: ignore checksums for identical files
+// recursive  -   true: sync each contained node in the path provided
+//                false: only sync the node for the path provided [default]
+// time       -   true: sync modified times of source/destination files
+//                false: do not change modified times of destination files [default]
+// links      -   true: sync symbolic links as links in destination
+//                false: sync symbolic links as the files they link to in destination [default]
+function configureOptions(options) {
+  if(!options || typeof options === 'function') {
+    options = {};
+  }
+
+  options.size = options.size || 512;
+  options.checksum = 'checksum' in options ? options.checksum : true;
+  options.recursive = options.recursive || false;
+  options.time = options.time || false;
+  options.links = options.links || false;
+
+  return options;
+}
+
+// Set the callback in case options are not provided
+function findCallback(callback, options) {
+  if(!callback && typeof options === 'function') {
+    callback = options;
+  }
+
+  return callback;
+}
+
+// Validate the parameters sent to each rsync method
+function validateParams(fs, path) {
+  if(!fs) {
+    return new Errors.EINVAL('No filesystem provided');
+  }
+
+  if(!path) {
+    return new Errors.EINVAL('Path must be specified');
+  }
+
+  return null;
+}
+
+// Get the 'directory' path from the given path for an entry
+// /dir/file.txt returns /dir
+// /dir/folder returns /dir/folder
+function getDirPath(path, entry) {
+  if(Path.basename(path) === entry) {
+   return Path.dirname(path);
+  }
+  return path;
+}
+
+// MD5 hashing for RSync
+function md5sum(data) {
+  return MD5(data).toString();
+}
+
+// Weak32 hashing for RSync based on Mark Adler's 32bit checksum algorithm
+function calcWeak32(data, prev, start, end) {
+  var a = 0;
+  var b = 0;
+  var sum = 0;
+  var M = 1 << 16;
+  var N = 65521;
+
+  if (!prev) {
+    var len = (start >= 0 && end >= 0) ? (end - start + 1) : data.length;
+    var datai;
+    for (var i = 0; i < len; i++) {
+      datai = data[i];
+      a += datai;
+      b += ((len - i) * datai);
+    }
+
+    a %= N;
+    b %= N;
+  } else {
+    var k = start;
+    var l = end - 1;
+    var prev_k = k - 1;
+    var prev_l = l - 1;
+    var prev_first = data[prev_k];
+    var prev_last = data[prev_l];
+    var curr_first = data[k];
+    var curr_last = data[l];
+
+    a = (prev.a - prev_first + curr_last) % N;
+    b = (prev.b - (prev_l - prev_k + 1) * prev_first + a) % N;
+  }
+  return { a: a, b: b, sum: a + b * M };
+}
+
+// Weak16 hashing for RSync
+function calcWeak16(data) {
+  return 0xffff & (data >> 16 ^ data * 1009);
+}
+
+// RSync algorithm to create a hashtable from checksums
+function createHashtable(checksums) {
+  var hashtable = {};
+  var len = checksums.length;
+  var checksum;
+  var weak16;
+
+  for (var i = 0; i < len; i++) {
+    checksum = checksums[i];
+    weak16 = calcWeak16(checksum.weak);
+    if (hashtable[weak16]) {
+      hashtable[weak16].push(checksum);
+    } else {
+      hashtable[weak16] = [checksum];
+    }
+  }
+  return hashtable;
+}
+
+// RSync algorithm to perform data rolling
+function roll(data, checksums, chunkSize) {
+  var results = [];
+  var hashtable = createHashtable(checksums);
+  var length = data.length;
+  var start = 0;
+  var end = chunkSize > length ? length : chunkSize;
+  // Updated when a block matches
+  var lastMatchedEnd = 0;
+  // This gets updated every iteration with the previous weak 32bit hash
+  var prevRollingWeak = null;
+  var weak;
+  var weak16;
+  var match;
+  var d;
+  var len;
+  var mightMatch;
+  var chunk;
+  var strong;
+  var hashtable_weak16;
+  var hashtable_weak16i;
+
+  for (; end <= length; start++, end++) {
+    weak = calcWeak32(data, prevRollingWeak, start, end);
+    weak16 = calcWeak16(weak.sum);
+    match = false;
+    d = null;
+    prevRollingWeak = weak;
+    hashtable_weak16 = hashtable[weak16];
+
+    if (hashtable_weak16) {
+      len = hashtable_weak16.length;
+      for (var i = 0; i < len; i++) {
+        hashtable_weak16i = hashtable_weak16[i];
+        if (hashtable_weak16i.weak === weak.sum) {
+          mightMatch = hashtable_weak16i;
+          chunk = data.slice(start, end);
+          strong = md5sum(chunk);
+
+          if (mightMatch.strong === strong) {
+            match = mightMatch;
+            break;
+          }
+        }
+      }
+    }
+    if (match) {
+      if(start < lastMatchedEnd) {
+        d = data.slice(lastMatchedEnd - 1, end);
+        results.push({
+          data: d,
+          index: match.index
+        });
+      } else if (start - lastMatchedEnd > 0) {
+        d = data.slice(lastMatchedEnd, start);
+        results.push({
+          data: d,
+          index: match.index
+        });
+      } else {
+        results.push({
+          index: match.index
+        });
+      }
+      lastMatchedEnd = end;
+    } else if (end === length) {
+      // No match and last block
+      d = data.slice(lastMatchedEnd);
+      results.push({
+        data: d
+      });
+    }
+  }
+  return results;
+}
+
+// RSync function to calculate checksums
+function checksum (fs, path, size, callback) {
+  var cache = {};
+
+  fs.readFile(path, function (err, data) {
+    if (!err) {
+      // cache file
+      cache[path] = data;
+    } else if (err && err.code === 'ENOENT') {
+      cache[path] = [];
+    } else {
+      return callback(err);
+    }
+
+    var length = cache[path].length;
+    var incr = size;
+    var start = 0;
+    var end = incr > length ? length : incr;
+    var blockIndex = 0;
+    var result = [];
+    var chunk;
+    var weak;
+    var strong;
+
+    while (start < length) {
+      chunk  = cache[path].slice(start, end);
+      weak   = calcWeak32(chunk).sum;
+      strong = md5sum(chunk);
+
+      result.push({
+        index: blockIndex,
+        weak: weak,
+        strong: strong
+      });
+      // update slice indices
+      start += incr;
+      end = (end + incr) > length ? length : end + incr;
+      // update block index
+      blockIndex++;
+    }
+
+    callback(null, result);
+  });
+}
+
+function extractPathsFromDiffs(path, diffs) {
+  var diffPaths = [];
+
+  function extractPath(diff, index, array) {
+    var dirPath = getDirPath(path, diff.path);
+    var nodePath = Path.join(dirPath, diff.path);
+
+    if(!diff.identical) {
+      diffPaths.push(nodePath);
+    }
+
+    if(diff.contents) {
+      var contentPaths = extractPathsFromDiffs(nodePath, diff.contents);
+      diffPaths = diffPaths.concat(contentPaths);
+    }
+  }
+
+  diffs.forEach(extractPath);
+  return diffPaths;
+}
+
+// Generate the list of paths at the source file system
+rsync.sourceList = function getSrcList(fs, path, options, callback) {
+  callback = findCallback(callback, options);
+
+  var paramError = validateParams(fs, path);
+
+  if(paramError) {
+    return callback(paramError);
+  }
+
+  options = configureOptions(options);
+
+  var sourceList = [];
+
+  fs.lstat(path, function(err, stats) {
+    if(err) {
+      return callback(err);
+    }
+
+    // File or Link
+    if(!stats.isDirectory()) {
+      // Make sure this isn't a conflicted copy before adding
+      // (we don't send these to the server in a sync)
+      conflict.isConflictedCopy(fs, path, function(err, conflicted) {
+        if(err) {
+          return callback(err);
+        }
+
+        if(!conflicted) {
+          var node = {
+            path: Path.basename(path),
+            size: stats.size,
+            type: stats.type,
+            modified: stats.mtime
+          };
+          sourceList.push(node);
+        }
+
+        callback(null, sourceList);
+      });
+
+      return;
+    }
+    // Directory
+    fs.readdir(path, function(err, entries) {
+      if(err) {
+        return callback(err);
+      }
+
+      function getSrcContents(_name, callback) {
+        var name = Path.join(path, _name);
+
+        fs.lstat(name, function(err, stats) {
+          if(err) {
+            return callback(err);
+          }
+
+          var node = {
+            path: Path.basename(name),
+            modified: stats.mtime,
+            size: stats.size,
+            type: stats.type
+          };
+
+          // Directory
+          if(options.recursive && stats.isDirectory()) {
+            getSrcList(fs, name, options, function(err, items) {
+              if(err) {
+                return callback(err);
+              }
+
+              node.contents = items;
+
+              sourceList.push(node);
+              callback();
+            });
+          }
+          // File or Link
+          else {
+            // Make sure this isn't a conflicted copy before adding
+            // (we don't send these to the server in a sync)
+            conflict.isConflictedCopy(fs, name, function(err, conflicted) {
+              if(err) {
+                return callback(err);
+              }
+
+              if(!conflicted) {
+                sourceList.push(node);
+              }
+
+              callback();
+            });
+          }
+        });
+      }
+
+      async.eachSeries(entries, getSrcContents, function(err) {
+        if(err) {
+          return callback(err);
+        }
+
+        callback(null, sourceList);
+      });
+    });
+  });
+};
+
+// Generate checksums for every node in a given destination path
+rsync.checksums = function(fs, path, srcList, options, callback) {
+  callback = findCallback(callback, options);
+
+  var paramError = validateParams(fs, path);
+
+  if(paramError) {
+    return callback(paramError);
+  }
+
+  options = configureOptions(options);
+
+  var nodeChecksums = [];
+
+  function checksumsForDir(nodeChecksum, entry, callback) {
+    var dir = Path.join(path, entry.path);
+
+    // Create the directory if it does not exist
+    fs.mkdir(dir, function(err) {
+      if(err && err.code !== 'EEXIST') {
+        return callback(err);
+      }
+
+      rsync.checksums(fs, dir, entry.contents, options, function(err, dirChecksums) {
+        if(err) {
+          return callback(err);
+        }
+
+        // For empty directories, force an empty array
+        nodeChecksum.contents = dirChecksums || [];
+
+        nodeChecksums.push(nodeChecksum);
+        callback();
+      });
+    });
+  }
+
+  function checksumsForFile(nodeChecksum, entry, dirPath, absPath, callback) {
+    if(!options.checksum || options.recursive) {
+      fs.stat(absPath, function(err, stat) {
+        if(err && err.code !== 'ENOENT') {
+          return callback(err);
+        }
+
+        // Add `identical` if the modified time and size of the existing file match
+        if(stat && stat.mtime === entry.modified && stat.size === entry.size) {
+          nodeChecksum.checksums = [];
+          nodeChecksum.modified = entry.modified;
+          nodeChecksum.identical = true;
+
+          nodeChecksums.push(nodeChecksum);
+          callback();
+        } else {
+          checksum(fs, absPath, options.size, function(err, checksums) {
+            if(err) {
+              return callback(err);
+            }
+
+            nodeChecksum.checksums = checksums;
+            nodeChecksum.modified = entry.modified;
+
+            nodeChecksums.push(nodeChecksum);
+            callback();
+          });
+        }
+      });
+    } else {
+      checksum(fs, absPath, options.size, function(err, checksums) {
+        if(err) {
+          return callback(err);
+        }
+
+        nodeChecksum.checksums = checksums;
+        nodeChecksum.modified = entry.modified;
+
+        nodeChecksums.push(nodeChecksum);
+        callback();
+      });
+    }
+  }
+
+  function checksumsForLink(nodeChecksum, entry, dirPath, absPath, callback) {
+    nodeChecksum.link = true;
+
+    if(!options.checksum || options.recursive) {
+      fs.stat(absPath, function(err, stat){
+        if(err && err.code !== 'ENOENT') {
+          return callback(err);
+        }
+
+        // Add `identical` if the modified time and size of the existing file match
+        if(stat && stat.mtime === entry.modified && stat.size === entry.size) {
+          nodeChecksum.identical = true;
+        }
+
+        nodeChecksums.push(nodeChecksum);
+        callback();
+      });
+    } else {
+      nodeChecksums.push(nodeChecksum);
+      callback();
+    }
+  }
+
+  function getDirChecksums(entry, callback) {
+    var nodeChecksum = { path: entry.path };
+    var dirPath = getDirPath(path, entry.path);
+    var absPath = Path.join(dirPath, entry.path);
+
+    // Create any parent directories that do not exist
+    fs.Shell().mkdirp(dirPath, function(err) {
+      if(err && err.code !== 'EEXIST') {
+        return callback(err);
+      }
+
+      // Directory
+      if(options.recursive && entry.type === 'DIRECTORY') {
+        checksumsForDir(nodeChecksum, entry, callback);
+      }
+      // File or Link
+      else {
+        if(entry.type === 'FILE' || !options.links) {
+          checksumsForFile(nodeChecksum, entry, dirPath, absPath, callback);
+        } else if(entry.type === 'SYMLINK'){
+          checksumsForLink(nodeChecksum, entry, dirPath, absPath, callback);
+        }
+      }
+    });
+  }
+
+  async.eachSeries(srcList, getDirChecksums, function(err) {
+    if(err) {
+      callback(err);
+    } else {
+      callback(null, nodeChecksums);
+    }
+  });
+};
+
+// Generate diffs from the source based on destination checksums
+rsync.diff = function(fs, path, checksums, options, callback) {
+  callback = findCallback(callback, options);
+
+  var paramError = validateParams(fs, path);
+
+  if(paramError) {
+    return callback(paramError);
+  }
+
+  options = configureOptions(options);
+
+  if(options.checksum && !checksums) {
+    return callback(new Errors.EINVAL('Checksums must be provided'));
+  }
+
+  var nodeDiffs = [];
+
+  function getDiff(entry, callback) {
+    var entryPath = Path.join(path, entry.path);
+
+    // Directory
+    if(entry.contents) {
+      rsync.diff(fs, entryPath, entry.contents, options, function(err, diffs) {
+        if(err) {
+          return callback(err);
+        }
+
+        nodeDiffs.push({
+          path: entry.path,
+          contents: diffs
+        });
+
+        callback();
+      });
+    }
+    // Link
+    else if (entry.link) {
+      fs.readlink(entryPath, function(err, linkContents) {
+        if(err) {
+          return callback(err);
+        }
+
+        fs.lstat(entryPath, function(err, stats){
+          if(err) {
+            return callback(err);
+          }
+
+          nodeDiffs.push({
+            link: linkContents,
+            modified: stats.mtime,
+            path: entry.path
+          });
+
+          callback(null, nodeDiffs);
+        });
+      });
+    }
+    // File
+    else {
+      if(entry.identical) {
+        nodeDiffs.push({
+          diffs: [],
+          modified: entry.modified,
+          path: entry.path,
+          // Indicates that since the checksum was identical to the source, no diffs should be applied
+          identical: true
+        });
+
+        callback(null, nodeDiffs);
+      } else {
+        fs.readFile(entryPath, function (err, data) {
+          if (err) {
+            return callback(err);
+          }
+
+          nodeDiffs.push({
+            diffs: roll(data, entry.checksums, options.size),
+            modified: entry.modified,
+            path: entry.path
+          });
+
+          callback(null, nodeDiffs);
+        });
+      }
+    }
+  }
+
+  fs.lstat(path, function(err, stat) {
+    if(err) {
+      return callback(err);
+    }
+    // Directory
+    if(stat.isDirectory()) {
+      async.eachSeries(checksums, getDiff, function(err) {
+        if(err) {
+          return callback(err);
+        }
+
+        callback(null, nodeDiffs);
+      });
+    }
+    // File
+    else if (stat.isFile() || !options.links) {
+      if(checksums[0].identical) {
+        nodeDiffs.push({
+          diffs: [],
+          modified: checksums[0].modified,
+          path: checksums[0].path,
+          identical: true
+        });
+
+        return callback(null, nodeDiffs);
+      }
+
+      fs.readFile(path, function (err, data) {
+        if (err) {
+          return callback(err);
+        }
+
+        nodeDiffs.push({
+          diffs: roll(data, checksums[0].checksums, options.size),
+          modified: checksums[0].modified,
+          path: checksums[0].path
+        });
+
+        callback(null, nodeDiffs);
+      });
+    }
+    // Link
+    else if (stat.isSymbolicLink()) {
+      fs.readlink(path, function(err, linkContents) {
+        if(err) {
+          return callback(err);
+        }
+
+        fs.lstat(path, function(err, stats){
+          if(err) {
+            return callback(err);
+          }
+
+          nodeDiffs.push({
+            link: linkContents,
+            modified: stats.mtime,
+            path: checksums[0].path
+          });
+
+          callback(null, nodeDiffs);
+        });
+      });
+    }
+  });
+};
+
+// Path the destination filesystem by applying diffs
+rsync.patch = function(fs, path, diff, options, callback) {
+  callback = findCallback(callback, options);
+
+  var paramError = validateParams(fs, path);
+  var paths = {
+    synced: [],
+    failed: [],
+    update: function(newPaths) {
+      this.synced = this.synced.concat(newPaths.synced);
+      this.failed = this.failed.concat(newPaths.failed);
+    }
+  };
+  var pathsToSync = extractPathsFromDiffs(path, diff);
+
+  if(paramError) {
+    return callback(paramError, paths);
+  }
+
+  options = configureOptions(options);
+
+  function handleError(err, callback) {
+    // Determine the node paths for those that were not synced
+    // by getting the difference between the paths that needed to
+    // be synced and the paths that were synced
+    var failedPaths = ld_shim.difference(pathsToSync, paths.synced);
+    paths.failed = paths.failed.concat(failedPaths);
+    callback(err, paths);
+  }
+
+  // Remove the nodes in the patched directory that are no longer
+  // present in the source. The only exception to this is any file
+  // locally that hasn't been synced to the server yet (i.e.,
+  // we don't want to delete things in a downstream sync because they
+  // don't exist upstream yet, since an upstream sync will add them).
+  function removeNodes(path, entryDiff, callback) {
+    if(typeof entryDiff === 'function') {
+      callback = entryDiff;
+      entryDiff = null;
+    }
+
+    fs.readdir(path, function(err, destContents) {
+      if(err) {
+        return handleError(err, callback);
+      }
+
+      var deletedNodes = destContents;
+
+      if(entryDiff) {
+        var srcContents = entryDiff.map(function(element) {
+          return element.path;
+        });
+        deletedNodes = ld_shim.difference(destContents, srcContents);
+      }
+
+      function maybeUnlink(item, callback) {
+        var deletePath = Path.join(path, item);
+
+        // Make sure this file isn't unsynced before deleting
+        fsUtils.isPathUnsynced(fs, deletePath, function(err, unsynced) {
+          if(err) {
+            return handleError(err, callback);
+          }
+
+          if(unsynced) {
+            // Don't delete
+            return callback();
+          }
+
+          paths.synced.push(deletePath);
+          fs.unlink(deletePath, callback);
+        });
+      }
+
+      async.eachSeries(deletedNodes, maybeUnlink, function(err) {
+        if(err) {
+          return callback(err, paths);
+        }
+
+        callback(null, paths);
+      });
+    });
+  }
+
+  function syncEach(entry, callback) {
+    var dirPath = getDirPath(path, entry.path);
+    var syncPath = Path.join(dirPath, entry.path);
+
+    // Directory
+    if(entry.contents) {
+      return rsync.patch(fs, Path.join(path, entry.path), entry.contents, options, function(err, dirPaths) {
+        if(err) {
+          paths.update(dirPaths);
+          return handleError(err, callback);
+        }
+
+        paths.synced.push(syncPath);
+        paths.update(dirPaths);
+        removeNodes(Path.join(path, entry.path), entry.contents, callback);
+      });
+    }
+    // Link
+    else if (entry.link) {
+      return fs.symlink(entry.link, syncPath, function(err){
+        if(err) {
+          return handleError(err, callback);
+        }
+
+        paths.synced.push(syncPath);
+        callback(null, paths);
+      });
+    }
+    // File
+    if(entry.identical) {
+      return callback(null, paths);
+    }
+
+    fs.readFile(syncPath, function(err, data) {
+      var raw;
+
+      // Get slice of raw file from block's index
+      function rawslice(index) {
+        var start = index * options.size;
+        var end = start + options.size > raw.length ? raw.length : start + options.size;
+
+        return raw.slice(start, end);
+      }
+
+      if(err) {
+        if(err.code !== 'ENOENT') {
+          return handleError(err, callback);
+        }
+        raw = new Buffer(0);
+      } else {
+        raw = data;
+      }
+
+      var len = entry.diffs.length;
+      var chunks = [];
+
+      for(var i = 0; i < len; i++) {
+        var chunk = entry.diffs[i];
+
+        if(!chunk.data) {
+          // Use slice of original file
+          chunks.push(rawslice(chunk.index));
+        } else {
+          chunks.push(chunk.data);
+          if(chunk.index) {
+            chunks.push(rawslice(chunk.index));
+          }
+        }
+      }
+
+      // Before we alter the local file, make sure we don't
+      // need a conflicted copy before proceeding.
+      fsUtils.isPathUnsynced(fs, syncPath, function(err, unsynced) {
+        if(err) {
+          return handleError(err, callback);
+        }
+
+        function write() {
+          var buf = Buffer.concat(chunks);
+          fs.writeFile(syncPath, buf, function(err) {
+            if(err) {
+              return handleError(err, callback);
+            }
+
+            if(!options.time) {
+              paths.synced.push(syncPath);
+              return callback(null, paths);
+            }
+
+            // Updates the modified time of the node
+            fs.utimes(syncPath, entry.modified, entry.modified, function(err) {
+              if(err) {
+                return handleError(err, callback);
+              }
+
+              paths.synced.push(syncPath);
+              callback(null, paths);
+            });
+          });
+        }
+
+        if(unsynced) {
+          conflict.makeConflictedCopy(fs, syncPath, function(err) {
+            if(err) {
+              return handleError(err, callback);
+            }
+
+            // Because we'll overwrite the file with upstream changes,
+            // remove the unsynced attribute (local changes are in
+            // the conflicted copy now).
+            fsUtils.removeUnsynced(fs, syncPath, function(err) {
+              if(err) {
+                return handleError(err, callback);
+              }
+
+              write();
+            });
+          });
+        } else {
+          write();
+        }
+      });
+    });
+  }
+
+  // Remove deleted nodes in the destination path
+  function removeNodesInParent(diff, callback) {
+    callback = findCallback(callback, diff);
+    fs.lstat(path, function(err, stats) {
+      if(err) {
+        return handleError(err, callback);
+      }
+
+      if(!stats.isDirectory()) {
+        return callback(null, paths);
+      }
+
+      removeNodes(path, diff, callback);
+    });
+  }
+
+  if(diff && diff.length) {
+    async.eachSeries(diff, syncEach, function(err) {
+      if(err) {
+        callback(err, paths);
+      } else {
+        removeNodesInParent(diff, callback);
+      }
+    });
+  } else {
+    fs.Shell().mkdirp(path, function(err) {
+      if(err && err !== 'EEXIST') {
+        callback(err, paths);
+      } else {
+        removeNodesInParent(callback);
+      }
+    });
+  }
+};
+
+// Generate checksums for an array of paths to be used for comparison
+rsync.pathChecksums = function(fs, paths, chunkSize, callback) {
+  var paramError = validateParams(fs, paths);
+  var checksums = [];
+
+  if(!chunkSize || typeof callback !== 'function') {
+    return callback(new Errors.EINVAL('Insufficient data provided'));
+  }
+
+  if(paramError) {
+    return callback(paramError);
+  }
+
+  function generateChecksum(path, callback) {
+    var entry = {path: path};
+
+    fs.lstat(path, function(err, stat) {
+      if(err) {
+        if(err.code !== 'ENOENT') {
+          return callback(err);
+        }
+
+        // Node does not exist
+        entry.checksum = [];
+        checksums.push(entry);
+        return callback();
+      }
+
+      // Use contents of directory instead of checksums
+      if(stat.isDirectory()) {
+        return fs.readdir(path, function(err, nodeList) {
+          if(err) {
+            return callback(err);
+          }
+
+          entry.contents = nodeList;
+          checksums.push(entry);
+          callback();
+        });
+      }
+
+      // Calculate checksums for file or symbolic links
+      checksum(fs, path, chunkSize, function(err, chksum) {
+        if(err) {
+          return callback(err);
+        }
+
+        entry.checksum = chksum;
+        checksums.push(entry);
+        callback();
+      });
+    });
+  }
+
+  async.eachSeries(paths, generateChecksum, function(err) {
+    if(err) {
+      return callback(err);
+    }
+
+    callback(null, checksums);
+  });
+};
+
+// Compare two filesystem contents by comparing checksums
+rsync.compareContents = function(fs, checksums, chunkSize, callback) {
+  var EDIFF = 'DIFF';
+  var paramError = validateParams(fs, checksums);
+
+  if(!chunkSize || typeof callback !== 'function') {
+    return callback(new Errors.EINVAL('Insufficient data provided'));
+  }
+
+  if(paramError) {
+    return callback(paramError);
+  }
+
+  // Check if two checksum arrays are equal
+  function isEqual(checksum1, checksum2) {
+    var comparisonLength = checksum2.length;
+    var checksum1i, checksum2i;
+
+    if(checksum1.length !== comparisonLength) {
+      return false;
+    }
+
+    // Sort the checksum objects in each array by the 'index' property
+    checksum1 = ld_shim.map(ld_shim.sortBy(checksum1, 'index'), ld_shim.values);
+    checksum2 = ld_shim.map(ld_shim.sortBy(checksum2, 'index'), ld_shim.values);
+
+    // Compare each object's checksums
+    for(var i = 0; i < comparisonLength; i++) {
+      checksum1i = checksum1[i];
+      checksum2i = checksum2[i];
+
+      if(checksum1i[1] !== checksum2i[1] ||
+        checksum1i[2] !== checksum2i[2]) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  function compare(entry, callback) {
+    var path = entry.path;
+
+    fs.lstat(path, function(err, stat) {
+      if(err) {
+        if(err.code !== 'ENOENT') {
+          return callback(err);
+        }
+
+        // Checksums for a non-existent path are empty
+        if(entry.checksum && !entry.checksum.length) {
+          return callback();
+        }
+
+        return callback(EDIFF);
+      }
+
+      // Directory comparison of contents
+      if(stat.isDirectory()) {
+        return fs.readdir(path, function(err, nodeList) {
+          if(err) {
+            return callback(err);
+          }
+
+          if(!entry.contents || ld_shim.difference(entry.contents, nodeList).length) {
+            return callback(EDIFF);
+          }
+
+          callback();
+        });
+      }
+
+      if(!entry.checksum) {
+        return callback(EDIFF);
+      }
+
+      // Compare checksums for two files/symbolic links
+      checksum(fs, path, chunkSize, function(err, checksum) {
+        if(err) {
+          return callback(err);
+        }
+
+        if(!isEqual(checksum, entry.checksum)) {
+          return callback(EDIFF);
+        }
+
+        callback();
+      });
+    });
+  }
+
+  async.eachSeries(checksums, compare, function(err) {
+    if(err && err !== EDIFF) {
+      return callback(err, false);
+    }
+
+    if(err === EDIFF) {
+      return callback(null, false);
+    }
+
+    callback(null, true);
+  });
+};
+
+module.exports = rsync;
+
+},{"./async-lite.js":8,"./conflict.js":9,"./constants.js":10,"./filer.js":13,"./fs-utils.js":14,"./lodash-lite.js":15,"MD5":19}],17:[function(require,module,exports){
+/**
+ * Sync path resolver is a library that provides
+ * functionality to determine 'syncable' paths
+ * It exposes the following method:
+ *
+ * resolve      - This method takes two paths as arguments.
+ *                The goal is to find the most common ancestor
+ *                between them. For e.g. the most common ancestor
+ *                between '/dir' and '/dir/file.txt' is '/dir' while
+ *                between '/dir' and '/file.txt' would be '/'.
+ *
+*/
+
+var pathResolver = {};
+var dirname = require('./filer').Path.dirname;
+
+function getDepth(path) {
+  if(path === '/') {
+    return 0;
+  }
+
+  return 1 + getDepth(dirname(path));
+}
+
+function commonAncestor(path1, depth1, path2, depth2) {
+  if(path1 === path2) {
+    return path1;
+  }
+
+  // Regress the appropriate path
+  if(depth1 === depth2) {
+    path1 = dirname(path1);
+    depth1--;
+    path2 = dirname(path2);
+    depth2--;
+  } else if(depth1 > depth2) {
+    path1 = dirname(path1);
+    depth1--;
+  } else {
+    path2 = dirname(path2);
+    depth2--;
+  }
+
+  return commonAncestor(path1, depth1, path2, depth2);
+}
+
+pathResolver.resolve = function(path1, path2) {
+  if(!path1 && !path2) {
+    return '/';
+  }
+
+  if(!path1 || !path2) {
+    return path1 || path2;
+  }
+
+  var path1Depth = getDepth(path1);
+  var path2Depth = getDepth(path2);
+
+  return commonAncestor(path1, path1Depth, path2, path2Depth);
+};
+
+module.exports = pathResolver;
+
+},{"./filer":13}],18:[function(require,module,exports){
+// Constructor
+function SyncMessage(type, name, content) {
+  if(!isValidType(type)) {
+    throw "Invalid type";
+  }
+  if(!isValidName(name)) {
+    throw "Invalid name";
+  }
+
+  this.type = type;
+  this.name = name;
+  this.content = content || null;
+
+  // Sugar for testing instance data
+  var that = this;
+  this.is = {
+    // Types
+    get request() {
+      return that.type === SyncMessage.REQUEST;
+    },
+    get response() {
+      return that.type === SyncMessage.RESPONSE;
+    },
+    get error() {
+      return that.type === SyncMessage.ERROR;
+    },
+
+    // Names
+    get srclist() {
+      return that.name === SyncMessage.SRCLIST;
+    },
+    get sync() {
+      return that.name === SyncMessage.SYNC;
+    },
+    get chksum() {
+      return that.name === SyncMessage.CHKSUM;
+    },
+    get diffs() {
+      return that.name === SyncMessage.DIFFS;
+    },
+    get patch() {
+      return that.name === SyncMessage.PATCH;
+    },
+    get verification() {
+      return that.name === SyncMessage.VERIFICATION;
+    },
+    get reset() {
+      return that.name === SyncMessage.RESET;
+    },
+    get locked() {
+      return that.name === SyncMessage.LOCKED;
+    },
+    get authz() {
+      return that.name === SyncMessage.AUTHZ;
+    },
+    get impl() {
+      return that.name === SyncMessage.IMPL;
+    },
+    get serverReset() {
+      return that.name === SyncMessage.SERVER_RESET;
+    },
+    get downstreamLocked() {
+      return that.name === SyncMessage.DOWNSTREAM_LOCKED;
+    }
+  };
+}
+
+SyncMessage.prototype.stringify = function() {
+  return JSON.stringify({
+    type: this.type,
+    name: this.name,
+    content: this.content
+  });
+};
+
+// Try to parse data back into a SyncMessage object. If the
+// data is invalid, return a format error message instead.
+SyncMessage.parse = function(data) {
+  if(!data || !isValidType(data.type) || !isValidName(data.name)) {
+    return SyncMessage.error.format;
+  }
+
+  return new SyncMessage(data.type, data.name, data.content);
+};
+
+// SyncMessage Type constants
+SyncMessage.REQUEST = "REQUEST";
+SyncMessage.RESPONSE = "RESPONSE";
+SyncMessage.ERROR = "ERROR";
+
+// SyncMessage Name constants
+SyncMessage.SRCLIST = "SRCLIST";
+SyncMessage.SYNC = "SYNC";
+SyncMessage.CHKSUM = "CHKSUM";
+SyncMessage.DIFFS = "DIFFS";
+SyncMessage.PATCH = "PATCH";
+SyncMessage.VERIFICATION = "VERIFICATION";
+SyncMessage.RESET = "RESET";
+SyncMessage.LOCKED = "LOCKED";
+SyncMessage.AUTHZ = "AUTHORIZED";
+SyncMessage.IMPL = "IMPLEMENTATION";
+SyncMessage.SERVER_RESET = "SERVER_RESET";
+SyncMessage.DOWNSTREAM_LOCKED = "DOWNSTREAM_LOCKED";
+
+// SyncMessage Error constants
+SyncMessage.INFRMT = "INVALID FORMAT";
+SyncMessage.INCONT = "INVALID CONTENT";
+
+function isValidName(name) {
+  return name === SyncMessage.SRCLIST      ||
+         name === SyncMessage.CHKSUM       ||
+         name === SyncMessage.DIFFS        ||
+         name === SyncMessage.LOCKED       ||
+         name === SyncMessage.PATCH        ||
+         name === SyncMessage.VERIFICATION ||
+         name === SyncMessage.SYNC         ||
+         name === SyncMessage.RESET        ||
+         name === SyncMessage.AUTHZ        ||
+         name === SyncMessage.IMPL         ||
+         name === SyncMessage.INFRMT       ||
+         name === SyncMessage.INCONT       ||
+         name === SyncMessage.SERVER_RESET ||
+         name === SyncMessage.DOWNSTREAM_LOCKED;
+}
+
+function isValidType(type) {
+  return type === SyncMessage.REQUEST  ||
+         type === SyncMessage.RESPONSE ||
+         type === SyncMessage.ERROR;
+}
+
+// Sugar for getting message instances
+SyncMessage.request = {
+  get diffs() {
+    return new SyncMessage(SyncMessage.REQUEST, SyncMessage.DIFFS);
+  },
+  get chksum() {
+    return new SyncMessage(SyncMessage.REQUEST, SyncMessage.CHKSUM);
+  },
+  get sync() {
+    return new SyncMessage(SyncMessage.REQUEST, SyncMessage.SYNC);
+  },
+  get reset() {
+    return new SyncMessage(SyncMessage.REQUEST, SyncMessage.RESET);
+  }
+};
+SyncMessage.response = {
+  get diffs() {
+    return new SyncMessage(SyncMessage.RESPONSE, SyncMessage.DIFFS);
+  },
+  get patch() {
+    return new SyncMessage(SyncMessage.RESPONSE, SyncMessage.PATCH);
+  },
+  get verification() {
+    return new SyncMessage(SyncMessage.RESPONSE, SyncMessage.VERIFICATION);
+  },
+  get authz() {
+    return new SyncMessage(SyncMessage.RESPONSE, SyncMessage.AUTHZ);
+  },
+  get sync() {
+    return new SyncMessage(SyncMessage.RESPONSE, SyncMessage.SYNC);
+  },
+  get reset() {
+    return new SyncMessage(SyncMessage.RESPONSE, SyncMessage.RESET);
+  }
+};
+SyncMessage.error = {
+  get srclist() {
+    return new SyncMessage(SyncMessage.ERROR, SyncMessage.SRCLIST);
+  },
+  get diffs() {
+    return new SyncMessage(SyncMessage.ERROR, SyncMessage.DIFFS);
+  },
+  get locked() {
+    return new SyncMessage(SyncMessage.ERROR, SyncMessage.LOCKED);
+  },
+  get chksum() {
+    return new SyncMessage(SyncMessage.ERROR, SyncMessage.CHKSUM);
+  },
+  get patch() {
+    return new SyncMessage(SyncMessage.ERROR, SyncMessage.PATCH);
+  },
+  get impl() {
+    return new SyncMessage(SyncMessage.ERROR, SyncMessage.IMPL);
+  },
+  get serverReset() {
+    return new SyncMessage(SyncMessage.ERROR, SyncMessage.SERVER_RESET);
+  },
+  get downstreamLocked() {
+    return new SyncMessage(SyncMessage.ERROR, SyncMessage.DOWNSTREAM_LOCKED, 'Downstream syncs are locked!');
+  },
+  get verification() {
+    return new SyncMessage(SyncMessage.ERROR,
+                           SyncMessage.VERIFICATION,
+                           'Patch could not be verified');
+  },
+  get format() {
+    return new SyncMessage(SyncMessage.ERROR,
+                           SyncMessage.INFRMT,
+                           'Message must be formatted as a sync message');
+  },
+  get content() {
+    return new SyncMessage(SyncMessage.ERROR,
+                           SyncMessage.INCONT,
+                           'Invalid content provided');
+  }
+};
+
+module.exports = SyncMessage;
+
+},{}],19:[function(require,module,exports){
+(function (Buffer){
+(function(){
+  var crypt = require('crypt'),
+      utf8 = require('charenc').utf8,
+      bin = require('charenc').bin,
+
+  // The core
+  md5 = function (message, options) {
+    // Convert to byte array
+    if (message.constructor == String)
+      if (options && options.encoding === 'binary')
+        message = bin.stringToBytes(message);
+      else
+        message = utf8.stringToBytes(message);
+    else if (typeof Buffer != 'undefined' &&
+        typeof Buffer.isBuffer == 'function' && Buffer.isBuffer(message))
+      message = Array.prototype.slice.call(message, 0);
+    else if (!Array.isArray(message))
+      message = message.toString();
+    // else, assume byte array already
+
+    var m = crypt.bytesToWords(message),
+        l = message.length * 8,
+        a =  1732584193,
+        b = -271733879,
+        c = -1732584194,
+        d =  271733878;
+
+    // Swap endian
+    for (var i = 0; i < m.length; i++) {
+      m[i] = ((m[i] <<  8) | (m[i] >>> 24)) & 0x00FF00FF |
+             ((m[i] << 24) | (m[i] >>>  8)) & 0xFF00FF00;
+    }
+
+    // Padding
+    m[l >>> 5] |= 0x80 << (l % 32);
+    m[(((l + 64) >>> 9) << 4) + 14] = l;
+
+    // Method shortcuts
+    var FF = md5._ff,
+        GG = md5._gg,
+        HH = md5._hh,
+        II = md5._ii;
+
+    for (var i = 0; i < m.length; i += 16) {
+
+      var aa = a,
+          bb = b,
+          cc = c,
+          dd = d;
+
+      a = FF(a, b, c, d, m[i+ 0],  7, -680876936);
+      d = FF(d, a, b, c, m[i+ 1], 12, -389564586);
+      c = FF(c, d, a, b, m[i+ 2], 17,  606105819);
+      b = FF(b, c, d, a, m[i+ 3], 22, -1044525330);
+      a = FF(a, b, c, d, m[i+ 4],  7, -176418897);
+      d = FF(d, a, b, c, m[i+ 5], 12,  1200080426);
+      c = FF(c, d, a, b, m[i+ 6], 17, -1473231341);
+      b = FF(b, c, d, a, m[i+ 7], 22, -45705983);
+      a = FF(a, b, c, d, m[i+ 8],  7,  1770035416);
+      d = FF(d, a, b, c, m[i+ 9], 12, -1958414417);
+      c = FF(c, d, a, b, m[i+10], 17, -42063);
+      b = FF(b, c, d, a, m[i+11], 22, -1990404162);
+      a = FF(a, b, c, d, m[i+12],  7,  1804603682);
+      d = FF(d, a, b, c, m[i+13], 12, -40341101);
+      c = FF(c, d, a, b, m[i+14], 17, -1502002290);
+      b = FF(b, c, d, a, m[i+15], 22,  1236535329);
+
+      a = GG(a, b, c, d, m[i+ 1],  5, -165796510);
+      d = GG(d, a, b, c, m[i+ 6],  9, -1069501632);
+      c = GG(c, d, a, b, m[i+11], 14,  643717713);
+      b = GG(b, c, d, a, m[i+ 0], 20, -373897302);
+      a = GG(a, b, c, d, m[i+ 5],  5, -701558691);
+      d = GG(d, a, b, c, m[i+10],  9,  38016083);
+      c = GG(c, d, a, b, m[i+15], 14, -660478335);
+      b = GG(b, c, d, a, m[i+ 4], 20, -405537848);
+      a = GG(a, b, c, d, m[i+ 9],  5,  568446438);
+      d = GG(d, a, b, c, m[i+14],  9, -1019803690);
+      c = GG(c, d, a, b, m[i+ 3], 14, -187363961);
+      b = GG(b, c, d, a, m[i+ 8], 20,  1163531501);
+      a = GG(a, b, c, d, m[i+13],  5, -1444681467);
+      d = GG(d, a, b, c, m[i+ 2],  9, -51403784);
+      c = GG(c, d, a, b, m[i+ 7], 14,  1735328473);
+      b = GG(b, c, d, a, m[i+12], 20, -1926607734);
+
+      a = HH(a, b, c, d, m[i+ 5],  4, -378558);
+      d = HH(d, a, b, c, m[i+ 8], 11, -2022574463);
+      c = HH(c, d, a, b, m[i+11], 16,  1839030562);
+      b = HH(b, c, d, a, m[i+14], 23, -35309556);
+      a = HH(a, b, c, d, m[i+ 1],  4, -1530992060);
+      d = HH(d, a, b, c, m[i+ 4], 11,  1272893353);
+      c = HH(c, d, a, b, m[i+ 7], 16, -155497632);
+      b = HH(b, c, d, a, m[i+10], 23, -1094730640);
+      a = HH(a, b, c, d, m[i+13],  4,  681279174);
+      d = HH(d, a, b, c, m[i+ 0], 11, -358537222);
+      c = HH(c, d, a, b, m[i+ 3], 16, -722521979);
+      b = HH(b, c, d, a, m[i+ 6], 23,  76029189);
+      a = HH(a, b, c, d, m[i+ 9],  4, -640364487);
+      d = HH(d, a, b, c, m[i+12], 11, -421815835);
+      c = HH(c, d, a, b, m[i+15], 16,  530742520);
+      b = HH(b, c, d, a, m[i+ 2], 23, -995338651);
+
+      a = II(a, b, c, d, m[i+ 0],  6, -198630844);
+      d = II(d, a, b, c, m[i+ 7], 10,  1126891415);
+      c = II(c, d, a, b, m[i+14], 15, -1416354905);
+      b = II(b, c, d, a, m[i+ 5], 21, -57434055);
+      a = II(a, b, c, d, m[i+12],  6,  1700485571);
+      d = II(d, a, b, c, m[i+ 3], 10, -1894986606);
+      c = II(c, d, a, b, m[i+10], 15, -1051523);
+      b = II(b, c, d, a, m[i+ 1], 21, -2054922799);
+      a = II(a, b, c, d, m[i+ 8],  6,  1873313359);
+      d = II(d, a, b, c, m[i+15], 10, -30611744);
+      c = II(c, d, a, b, m[i+ 6], 15, -1560198380);
+      b = II(b, c, d, a, m[i+13], 21,  1309151649);
+      a = II(a, b, c, d, m[i+ 4],  6, -145523070);
+      d = II(d, a, b, c, m[i+11], 10, -1120210379);
+      c = II(c, d, a, b, m[i+ 2], 15,  718787259);
+      b = II(b, c, d, a, m[i+ 9], 21, -343485551);
+
+      a = (a + aa) >>> 0;
+      b = (b + bb) >>> 0;
+      c = (c + cc) >>> 0;
+      d = (d + dd) >>> 0;
+    }
+
+    return crypt.endian([a, b, c, d]);
+  };
+
+  // Auxiliary functions
+  md5._ff  = function (a, b, c, d, x, s, t) {
+    var n = a + (b & c | ~b & d) + (x >>> 0) + t;
+    return ((n << s) | (n >>> (32 - s))) + b;
+  };
+  md5._gg  = function (a, b, c, d, x, s, t) {
+    var n = a + (b & d | c & ~d) + (x >>> 0) + t;
+    return ((n << s) | (n >>> (32 - s))) + b;
+  };
+  md5._hh  = function (a, b, c, d, x, s, t) {
+    var n = a + (b ^ c ^ d) + (x >>> 0) + t;
+    return ((n << s) | (n >>> (32 - s))) + b;
+  };
+  md5._ii  = function (a, b, c, d, x, s, t) {
+    var n = a + (c ^ (b | ~d)) + (x >>> 0) + t;
+    return ((n << s) | (n >>> (32 - s))) + b;
+  };
+
+  // Package private blocksize
+  md5._blocksize = 16;
+  md5._digestsize = 16;
+
+  module.exports = function (message, options) {
+    if(typeof message == 'undefined')
+      return;
+
+    var digestbytes = crypt.wordsToBytes(md5(message, options));
+    return options && options.asBytes ? digestbytes :
+        options && options.asString ? bin.bytesToString(digestbytes) :
+        crypt.bytesToHex(digestbytes);
+  };
+
+})();
+
+}).call(this,require("buffer").Buffer)
+},{"buffer":50,"charenc":20,"crypt":21}],20:[function(require,module,exports){
+var charenc = {
+  // UTF-8 encoding
+  utf8: {
+    // Convert a string to a byte array
+    stringToBytes: function(str) {
+      return charenc.bin.stringToBytes(unescape(encodeURIComponent(str)));
+    },
+
+    // Convert a byte array to a string
+    bytesToString: function(bytes) {
+      return decodeURIComponent(escape(charenc.bin.bytesToString(bytes)));
+    }
+  },
+
+  // Binary encoding
+  bin: {
+    // Convert a string to a byte array
+    stringToBytes: function(str) {
+      for (var bytes = [], i = 0; i < str.length; i++)
+        bytes.push(str.charCodeAt(i) & 0xFF);
+      return bytes;
+    },
+
+    // Convert a byte array to a string
+    bytesToString: function(bytes) {
+      for (var str = [], i = 0; i < bytes.length; i++)
+        str.push(String.fromCharCode(bytes[i]));
+      return str.join('');
+    }
+  }
+};
+
+module.exports = charenc;
+
+},{}],21:[function(require,module,exports){
+(function() {
+  var base64map
+      = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/',
+
+  crypt = {
+    // Bit-wise rotation left
+    rotl: function(n, b) {
+      return (n << b) | (n >>> (32 - b));
+    },
+
+    // Bit-wise rotation right
+    rotr: function(n, b) {
+      return (n << (32 - b)) | (n >>> b);
+    },
+
+    // Swap big-endian to little-endian and vice versa
+    endian: function(n) {
+      // If number given, swap endian
+      if (n.constructor == Number) {
+        return crypt.rotl(n, 8) & 0x00FF00FF | crypt.rotl(n, 24) & 0xFF00FF00;
+      }
+
+      // Else, assume array and swap all items
+      for (var i = 0; i < n.length; i++)
+        n[i] = crypt.endian(n[i]);
+      return n;
+    },
+
+    // Generate an array of any length of random bytes
+    randomBytes: function(n) {
+      for (var bytes = []; n > 0; n--)
+        bytes.push(Math.floor(Math.random() * 256));
+      return bytes;
+    },
+
+    // Convert a byte array to big-endian 32-bit words
+    bytesToWords: function(bytes) {
+      for (var words = [], i = 0, b = 0; i < bytes.length; i++, b += 8)
+        words[b >>> 5] |= bytes[i] << (24 - b % 32);
+      return words;
+    },
+
+    // Convert big-endian 32-bit words to a byte array
+    wordsToBytes: function(words) {
+      for (var bytes = [], b = 0; b < words.length * 32; b += 8)
+        bytes.push((words[b >>> 5] >>> (24 - b % 32)) & 0xFF);
+      return bytes;
+    },
+
+    // Convert a byte array to a hex string
+    bytesToHex: function(bytes) {
+      for (var hex = [], i = 0; i < bytes.length; i++) {
+        hex.push((bytes[i] >>> 4).toString(16));
+        hex.push((bytes[i] & 0xF).toString(16));
+      }
+      return hex.join('');
+    },
+
+    // Convert a hex string to a byte array
+    hexToBytes: function(hex) {
+      for (var bytes = [], c = 0; c < hex.length; c += 2)
+        bytes.push(parseInt(hex.substr(c, 2), 16));
+      return bytes;
+    },
+
+    // Convert a byte array to a base-64 string
+    bytesToBase64: function(bytes) {
+      for (var base64 = [], i = 0; i < bytes.length; i += 3) {
+        var triplet = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
+        for (var j = 0; j < 4; j++)
+          if (i * 8 + j * 6 <= bytes.length * 8)
+            base64.push(base64map.charAt((triplet >>> 6 * (3 - j)) & 0x3F));
+          else
+            base64.push('=');
+      }
+      return base64.join('');
+    },
+
+    // Convert a base-64 string to a byte array
+    base64ToBytes: function(base64) {
+      // Remove non-base-64 characters
+      base64 = base64.replace(/[^A-Z0-9+\/]/ig, '');
+
+      for (var bytes = [], i = 0, imod4 = 0; i < base64.length;
+          imod4 = ++i % 4) {
+        if (imod4 == 0) continue;
+        bytes.push(((base64map.indexOf(base64.charAt(i - 1))
+            & (Math.pow(2, -2 * imod4 + 8) - 1)) << (imod4 * 2))
+            | (base64map.indexOf(base64.charAt(i)) >>> (6 - imod4 * 2)));
+      }
+      return bytes;
+    }
+  };
+
+  module.exports = crypt;
+})();
+
+},{}],22:[function(require,module,exports){
+(function (Buffer){
+// Browser Request
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+var XHR = XMLHttpRequest
+if (!XHR) throw new Error('missing XMLHttpRequest')
+request.log = {
+  'trace': noop, 'debug': noop, 'info': noop, 'warn': noop, 'error': noop
+}
+
+var DEFAULT_TIMEOUT = 3 * 60 * 1000 // 3 minutes
+
+//
+// request
+//
+
+function request(options, callback) {
+  // The entry-point to the API: prep the options object and pass the real work to run_xhr.
+  if(typeof callback !== 'function')
+    throw new Error('Bad callback given: ' + callback)
+
+  if(!options)
+    throw new Error('No options given')
+
+  var options_onResponse = options.onResponse; // Save this for later.
+
+  if(typeof options === 'string')
+    options = {'uri':options};
+  else
+    options = JSON.parse(JSON.stringify(options)); // Use a duplicate for mutating.
+
+  options.onResponse = options_onResponse // And put it back.
+
+  if (options.verbose) request.log = getLogger();
+
+  if(options.url) {
+    options.uri = options.url;
+    delete options.url;
+  }
+
+  if(!options.uri && options.uri !== "")
+    throw new Error("options.uri is a required argument");
+
+  if(typeof options.uri != "string")
+    throw new Error("options.uri must be a string");
+
+  var unsupported_options = ['proxy', '_redirectsFollowed', 'maxRedirects', 'followRedirect']
+  for (var i = 0; i < unsupported_options.length; i++)
+    if(options[ unsupported_options[i] ])
+      throw new Error("options." + unsupported_options[i] + " is not supported")
+
+  options.callback = callback
+  options.method = options.method || 'GET';
+  options.headers = options.headers || {};
+  options.body    = options.body || null
+  options.timeout = options.timeout || request.DEFAULT_TIMEOUT
+
+  if(options.headers.host)
+    throw new Error("Options.headers.host is not supported");
+
+  if(options.json) {
+    options.headers.accept = options.headers.accept || 'application/json'
+    if(options.method !== 'GET')
+      options.headers['content-type'] = 'application/json'
+
+    if(typeof options.json !== 'boolean')
+      options.body = JSON.stringify(options.json)
+    else if(typeof options.body !== 'string')
+      options.body = JSON.stringify(options.body)
+  }
+  
+  //BEGIN QS Hack
+  var serialize = function(obj) {
+    var str = [];
+    for(var p in obj)
+      if (obj.hasOwnProperty(p)) {
+        str.push(encodeURIComponent(p) + "=" + encodeURIComponent(obj[p]));
+      }
+    return str.join("&");
+  }
+  
+  if(options.qs){
+    var qs = (typeof options.qs == 'string')? options.qs : serialize(options.qs);
+    if(options.uri.indexOf('?') !== -1){ //no get params
+        options.uri = options.uri+'&'+qs;
+    }else{ //existing get params
+        options.uri = options.uri+'?'+qs;
+    }
+  }
+  //END QS Hack
+  
+  //BEGIN FORM Hack
+  var multipart = function(obj) {
+    //todo: support file type (useful?)
+    var result = {};
+    result.boundry = '-------------------------------'+Math.floor(Math.random()*1000000000);
+    var lines = [];
+    for(var p in obj){
+        if (obj.hasOwnProperty(p)) {
+            lines.push(
+                '--'+result.boundry+"\n"+
+                'Content-Disposition: form-data; name="'+p+'"'+"\n"+
+                "\n"+
+                obj[p]+"\n"
+            );
+        }
+    }
+    lines.push( '--'+result.boundry+'--' );
+    result.body = lines.join('');
+    result.length = result.body.length;
+    result.type = 'multipart/form-data; boundary='+result.boundry;
+    return result;
+  }
+  
+  if(options.form){
+    if(typeof options.form == 'string') throw('form name unsupported');
+    if(options.method === 'POST'){
+        var encoding = (options.encoding || 'application/x-www-form-urlencoded').toLowerCase();
+        options.headers['content-type'] = encoding;
+        switch(encoding){
+            case 'application/x-www-form-urlencoded':
+                options.body = serialize(options.form).replace(/%20/g, "+");
+                break;
+            case 'multipart/form-data':
+                var multi = multipart(options.form);
+                //options.headers['content-length'] = multi.length;
+                options.body = multi.body;
+                options.headers['content-type'] = multi.type;
+                break;
+            default : throw new Error('unsupported encoding:'+encoding);
+        }
+    }
+  }
+  //END FORM Hack
+
+  // If onResponse is boolean true, call back immediately when the response is known,
+  // not when the full request is complete.
+  options.onResponse = options.onResponse || noop
+  if(options.onResponse === true) {
+    options.onResponse = callback
+    options.callback = noop
+  }
+
+  // XXX Browsers do not like this.
+  //if(options.body)
+  //  options.headers['content-length'] = options.body.length;
+
+  // HTTP basic authentication
+  if(!options.headers.authorization && options.auth)
+    options.headers.authorization = 'Basic ' + b64_enc(options.auth.username + ':' + options.auth.password);
+
+  return run_xhr(options)
+}
+
+var req_seq = 0
+function run_xhr(options) {
+  var xhr = new XHR
+    , timed_out = false
+    , is_cors = is_crossDomain(options.uri)
+    , supports_cors = ('withCredentials' in xhr)
+
+  req_seq += 1
+  xhr.seq_id = req_seq
+  xhr.id = req_seq + ': ' + options.method + ' ' + options.uri
+  xhr._id = xhr.id // I know I will type "_id" from habit all the time.
+
+  if(is_cors && !supports_cors) {
+    var cors_err = new Error('Browser does not support cross-origin request: ' + options.uri)
+    cors_err.cors = 'unsupported'
+    return options.callback(cors_err, xhr)
+  }
+
+  xhr.timeoutTimer = setTimeout(too_late, options.timeout)
+  function too_late() {
+    timed_out = true
+    var er = new Error('ETIMEDOUT')
+    er.code = 'ETIMEDOUT'
+    er.duration = options.timeout
+
+    request.log.error('Timeout', { 'id':xhr._id, 'milliseconds':options.timeout })
+    return options.callback(er, xhr)
+  }
+
+  // Some states can be skipped over, so remember what is still incomplete.
+  var did = {'response':false, 'loading':false, 'end':false}
+
+  xhr.onreadystatechange = on_state_change
+  xhr.open(options.method, options.uri, true) // asynchronous
+  // Deal with requests for raw buffer response
+  if(options.encoding === null) {
+    xhr.responseType = 'arraybuffer';
+  }
+  if(is_cors)
+    xhr.withCredentials = !! options.withCredentials
+  xhr.send(options.body)
+  return xhr
+
+  function on_state_change(event) {
+    if(timed_out)
+      return request.log.debug('Ignoring timed out state change', {'state':xhr.readyState, 'id':xhr.id})
+
+    request.log.debug('State change', {'state':xhr.readyState, 'id':xhr.id, 'timed_out':timed_out})
+
+    if(xhr.readyState === XHR.OPENED) {
+      request.log.debug('Request started', {'id':xhr.id})
+      for (var key in options.headers)
+        xhr.setRequestHeader(key, options.headers[key])
+    }
+
+    else if(xhr.readyState === XHR.HEADERS_RECEIVED)
+      on_response()
+
+    else if(xhr.readyState === XHR.LOADING) {
+      on_response()
+      on_loading()
+    }
+
+    else if(xhr.readyState === XHR.DONE) {
+      on_response()
+      on_loading()
+      on_end()
+    }
+  }
+
+  function on_response() {
+    if(did.response)
+      return
+
+    did.response = true
+    request.log.debug('Got response', {'id':xhr.id, 'status':xhr.status})
+    clearTimeout(xhr.timeoutTimer)
+    xhr.statusCode = xhr.status // Node request compatibility
+
+    // Detect failed CORS requests.
+    if(is_cors && xhr.statusCode == 0) {
+      var cors_err = new Error('CORS request rejected: ' + options.uri)
+      cors_err.cors = 'rejected'
+
+      // Do not process this request further.
+      did.loading = true
+      did.end = true
+
+      return options.callback(cors_err, xhr)
+    }
+
+    options.onResponse(null, xhr)
+  }
+
+  function on_loading() {
+    if(did.loading)
+      return
+
+    did.loading = true
+    request.log.debug('Response body loading', {'id':xhr.id})
+    // TODO: Maybe simulate "data" events by watching xhr.responseText
+  }
+
+  function on_end() {
+    if(did.end)
+      return
+
+    did.end = true
+    request.log.debug('Request done', {'id':xhr.id})
+
+    if(options.encoding === null) {
+      xhr.body = new Buffer(new Uint8Array(xhr.response));
+    } else {
+      xhr.body = xhr.responseText
+      if(options.json) {
+        try        { xhr.body = JSON.parse(xhr.responseText) }
+        catch (er) { return options.callback(er, xhr)        }
+      }
+    }
+
+    options.callback(null, xhr, xhr.body)
+  }
+
+} // request
+
+request.withCredentials = false;
+request.DEFAULT_TIMEOUT = DEFAULT_TIMEOUT;
+
+//
+// defaults
+//
+
+request.defaults = function(options, requester) {
+  var def = function (method) {
+    var d = function (params, callback) {
+      if(typeof params === 'string')
+        params = {'uri': params};
+      else {
+        params = JSON.parse(JSON.stringify(params));
+      }
+      for (var i in options) {
+        if (params[i] === undefined) params[i] = options[i]
+      }
+      return method(params, callback)
+    }
+    return d
+  }
+  var de = def(request)
+  de.get = def(request.get)
+  de.post = def(request.post)
+  de.put = def(request.put)
+  de.head = def(request.head)
+  return de
+}
+
+//
+// HTTP method shortcuts
+//
+
+var shortcuts = [ 'get', 'put', 'post', 'head' ];
+shortcuts.forEach(function(shortcut) {
+  var method = shortcut.toUpperCase();
+  var func   = shortcut.toLowerCase();
+
+  request[func] = function(opts) {
+    if(typeof opts === 'string')
+      opts = {'method':method, 'uri':opts};
+    else {
+      opts = JSON.parse(JSON.stringify(opts));
+      opts.method = method;
+    }
+
+    var args = [opts].concat(Array.prototype.slice.apply(arguments, [1]));
+    return request.apply(this, args);
+  }
+})
+
+//
+// CouchDB shortcut
+//
+
+request.couch = function(options, callback) {
+  if(typeof options === 'string')
+    options = {'uri':options}
+
+  // Just use the request API to do JSON.
+  options.json = true
+  if(options.body)
+    options.json = options.body
+  delete options.body
+
+  callback = callback || noop
+
+  var xhr = request(options, couch_handler)
+  return xhr
+
+  function couch_handler(er, resp, body) {
+    if(er)
+      return callback(er, resp, body)
+
+    if((resp.statusCode < 200 || resp.statusCode > 299) && body.error) {
+      // The body is a Couch JSON object indicating the error.
+      er = new Error('CouchDB error: ' + (body.error.reason || body.error.error))
+      for (var key in body)
+        er[key] = body[key]
+      return callback(er, resp, body);
+    }
+
+    return callback(er, resp, body);
+  }
+}
+
+//
+// Utility
+//
+
+function noop() {}
+
+function getLogger() {
+  var logger = {}
+    , levels = ['trace', 'debug', 'info', 'warn', 'error']
+    , level, i
+
+  for(i = 0; i < levels.length; i++) {
+    level = levels[i]
+
+    logger[level] = noop
+    if(typeof console !== 'undefined' && console && console[level])
+      logger[level] = formatted(console, level)
+  }
+
+  return logger
+}
+
+function formatted(obj, method) {
+  return formatted_logger
+
+  function formatted_logger(str, context) {
+    if(typeof context === 'object')
+      str += ' ' + JSON.stringify(context)
+
+    return obj[method].call(obj, str)
+  }
+}
+
+// Return whether a URL is a cross-domain request.
+function is_crossDomain(url) {
+  var rurl = /^([\w\+\.\-]+:)(?:\/\/([^\/?#:]*)(?::(\d+))?)?/
+
+  // jQuery #8138, IE may throw an exception when accessing
+  // a field from window.location if document.domain has been set
+  var ajaxLocation
+  try { ajaxLocation = location.href }
+  catch (e) {
+    // Use the href attribute of an A element since IE will modify it given document.location
+    ajaxLocation = document.createElement( "a" );
+    ajaxLocation.href = "";
+    ajaxLocation = ajaxLocation.href;
+  }
+
+  var ajaxLocParts = rurl.exec(ajaxLocation.toLowerCase()) || []
+    , parts = rurl.exec(url.toLowerCase() )
+
+  var result = !!(
+    parts &&
+    (  parts[1] != ajaxLocParts[1]
+    || parts[2] != ajaxLocParts[2]
+    || (parts[3] || (parts[1] === "http:" ? 80 : 443)) != (ajaxLocParts[3] || (ajaxLocParts[1] === "http:" ? 80 : 443))
+    )
+  )
+
+  //console.debug('is_crossDomain('+url+') -> ' + result)
+  return result
+}
+
+// MIT License from http://phpjs.org/functions/base64_encode:358
+function b64_enc (data) {
+    // Encodes string using MIME base64 algorithm
+    var b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+    var o1, o2, o3, h1, h2, h3, h4, bits, i = 0, ac = 0, enc="", tmp_arr = [];
+
+    if (!data) {
+        return data;
+    }
+
+    // assume utf8 data
+    // data = this.utf8_encode(data+'');
+
+    do { // pack three octets into four hexets
+        o1 = data.charCodeAt(i++);
+        o2 = data.charCodeAt(i++);
+        o3 = data.charCodeAt(i++);
+
+        bits = o1<<16 | o2<<8 | o3;
+
+        h1 = bits>>18 & 0x3f;
+        h2 = bits>>12 & 0x3f;
+        h3 = bits>>6 & 0x3f;
+        h4 = bits & 0x3f;
+
+        // use hexets to index into b64, and append result to encoded string
+        tmp_arr[ac++] = b64.charAt(h1) + b64.charAt(h2) + b64.charAt(h3) + b64.charAt(h4);
+    } while (i < data.length);
+
+    enc = tmp_arr.join('');
+
+    switch (data.length % 3) {
+        case 1:
+            enc = enc.slice(0, -2) + '==';
+        break;
+        case 2:
+            enc = enc.slice(0, -1) + '=';
+        break;
+    }
+
+    return enc;
+}
+module.exports = request;
+
+}).call(this,require("buffer").Buffer)
+},{"buffer":50}],23:[function(require,module,exports){
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+function EventEmitter() {
+  this._events = this._events || {};
+  this._maxListeners = this._maxListeners || undefined;
+}
+module.exports = EventEmitter;
+
+// Backwards-compat with node 0.10.x
+EventEmitter.EventEmitter = EventEmitter;
+
+EventEmitter.prototype._events = undefined;
+EventEmitter.prototype._maxListeners = undefined;
+
+// By default EventEmitters will print a warning if more than 10 listeners are
+// added to it. This is a useful default which helps finding memory leaks.
+EventEmitter.defaultMaxListeners = 10;
+
+// Obviously not all Emitters should be limited to 10. This function allows
+// that to be increased. Set to zero for unlimited.
+EventEmitter.prototype.setMaxListeners = function(n) {
+  if (!isNumber(n) || n < 0 || isNaN(n))
+    throw TypeError('n must be a positive number');
+  this._maxListeners = n;
+  return this;
+};
+
+EventEmitter.prototype.emit = function(type) {
+  var er, handler, len, args, i, listeners;
+
+  if (!this._events)
+    this._events = {};
+
+  // If there is no 'error' event listener then throw.
+  if (type === 'error') {
+    if (!this._events.error ||
+        (isObject(this._events.error) && !this._events.error.length)) {
+      er = arguments[1];
+      if (er instanceof Error) {
+        throw er; // Unhandled 'error' event
+      }
+      throw TypeError('Uncaught, unspecified "error" event.');
+    }
+  }
+
+  handler = this._events[type];
+
+  if (isUndefined(handler))
+    return false;
+
+  if (isFunction(handler)) {
+    switch (arguments.length) {
+      // fast cases
+      case 1:
+        handler.call(this);
+        break;
+      case 2:
+        handler.call(this, arguments[1]);
+        break;
+      case 3:
+        handler.call(this, arguments[1], arguments[2]);
+        break;
+      // slower
+      default:
+        len = arguments.length;
+        args = new Array(len - 1);
+        for (i = 1; i < len; i++)
+          args[i - 1] = arguments[i];
+        handler.apply(this, args);
+    }
+  } else if (isObject(handler)) {
+    len = arguments.length;
+    args = new Array(len - 1);
+    for (i = 1; i < len; i++)
+      args[i - 1] = arguments[i];
+
+    listeners = handler.slice();
+    len = listeners.length;
+    for (i = 0; i < len; i++)
+      listeners[i].apply(this, args);
+  }
+
+  return true;
+};
+
+EventEmitter.prototype.addListener = function(type, listener) {
+  var m;
+
+  if (!isFunction(listener))
+    throw TypeError('listener must be a function');
+
+  if (!this._events)
+    this._events = {};
+
+  // To avoid recursion in the case that type === "newListener"! Before
+  // adding it to the listeners, first emit "newListener".
+  if (this._events.newListener)
+    this.emit('newListener', type,
+              isFunction(listener.listener) ?
+              listener.listener : listener);
+
+  if (!this._events[type])
+    // Optimize the case of one listener. Don't need the extra array object.
+    this._events[type] = listener;
+  else if (isObject(this._events[type]))
+    // If we've already got an array, just append.
+    this._events[type].push(listener);
+  else
+    // Adding the second element, need to change to array.
+    this._events[type] = [this._events[type], listener];
+
+  // Check for listener leak
+  if (isObject(this._events[type]) && !this._events[type].warned) {
+    var m;
+    if (!isUndefined(this._maxListeners)) {
+      m = this._maxListeners;
+    } else {
+      m = EventEmitter.defaultMaxListeners;
+    }
+
+    if (m && m > 0 && this._events[type].length > m) {
+      this._events[type].warned = true;
+      console.error('(node) warning: possible EventEmitter memory ' +
+                    'leak detected. %d listeners added. ' +
+                    'Use emitter.setMaxListeners() to increase limit.',
+                    this._events[type].length);
+      if (typeof console.trace === 'function') {
+        // not supported in IE 10
+        console.trace();
+      }
+    }
+  }
+
+  return this;
+};
+
+EventEmitter.prototype.on = EventEmitter.prototype.addListener;
+
+EventEmitter.prototype.once = function(type, listener) {
+  if (!isFunction(listener))
+    throw TypeError('listener must be a function');
+
+  var fired = false;
+
+  function g() {
+    this.removeListener(type, g);
+
+    if (!fired) {
+      fired = true;
+      listener.apply(this, arguments);
+    }
+  }
+
+  g.listener = listener;
+  this.on(type, g);
+
+  return this;
+};
+
+// emits a 'removeListener' event iff the listener was removed
+EventEmitter.prototype.removeListener = function(type, listener) {
+  var list, position, length, i;
+
+  if (!isFunction(listener))
+    throw TypeError('listener must be a function');
+
+  if (!this._events || !this._events[type])
+    return this;
+
+  list = this._events[type];
+  length = list.length;
+  position = -1;
+
+  if (list === listener ||
+      (isFunction(list.listener) && list.listener === listener)) {
+    delete this._events[type];
+    if (this._events.removeListener)
+      this.emit('removeListener', type, listener);
+
+  } else if (isObject(list)) {
+    for (i = length; i-- > 0;) {
+      if (list[i] === listener ||
+          (list[i].listener && list[i].listener === listener)) {
+        position = i;
+        break;
+      }
+    }
+
+    if (position < 0)
+      return this;
+
+    if (list.length === 1) {
+      list.length = 0;
+      delete this._events[type];
+    } else {
+      list.splice(position, 1);
+    }
+
+    if (this._events.removeListener)
+      this.emit('removeListener', type, listener);
+  }
+
+  return this;
+};
+
+EventEmitter.prototype.removeAllListeners = function(type) {
+  var key, listeners;
+
+  if (!this._events)
+    return this;
+
+  // not listening for removeListener, no need to emit
+  if (!this._events.removeListener) {
+    if (arguments.length === 0)
+      this._events = {};
+    else if (this._events[type])
+      delete this._events[type];
+    return this;
+  }
+
+  // emit removeListener for all listeners on all events
+  if (arguments.length === 0) {
+    for (key in this._events) {
+      if (key === 'removeListener') continue;
+      this.removeAllListeners(key);
+    }
+    this.removeAllListeners('removeListener');
+    this._events = {};
+    return this;
+  }
+
+  listeners = this._events[type];
+
+  if (isFunction(listeners)) {
+    this.removeListener(type, listeners);
+  } else {
+    // LIFO order
+    while (listeners.length)
+      this.removeListener(type, listeners[listeners.length - 1]);
+  }
+  delete this._events[type];
+
+  return this;
+};
+
+EventEmitter.prototype.listeners = function(type) {
+  var ret;
+  if (!this._events || !this._events[type])
+    ret = [];
+  else if (isFunction(this._events[type]))
+    ret = [this._events[type]];
+  else
+    ret = this._events[type].slice();
+  return ret;
+};
+
+EventEmitter.listenerCount = function(emitter, type) {
+  var ret;
+  if (!emitter._events || !emitter._events[type])
+    ret = 0;
+  else if (isFunction(emitter._events[type]))
+    ret = 1;
+  else
+    ret = emitter._events[type].length;
+  return ret;
+};
+
+function isFunction(arg) {
+  return typeof arg === 'function';
+}
+
+function isNumber(arg) {
+  return typeof arg === 'number';
+}
+
+function isObject(arg) {
+  return typeof arg === 'object' && arg !== null;
+}
+
+function isUndefined(arg) {
+  return arg === void 0;
+}
+
+},{}],24:[function(require,module,exports){
 (function (process){
 /*global setImmediate: false, setTimeout: false, console: false */
 
@@ -1120,7 +3923,7 @@ module.exports = {
 }());
 
 }).call(this,require('_process'))
-},{"_process":53}],9:[function(require,module,exports){
+},{"_process":53}],25:[function(require,module,exports){
 // Based on https://github.com/diy/intercom.js/blob/master/lib/events.js
 // Copyright 2012 DIY Co Apache License, Version 2.0
 // http://www.apache.org/licenses/LICENSE-2.0
@@ -1193,7 +3996,7 @@ EventEmitter.prototype.removeAllListeners = pub.removeAllListeners;
 
 module.exports = EventEmitter;
 
-},{}],10:[function(require,module,exports){
+},{}],26:[function(require,module,exports){
 (function (global){
 // Based on https://github.com/diy/intercom.js/blob/master/lib/intercom.js
 // Copyright 2012 DIY Co Apache License, Version 2.0
@@ -1515,7 +4318,7 @@ Intercom.getInstance = (function() {
 module.exports = Intercom;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../src/shared.js":29,"./eventemitter.js":9}],11:[function(require,module,exports){
+},{"../src/shared.js":45,"./eventemitter.js":25}],27:[function(require,module,exports){
 // Cherry-picked bits of underscore.js, lodash.js
 
 /**
@@ -1614,7 +4417,7 @@ function nodash(value) {
 
 module.exports = nodash;
 
-},{}],12:[function(require,module,exports){
+},{}],28:[function(require,module,exports){
 /*
  * base64-arraybuffer
  * https://github.com/niklasvh/base64-arraybuffer
@@ -1675,7 +4478,7 @@ module.exports = nodash;
   };
 })("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/");
 
-},{}],13:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 (function (Buffer){
 function FilerBuffer (subject, encoding, nonZero) {
 
@@ -1702,7 +4505,7 @@ Object.keys(Buffer).forEach(function (p) {
 module.exports = FilerBuffer;
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":50}],14:[function(require,module,exports){
+},{"buffer":50}],30:[function(require,module,exports){
 var O_READ = 'READ';
 var O_WRITE = 'WRITE';
 var O_CREATE = 'CREATE';
@@ -1784,7 +4587,7 @@ module.exports = {
   }
 };
 
-},{}],15:[function(require,module,exports){
+},{}],31:[function(require,module,exports){
 var MODE_FILE = require('./constants.js').MODE_FILE;
 
 module.exports = function DirectoryEntry(id, type) {
@@ -1792,7 +4595,7 @@ module.exports = function DirectoryEntry(id, type) {
   this.type = type || MODE_FILE;
 };
 
-},{"./constants.js":14}],16:[function(require,module,exports){
+},{"./constants.js":30}],32:[function(require,module,exports){
 (function (Buffer){
 // Adapt encodings to work with Buffer or Uint8Array, they expect the latter
 function decode(buf) {
@@ -1809,7 +4612,7 @@ module.exports = {
 };
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":50}],17:[function(require,module,exports){
+},{"buffer":50}],33:[function(require,module,exports){
 var errors = {};
 [
   /**
@@ -1915,7 +4718,7 @@ var errors = {};
 
 module.exports = errors;
 
-},{}],18:[function(require,module,exports){
+},{}],34:[function(require,module,exports){
 var _ = require('../../lib/nodash.js');
 
 var Path = require('../path.js');
@@ -3995,7 +6798,7 @@ module.exports = {
   ftruncate: ftruncate
 };
 
-},{"../../lib/nodash.js":11,"../buffer.js":13,"../constants.js":14,"../directory-entry.js":15,"../encoding.js":16,"../errors.js":17,"../node.js":22,"../open-file-description.js":23,"../path.js":24,"../stats.js":32,"../super-node.js":33}],19:[function(require,module,exports){
+},{"../../lib/nodash.js":27,"../buffer.js":29,"../constants.js":30,"../directory-entry.js":31,"../encoding.js":32,"../errors.js":33,"../node.js":38,"../open-file-description.js":39,"../path.js":40,"../stats.js":48,"../super-node.js":49}],35:[function(require,module,exports){
 var _ = require('../../lib/nodash.js');
 
 var isNullPath = require('../path.js').isNull;
@@ -4338,7 +7141,7 @@ FileSystem.prototype.Shell = function(options) {
 
 module.exports = FileSystem;
 
-},{"../../lib/intercom.js":10,"../../lib/nodash.js":11,"../constants.js":14,"../errors.js":17,"../fs-watcher.js":20,"../path.js":24,"../providers/index.js":25,"../shared.js":29,"../shell/shell.js":31,"./implementation.js":18}],20:[function(require,module,exports){
+},{"../../lib/intercom.js":26,"../../lib/nodash.js":27,"../constants.js":30,"../errors.js":33,"../fs-watcher.js":36,"../path.js":40,"../providers/index.js":41,"../shared.js":45,"../shell/shell.js":47,"./implementation.js":34}],36:[function(require,module,exports){
 var EventEmitter = require('../lib/eventemitter.js');
 var Path = require('./path.js');
 var Intercom = require('../lib/intercom.js');
@@ -4402,7 +7205,7 @@ FSWatcher.prototype.constructor = FSWatcher;
 
 module.exports = FSWatcher;
 
-},{"../lib/eventemitter.js":9,"../lib/intercom.js":10,"./path.js":24}],21:[function(require,module,exports){
+},{"../lib/eventemitter.js":25,"../lib/intercom.js":26,"./path.js":40}],37:[function(require,module,exports){
 module.exports = {
   FileSystem: require('./filesystem/interface.js'),
   Buffer: require('./buffer.js'),
@@ -4410,7 +7213,7 @@ module.exports = {
   Errors: require('./errors.js')
 };
 
-},{"./buffer.js":13,"./errors.js":17,"./filesystem/interface.js":19,"./path.js":24}],22:[function(require,module,exports){
+},{"./buffer.js":29,"./errors.js":33,"./filesystem/interface.js":35,"./path.js":40}],38:[function(require,module,exports){
 var MODE_FILE = require('./constants.js').MODE_FILE;
 
 function Node(options) {
@@ -4465,7 +7268,7 @@ Node.create = function(options, callback) {
 
 module.exports = Node;
 
-},{"./constants.js":14}],23:[function(require,module,exports){
+},{"./constants.js":30}],39:[function(require,module,exports){
 module.exports = function OpenFileDescription(path, id, flags, position) {
   this.path = path;
   this.id = id;
@@ -4473,7 +7276,7 @@ module.exports = function OpenFileDescription(path, id, flags, position) {
   this.position = position;
 };
 
-},{}],24:[function(require,module,exports){
+},{}],40:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -4699,7 +7502,7 @@ module.exports = {
   isNull: isNull
 };
 
-},{}],25:[function(require,module,exports){
+},{}],41:[function(require,module,exports){
 var IndexedDB = require('./indexeddb.js');
 var WebSQL = require('./websql.js');
 var Memory = require('./memory.js');
@@ -4736,7 +7539,7 @@ module.exports = {
   }())
 };
 
-},{"./indexeddb.js":26,"./memory.js":27,"./websql.js":28}],26:[function(require,module,exports){
+},{"./indexeddb.js":42,"./memory.js":43,"./websql.js":44}],42:[function(require,module,exports){
 (function (global){
 var FILE_SYSTEM_NAME = require('../constants.js').FILE_SYSTEM_NAME;
 var FILE_STORE_NAME = require('../constants.js').FILE_STORE_NAME;
@@ -4882,7 +7685,7 @@ IndexedDB.prototype.getReadWriteContext = function() {
 module.exports = IndexedDB;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../buffer.js":13,"../constants.js":14,"../errors.js":17}],27:[function(require,module,exports){
+},{"../buffer.js":29,"../constants.js":30,"../errors.js":33}],43:[function(require,module,exports){
 var FILE_SYSTEM_NAME = require('../constants.js').FILE_SYSTEM_NAME;
 // NOTE: prefer setImmediate to nextTick for proper recursion yielding.
 // see https://github.com/js-platform/filer/pull/24
@@ -4974,7 +7777,7 @@ Memory.prototype.getReadWriteContext = function() {
 
 module.exports = Memory;
 
-},{"../../lib/async.js":8,"../constants.js":14}],28:[function(require,module,exports){
+},{"../../lib/async.js":24,"../constants.js":30}],44:[function(require,module,exports){
 (function (global){
 var FILE_SYSTEM_NAME = require('../constants.js').FILE_SYSTEM_NAME;
 var FILE_STORE_NAME = require('../constants.js').FILE_STORE_NAME;
@@ -5149,7 +7952,7 @@ WebSQL.prototype.getReadWriteContext = function() {
 module.exports = WebSQL;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../buffer.js":13,"../constants.js":14,"../errors.js":17,"base64-arraybuffer":12}],29:[function(require,module,exports){
+},{"../buffer.js":29,"../constants.js":30,"../errors.js":33,"base64-arraybuffer":28}],45:[function(require,module,exports){
 function guid() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
     var r = Math.random()*16|0, v = c == 'x' ? r : (r&0x3|0x8);
@@ -5177,7 +7980,7 @@ module.exports = {
   nop: nop
 };
 
-},{}],30:[function(require,module,exports){
+},{}],46:[function(require,module,exports){
 var defaults = require('../constants.js').ENVIRONMENT;
 
 module.exports = function Environment(env) {
@@ -5194,7 +7997,7 @@ module.exports = function Environment(env) {
   };
 };
 
-},{"../constants.js":14}],31:[function(require,module,exports){
+},{"../constants.js":30}],47:[function(require,module,exports){
 var Path = require('../path.js');
 var Errors = require('../errors.js');
 var Environment = require('./environment.js');
@@ -5625,7 +8428,7 @@ Shell.prototype.mkdirp = function(path, callback) {
 
 module.exports = Shell;
 
-},{"../../lib/async.js":8,"../encoding.js":16,"../errors.js":17,"../path.js":24,"./environment.js":30}],32:[function(require,module,exports){
+},{"../../lib/async.js":24,"../encoding.js":32,"../errors.js":33,"../path.js":40,"./environment.js":46}],48:[function(require,module,exports){
 var Constants = require('./constants.js');
 
 function Stats(fileNode, devName) {
@@ -5662,7 +8465,7 @@ function() {
 
 module.exports = Stats;
 
-},{"./constants.js":14}],33:[function(require,module,exports){
+},{"./constants.js":30}],49:[function(require,module,exports){
 var Constants = require('./constants.js');
 
 function SuperNode(options) {
@@ -5690,2810 +8493,7 @@ SuperNode.create = function(options, callback) {
 
 module.exports = SuperNode;
 
-},{"./constants.js":14}],34:[function(require,module,exports){
-// We're sharing Filer's same stripped-down version of async, in order to save space.
-module.exports = require('../client/thirdparty/filer/lib/async.js');
-
-},{"../client/thirdparty/filer/lib/async.js":8}],35:[function(require,module,exports){
-/**
- * Utility functions for working with Conflicted Files.
- */
-var Filer = require('./filer.js');
-var Path = Filer.Path;
-var constants = require('./constants.js');
-var fsUtils = require('./fs-utils.js');
-
-// Turn "/index.html" into "/index.html (Conflicted Copy 2014-07-23 12:00:00).html"
-function generateConflictedPath(fs, path, callback) {
-  var dirname = Path.dirname(path);
-  var basename = Path.basename(path);
-  var extname = Path.extname(path);
-
-  var now = new Date();
-  var dateStamp = now.getFullYear() + '-' +
-        now.getMonth() + '-' +
-        now.getDay() + ' ' +
-        now.getHours() + ':' +
-        now.getMinutes() + ':' +
-        now.getSeconds();
-  var conflictedCopy = ' (Conflicted Copy ' + dateStamp + ')';
-  var conflictedPath = Path.join(dirname, basename + conflictedCopy + extname);
-
-  // Copy the file using the conflicted filename. If there is
-  // already a conflicted file, replace it with this one.
-  fsUtils.forceCopy(fs, path, conflictedPath, function(err) {
-    if(err) {
-      return callback(err);
-    }
-
-    // Send the new path back on the callback
-    callback(null, conflictedPath);
-  });
-}
-
-function filenameContainsConflicted(path) {
-  // Look for path to be a conflicted copy, e.g.,
-  // /dir/index (Conflicted Copy 2014-07-23 12:00:00).html
-  return /\(Conflicted Copy \d{4}-\d{1,2}-\d{1,2} \d{1,2}:\d{1,2}:\d{1,2}\)/.test(path);
-}
-
-function isConflictedCopy(fs, path, callback) {
-  fs.getxattr(path, constants.attributes.conflict, function(err, value) {
-    if(err && err.code !== 'ENOATTR') {
-      return callback(err);
-    }
-
-    callback(null, !!value);
-  });
-}
-
-function makeConflictedCopy(fs, path, callback) {
-  fs.lstat(path, function(err, stats) {
-    if(err) {
-      return callback(err);
-    }
-
-    // If this is a dir, err now
-    if(stats.isDirectory()) {
-      return callback(new Filer.Errors.EISDIR('conflict not permitted on directory'));
-    }
-
-    // Otherwise, copy to a conflicted filename, and mark as makedrive-conflict
-    generateConflictedPath(fs, path, function(err, conflictedPath) {
-      if(err) {
-        return callback(err);
-      }
-      fs.setxattr(conflictedPath, constants.attributes.conflict, true, function(err) {
-        if(err) {
-          return callback(err);
-        }
-
-        callback(null, conflictedPath);
-      });
-    });
-  });
-}
-
-function removeFileConflict(fs, path, callback) {
-  fs.removexattr(path, constants.attributes.conflict, function(err) {
-    if(err && err.code !== 'ENOATTR') {
-      return callback(err);
-    }
-
-    callback();
-  });
-}
-
-module.exports = {
-  filenameContainsConflicted: filenameContainsConflicted,
-  isConflictedCopy: isConflictedCopy,
-  makeConflictedCopy: makeConflictedCopy,
-  removeFileConflict: removeFileConflict
-};
-
-},{"./constants.js":36,"./filer.js":39,"./fs-utils.js":40}],36:[function(require,module,exports){
-module.exports = {
-  rsyncDefaults: {
-    size: 5,
-    time: true,
-    recursive: true
-  },
-
-  attributes: {
-    unsynced: 'makedrive-unsynced',
-    conflict: 'makedrive-conflict'
-  }
-};
-
-},{}],37:[function(require,module,exports){
-/**
- * Functions to process lists of Node Diff objects (i.e.,
- * diffs of files, folders). A Node Diff object takes the
- * following form:
- *
- * // Node Diff for file path (note presence of .diffs)
- * {
- *   modified: 1404926919696,
- *   path: 'index.html',
- *   diffs: [
- *     {
- *       length: 56,
- *       index: 17,
- *       data: Buffer([...])
- *     },
- *     ...
- *   ]
- * }
- *
- * // Node Diff for directory path (note presence of .contents)
- * {
- *   modified: 1404926919696,
- *   path: 'index.html',
- *   contents: [
- *     nodeDiffObject,
- *     ...
- *   ]
- * }
- */
-
- var Buffer = require('./filer.js').Buffer;
-
-function processNodeDiff(nodeDiff, processDataFn) {
-  // Check if this is a directory or file, process, and return
-  if(nodeDiff.contents) {
-    nodeDiff.contents = nodeDiff.contents.map(function(nodeDiff) {
-      return processNodeDiff(nodeDiff, processDataFn);
-    });
-  } else {
-    nodeDiff.diffs = nodeDiff.diffs.map(function(diff) {
-      diff.data = processDataFn(diff.data);
-      return diff;
-    });
-  }
-
-  return nodeDiff;
-}
-
-function bufferToJSON(data) {
-  if(!Buffer.isBuffer(data)) {
-    return data;
-  }
-  var json = data.toJSON();
-  // Note: when we're in node.js, json will be the raw array.
-  // In browserify it will be {type:'Buffer', data:[...]}
-  return json.data || json;
-}
-
-function jsonToBuffer(data) {
-  return new Buffer(data);
-}
-
-function processFn(nodeDiffs, processDataFn) {
-  if(!nodeDiffs.length) {
-    return nodeDiffs;
-  }
-  return nodeDiffs.map(function(nodeDiff){
-    return processNodeDiff(nodeDiff, processDataFn);
-  });
-}
-
-module.exports.serialize = function(nodeDiffs) {
-  return processFn(nodeDiffs, bufferToJSON);
-};
-
-module.exports.deserialize = function(nodeDiffs) {
-  return processFn(nodeDiffs, jsonToBuffer);
-};
-
-},{"./filer.js":39}],38:[function(require,module,exports){
-// Filer doesn't expose the Shell() ctor directly, so provide a shortcut.
-// See client/src/sync-filesystem.js
-module.exports = require('../client/thirdparty/filer/src/shell/shell.js');
-
-},{"../client/thirdparty/filer/src/shell/shell.js":31}],39:[function(require,module,exports){
-module.exports = require('../client/thirdparty/filer/src');
-
-},{"../client/thirdparty/filer/src":21}],40:[function(require,module,exports){
-/**
- * Extra common fs operations we do throughout MakeDrive.
- */
-var constants = require('./constants.js');
-
-// copy oldPath to newPath, deleting newPath if it exists
-function forceCopy(fs, oldPath, newPath, callback) {
-  fs.unlink(newPath, function(err) {
-    if(err && err.code !== 'ENOENT') {
-      return callback(err);
-    }
-
-    fs.readFile(oldPath, function(err, buf) {
-      if(err) {
-        return callback(err);
-      }
-
-      fs.writeFile(newPath, buf, callback);
-    });
-  });
-}
-
-// See if a given path a) exists, and whether it is marked unsynced.
-function isPathUnsynced(fs, path, callback) {
-  fs.getxattr(path, constants.attributes.unsynced, function(err, unsynced) {
-    // File doesn't exist locally at all
-    if(err && err.code === 'ENOENT') {
-      return callback(null, false);
-    }
-
-    // Deal with unexpected error
-    if(err && err.code !== 'ENOATTR') {
-      return callback(err);
-    }
-
-    callback(null, !!unsynced);
-  });
-}
-
-// Remove the unsynced metadata from a path
-function removeUnsynced(fs, path, callback) {
-  fs.removexattr(path, constants.attributes.unsynced, function(err) {
-    if(err && err.code !== 'ENOATTR') {
-      return callback(err);
-    }
-
-    callback();
-  });
-}
-function fremoveUnsynced(fs, fd, callback) {
-  fs.fremovexattr(fd, constants.attributes.unsynced, function(err) {
-    if(err && err.code !== 'ENOATTR') {
-      return callback(err);
-    }
-
-    callback();
-  });
-}
-
-// Set the unsynced metadata for a path
-function setUnsynced(fs, path, callback) {
-  fs.setxattr(path, constants.attributes.unsynced, Date.now(), function(err) {
-    if(err) {
-      return callback(err);
-    }
-
-    callback();
-  });
-}
-function fsetUnsynced(fs, fd, callback) {
-  fs.fsetxattr(fd, constants.attributes.unsynced, Date.now(), function(err) {
-    if(err) {
-      return callback(err);
-    }
-
-    callback();
-  });
-}
-
-// Get the unsynced metadata for a path
-function getUnsynced(fs, path, callback) {
-  fs.getxattr(path, constants.attributes.unsynced, function(err, value) {
-    if(err && err.code !== 'ENOATTR') {
-      return callback(err);
-    }
-
-    callback(null, value);
-  });
-}
-function fgetUnsynced(fs, fd, callback) {
-  fs.fgetxattr(fd, constants.attributes.unsynced, function(err, value) {
-    if(err && err.code !== 'ENOATTR') {
-      return callback(err);
-    }
-
-    callback(null, value);
-  });
-}
-
-module.exports = {
-  forceCopy: forceCopy,
-  isPathUnsynced: isPathUnsynced,
-  removeUnsynced: removeUnsynced,
-  fremoveUnsynced: fremoveUnsynced,
-  setUnsynced: setUnsynced,
-  fsetUnsynced: fsetUnsynced,
-  getUnsynced: getUnsynced,
-  fgetUnsynced: fgetUnsynced
-};
-
-},{"./constants.js":36}],41:[function(require,module,exports){
-module.exports = {
-  difference: function(arr,farr) {
-    return arr.filter(function(v) {
-      return farr.indexOf(v) === -1;
-    });
-  },
-  sortBy: function(list,prop) {
-    return list.sort(function(a,b) {
-      a = a[prop];
-      b = b[prop];
-      return (a === b) ? 0 : (a < b) ? -1 : 1;
-    });
-  },
-  isArray: Array.isArray || function(obj) {
-    return toString.call(obj) === '[object Array]';
-  },
-  map: function(input, fn) {
-    if (this.isArray(input)) {
-      return input.map(fn);
-    }
-    return Object.keys(input).map(function(v) {
-      return fn(input[v]);
-    });
-  },
-  values: function(obj) {
-    return Object.keys(obj).map(function(v) {
-      return obj[v];
-    });
-  }
-};
-
-},{}],42:[function(require,module,exports){
-// rsync.js
-// Implement rsync to sync between two Filer filesystems
-// Portions used from Node.js Anchor module
-// Copyright(c) 2011 Mihai Tomescu <matomesc@gmail.com>
-// Copyright(c) 2011 Tolga Tezel <tolgatezel11@gmail.com>
-// MIT Licensed
-// https://github.com/ttezel/anchor
-
-var Filer = require('./filer.js');
-var Buffer = Filer.Buffer;
-var Path = Filer.Path;
-var fsUtils = require('./fs-utils.js');
-var Errors = Filer.Errors;
-var async = require('./async-lite.js');
-var MD5 = require('MD5');
-var rsync = {};
-var constants = require('./constants.js');
-var conflict = require('./conflict.js');
-var ld_shim = require('./lodash-lite.js');
-
-// Rsync Options that can be passed are:
-// size       -   the size of each chunk of data in bytes that should be checksumed
-// checksum   -   true: always calculate checksums [default]
-//                false: ignore checksums for identical files
-// recursive  -   true: sync each contained node in the path provided
-//                false: only sync the node for the path provided [default]
-// time       -   true: sync modified times of source/destination files
-//                false: do not change modified times of destination files [default]
-// links      -   true: sync symbolic links as links in destination
-//                false: sync symbolic links as the files they link to in destination [default]
-function configureOptions(options) {
-  if(!options || typeof options === 'function') {
-    options = {};
-  }
-
-  options.size = options.size || 512;
-  options.checksum = 'checksum' in options ? options.checksum : true;
-  options.recursive = options.recursive || false;
-  options.time = options.time || false;
-  options.links = options.links || false;
-
-  return options;
-}
-
-// Set the callback in case options are not provided
-function findCallback(callback, options) {
-  if(!callback && typeof options === 'function') {
-    callback = options;
-  }
-
-  return callback;
-}
-
-// Validate the parameters sent to each rsync method
-function validateParams(fs, path) {
-  if(!fs) {
-    return new Errors.EINVAL('No filesystem provided');
-  }
-
-  if(!path) {
-    return new Errors.EINVAL('Path must be specified');
-  }
-
-  return null;
-}
-
-// Get the 'directory' path from the given path for an entry
-// /dir/file.txt returns /dir
-// /dir/folder returns /dir/folder
-function getDirPath(path, entry) {
-  if(Path.basename(path) === entry) {
-   return Path.dirname(path);
-  }
-  return path;
-}
-
-// MD5 hashing for RSync
-function md5sum(data) {
-  return MD5(data).toString();
-}
-
-// Weak32 hashing for RSync based on Mark Adler's 32bit checksum algorithm
-function calcWeak32(data, prev, start, end) {
-  var a = 0;
-  var b = 0;
-  var sum = 0;
-  var M = 1 << 16;
-  var N = 65521;
-
-  if (!prev) {
-    var len = (start >= 0 && end >= 0) ? (end - start + 1) : data.length;
-    var datai;
-    for (var i = 0; i < len; i++) {
-      datai = data[i];
-      a += datai;
-      b += ((len - i) * datai);
-    }
-
-    a %= N;
-    b %= N;
-  } else {
-    var k = start;
-    var l = end - 1;
-    var prev_k = k - 1;
-    var prev_l = l - 1;
-    var prev_first = data[prev_k];
-    var prev_last = data[prev_l];
-    var curr_first = data[k];
-    var curr_last = data[l];
-
-    a = (prev.a - prev_first + curr_last) % N;
-    b = (prev.b - (prev_l - prev_k + 1) * prev_first + a) % N;
-  }
-  return { a: a, b: b, sum: a + b * M };
-}
-
-// Weak16 hashing for RSync
-function calcWeak16(data) {
-  return 0xffff & (data >> 16 ^ data * 1009);
-}
-
-// RSync algorithm to create a hashtable from checksums
-function createHashtable(checksums) {
-  var hashtable = {};
-  var len = checksums.length;
-  var checksum;
-  var weak16;
-
-  for (var i = 0; i < len; i++) {
-    checksum = checksums[i];
-    weak16 = calcWeak16(checksum.weak);
-    if (hashtable[weak16]) {
-      hashtable[weak16].push(checksum);
-    } else {
-      hashtable[weak16] = [checksum];
-    }
-  }
-  return hashtable;
-}
-
-// RSync algorithm to perform data rolling
-function roll(data, checksums, chunkSize) {
-  var results = [];
-  var hashtable = createHashtable(checksums);
-  var length = data.length;
-  var start = 0;
-  var end = chunkSize > length ? length : chunkSize;
-  // Updated when a block matches
-  var lastMatchedEnd = 0;
-  // This gets updated every iteration with the previous weak 32bit hash
-  var prevRollingWeak = null;
-  var weak;
-  var weak16;
-  var match;
-  var d;
-  var len;
-  var mightMatch;
-  var chunk;
-  var strong;
-  var hashtable_weak16;
-  var hashtable_weak16i;
-
-  for (; end <= length; start++, end++) {
-    weak = calcWeak32(data, prevRollingWeak, start, end);
-    weak16 = calcWeak16(weak.sum);
-    match = false;
-    d = null;
-    prevRollingWeak = weak;
-    hashtable_weak16 = hashtable[weak16];
-
-    if (hashtable_weak16) {
-      len = hashtable_weak16.length;
-      for (var i = 0; i < len; i++) {
-        hashtable_weak16i = hashtable_weak16[i];
-        if (hashtable_weak16i.weak === weak.sum) {
-          mightMatch = hashtable_weak16i;
-          chunk = data.slice(start, end);
-          strong = md5sum(chunk);
-
-          if (mightMatch.strong === strong) {
-            match = mightMatch;
-            break;
-          }
-        }
-      }
-    }
-    if (match) {
-      if(start < lastMatchedEnd) {
-        d = data.slice(lastMatchedEnd - 1, end);
-        results.push({
-          data: d,
-          index: match.index
-        });
-      } else if (start - lastMatchedEnd > 0) {
-        d = data.slice(lastMatchedEnd, start);
-        results.push({
-          data: d,
-          index: match.index
-        });
-      } else {
-        results.push({
-          index: match.index
-        });
-      }
-      lastMatchedEnd = end;
-    } else if (end === length) {
-      // No match and last block
-      d = data.slice(lastMatchedEnd);
-      results.push({
-        data: d
-      });
-    }
-  }
-  return results;
-}
-
-// RSync function to calculate checksums
-function checksum (fs, path, size, callback) {
-  var cache = {};
-
-  fs.readFile(path, function (err, data) {
-    if (!err) {
-      // cache file
-      cache[path] = data;
-    } else if (err && err.code === 'ENOENT') {
-      cache[path] = [];
-    } else {
-      return callback(err);
-    }
-
-    var length = cache[path].length;
-    var incr = size;
-    var start = 0;
-    var end = incr > length ? length : incr;
-    var blockIndex = 0;
-    var result = [];
-    var chunk;
-    var weak;
-    var strong;
-
-    while (start < length) {
-      chunk  = cache[path].slice(start, end);
-      weak   = calcWeak32(chunk).sum;
-      strong = md5sum(chunk);
-
-      result.push({
-        index: blockIndex,
-        weak: weak,
-        strong: strong
-      });
-      // update slice indices
-      start += incr;
-      end = (end + incr) > length ? length : end + incr;
-      // update block index
-      blockIndex++;
-    }
-
-    callback(null, result);
-  });
-}
-
-function extractPathsFromDiffs(path, diffs) {
-  var diffPaths = [];
-
-  function extractPath(diff, index, array) {
-    var dirPath = getDirPath(path, diff.path);
-    var nodePath = Path.join(dirPath, diff.path);
-
-    if(!diff.identical) {
-      diffPaths.push(nodePath);
-    }
-
-    if(diff.contents) {
-      var contentPaths = extractPathsFromDiffs(nodePath, diff.contents);
-      diffPaths = diffPaths.concat(contentPaths);
-    }
-  }
-
-  diffs.forEach(extractPath);
-  return diffPaths;
-}
-
-// Generate the list of paths at the source file system
-rsync.sourceList = function getSrcList(fs, path, options, callback) {
-  callback = findCallback(callback, options);
-
-  var paramError = validateParams(fs, path);
-
-  if(paramError) {
-    return callback(paramError);
-  }
-
-  options = configureOptions(options);
-
-  var sourceList = [];
-
-  fs.lstat(path, function(err, stats) {
-    if(err) {
-      return callback(err);
-    }
-
-    // File or Link
-    if(!stats.isDirectory()) {
-      // Make sure this isn't a conflicted copy before adding
-      // (we don't send these to the server in a sync)
-      conflict.isConflictedCopy(fs, path, function(err, conflicted) {
-        if(err) {
-          return callback(err);
-        }
-
-        if(!conflicted) {
-          var node = {
-            path: Path.basename(path),
-            size: stats.size,
-            type: stats.type,
-            modified: stats.mtime
-          };
-          sourceList.push(node);
-        }
-
-        callback(null, sourceList);
-      });
-
-      return;
-    }
-    // Directory
-    fs.readdir(path, function(err, entries) {
-      if(err) {
-        return callback(err);
-      }
-
-      function getSrcContents(_name, callback) {
-        var name = Path.join(path, _name);
-
-        fs.lstat(name, function(err, stats) {
-          if(err) {
-            return callback(err);
-          }
-
-          var node = {
-            path: Path.basename(name),
-            modified: stats.mtime,
-            size: stats.size,
-            type: stats.type
-          };
-
-          // Directory
-          if(options.recursive && stats.isDirectory()) {
-            getSrcList(fs, name, options, function(err, items) {
-              if(err) {
-                return callback(err);
-              }
-
-              node.contents = items;
-
-              sourceList.push(node);
-              callback();
-            });
-          }
-          // File or Link
-          else {
-            // Make sure this isn't a conflicted copy before adding
-            // (we don't send these to the server in a sync)
-            conflict.isConflictedCopy(fs, name, function(err, conflicted) {
-              if(err) {
-                return callback(err);
-              }
-
-              if(!conflicted) {
-                sourceList.push(node);
-              }
-
-              callback();
-            });
-          }
-        });
-      }
-
-      async.eachSeries(entries, getSrcContents, function(err) {
-        if(err) {
-          return callback(err);
-        }
-
-        callback(null, sourceList);
-      });
-    });
-  });
-};
-
-// Generate checksums for every node in a given destination path
-rsync.checksums = function(fs, path, srcList, options, callback) {
-  callback = findCallback(callback, options);
-
-  var paramError = validateParams(fs, path);
-
-  if(paramError) {
-    return callback(paramError);
-  }
-
-  options = configureOptions(options);
-
-  var nodeChecksums = [];
-
-  function checksumsForDir(nodeChecksum, entry, callback) {
-    var dir = Path.join(path, entry.path);
-
-    // Create the directory if it does not exist
-    fs.mkdir(dir, function(err) {
-      if(err && err.code !== 'EEXIST') {
-        return callback(err);
-      }
-
-      rsync.checksums(fs, dir, entry.contents, options, function(err, dirChecksums) {
-        if(err) {
-          return callback(err);
-        }
-
-        // For empty directories, force an empty array
-        nodeChecksum.contents = dirChecksums || [];
-
-        nodeChecksums.push(nodeChecksum);
-        callback();
-      });
-    });
-  }
-
-  function checksumsForFile(nodeChecksum, entry, dirPath, absPath, callback) {
-    if(!options.checksum || options.recursive) {
-      fs.stat(absPath, function(err, stat) {
-        if(err && err.code !== 'ENOENT') {
-          return callback(err);
-        }
-
-        // Add `identical` if the modified time and size of the existing file match
-        if(stat && stat.mtime === entry.modified && stat.size === entry.size) {
-          nodeChecksum.checksums = [];
-          nodeChecksum.modified = entry.modified;
-          nodeChecksum.identical = true;
-
-          nodeChecksums.push(nodeChecksum);
-          callback();
-        } else {
-          checksum(fs, absPath, options.size, function(err, checksums) {
-            if(err) {
-              return callback(err);
-            }
-
-            nodeChecksum.checksums = checksums;
-            nodeChecksum.modified = entry.modified;
-
-            nodeChecksums.push(nodeChecksum);
-            callback();
-          });
-        }
-      });
-    } else {
-      checksum(fs, absPath, options.size, function(err, checksums) {
-        if(err) {
-          return callback(err);
-        }
-
-        nodeChecksum.checksums = checksums;
-        nodeChecksum.modified = entry.modified;
-
-        nodeChecksums.push(nodeChecksum);
-        callback();
-      });
-    }
-  }
-
-  function checksumsForLink(nodeChecksum, entry, dirPath, absPath, callback) {
-    nodeChecksum.link = true;
-
-    if(!options.checksum || options.recursive) {
-      fs.stat(absPath, function(err, stat){
-        if(err && err.code !== 'ENOENT') {
-          return callback(err);
-        }
-
-        // Add `identical` if the modified time and size of the existing file match
-        if(stat && stat.mtime === entry.modified && stat.size === entry.size) {
-          nodeChecksum.identical = true;
-        }
-
-        nodeChecksums.push(nodeChecksum);
-        callback();
-      });
-    } else {
-      nodeChecksums.push(nodeChecksum);
-      callback();
-    }
-  }
-
-  function getDirChecksums(entry, callback) {
-    var nodeChecksum = { path: entry.path };
-    var dirPath = getDirPath(path, entry.path);
-    var absPath = Path.join(dirPath, entry.path);
-
-    // Create any parent directories that do not exist
-    fs.Shell().mkdirp(dirPath, function(err) {
-      if(err && err.code !== 'EEXIST') {
-        return callback(err);
-      }
-
-      // Directory
-      if(options.recursive && entry.type === 'DIRECTORY') {
-        checksumsForDir(nodeChecksum, entry, callback);
-      }
-      // File or Link
-      else {
-        if(entry.type === 'FILE' || !options.links) {
-          checksumsForFile(nodeChecksum, entry, dirPath, absPath, callback);
-        } else if(entry.type === 'SYMLINK'){
-          checksumsForLink(nodeChecksum, entry, dirPath, absPath, callback);
-        }
-      }
-    });
-  }
-
-  async.eachSeries(srcList, getDirChecksums, function(err) {
-    if(err) {
-      callback(err);
-    } else {
-      callback(null, nodeChecksums);
-    }
-  });
-};
-
-// Generate diffs from the source based on destination checksums
-rsync.diff = function(fs, path, checksums, options, callback) {
-  callback = findCallback(callback, options);
-
-  var paramError = validateParams(fs, path);
-
-  if(paramError) {
-    return callback(paramError);
-  }
-
-  options = configureOptions(options);
-
-  if(options.checksum && !checksums) {
-    return callback(new Errors.EINVAL('Checksums must be provided'));
-  }
-
-  var nodeDiffs = [];
-
-  function getDiff(entry, callback) {
-    var entryPath = Path.join(path, entry.path);
-
-    // Directory
-    if(entry.contents) {
-      rsync.diff(fs, entryPath, entry.contents, options, function(err, diffs) {
-        if(err) {
-          return callback(err);
-        }
-
-        nodeDiffs.push({
-          path: entry.path,
-          contents: diffs
-        });
-
-        callback();
-      });
-    }
-    // Link
-    else if (entry.link) {
-      fs.readlink(entryPath, function(err, linkContents) {
-        if(err) {
-          return callback(err);
-        }
-
-        fs.lstat(entryPath, function(err, stats){
-          if(err) {
-            return callback(err);
-          }
-
-          nodeDiffs.push({
-            link: linkContents,
-            modified: stats.mtime,
-            path: entry.path
-          });
-
-          callback(null, nodeDiffs);
-        });
-      });
-    }
-    // File
-    else {
-      if(entry.identical) {
-        nodeDiffs.push({
-          diffs: [],
-          modified: entry.modified,
-          path: entry.path,
-          // Indicates that since the checksum was identical to the source, no diffs should be applied
-          identical: true
-        });
-
-        callback(null, nodeDiffs);
-      } else {
-        fs.readFile(entryPath, function (err, data) {
-          if (err) {
-            return callback(err);
-          }
-
-          nodeDiffs.push({
-            diffs: roll(data, entry.checksums, options.size),
-            modified: entry.modified,
-            path: entry.path
-          });
-
-          callback(null, nodeDiffs);
-        });
-      }
-    }
-  }
-
-  fs.lstat(path, function(err, stat) {
-    if(err) {
-      return callback(err);
-    }
-    // Directory
-    if(stat.isDirectory()) {
-      async.eachSeries(checksums, getDiff, function(err) {
-        if(err) {
-          return callback(err);
-        }
-
-        callback(null, nodeDiffs);
-      });
-    }
-    // File
-    else if (stat.isFile() || !options.links) {
-      if(checksums[0].identical) {
-        nodeDiffs.push({
-          diffs: [],
-          modified: checksums[0].modified,
-          path: checksums[0].path,
-          identical: true
-        });
-
-        return callback(null, nodeDiffs);
-      }
-
-      fs.readFile(path, function (err, data) {
-        if (err) {
-          return callback(err);
-        }
-
-        nodeDiffs.push({
-          diffs: roll(data, checksums[0].checksums, options.size),
-          modified: checksums[0].modified,
-          path: checksums[0].path
-        });
-
-        callback(null, nodeDiffs);
-      });
-    }
-    // Link
-    else if (stat.isSymbolicLink()) {
-      fs.readlink(path, function(err, linkContents) {
-        if(err) {
-          return callback(err);
-        }
-
-        fs.lstat(path, function(err, stats){
-          if(err) {
-            return callback(err);
-          }
-
-          nodeDiffs.push({
-            link: linkContents,
-            modified: stats.mtime,
-            path: checksums[0].path
-          });
-
-          callback(null, nodeDiffs);
-        });
-      });
-    }
-  });
-};
-
-// Path the destination filesystem by applying diffs
-rsync.patch = function(fs, path, diff, options, callback) {
-  callback = findCallback(callback, options);
-
-  var paramError = validateParams(fs, path);
-  var paths = {
-    synced: [],
-    failed: [],
-    update: function(newPaths) {
-      this.synced = this.synced.concat(newPaths.synced);
-      this.failed = this.failed.concat(newPaths.failed);
-    }
-  };
-  var pathsToSync = extractPathsFromDiffs(path, diff);
-
-  if(paramError) {
-    return callback(paramError, paths);
-  }
-
-  options = configureOptions(options);
-
-  function handleError(err, callback) {
-    // Determine the node paths for those that were not synced
-    // by getting the difference between the paths that needed to
-    // be synced and the paths that were synced
-    var failedPaths = ld_shim.difference(pathsToSync, paths.synced);
-    paths.failed = paths.failed.concat(failedPaths);
-    callback(err, paths);
-  }
-
-  // Remove the nodes in the patched directory that are no longer
-  // present in the source. The only exception to this is any file
-  // locally that hasn't been synced to the server yet (i.e.,
-  // we don't want to delete things in a downstream sync because they
-  // don't exist upstream yet, since an upstream sync will add them).
-  function removeNodes(path, entryDiff, callback) {
-    if(typeof entryDiff === 'function') {
-      callback = entryDiff;
-      entryDiff = null;
-    }
-
-    fs.readdir(path, function(err, destContents) {
-      if(err) {
-        return handleError(err, callback);
-      }
-
-      var deletedNodes = destContents;
-
-      if(entryDiff) {
-        var srcContents = entryDiff.map(function(element) {
-          return element.path;
-        });
-        deletedNodes = ld_shim.difference(destContents, srcContents);
-      }
-
-      function maybeUnlink(item, callback) {
-        var deletePath = Path.join(path, item);
-
-        // Make sure this file isn't unsynced before deleting
-        fsUtils.isPathUnsynced(fs, deletePath, function(err, unsynced) {
-          if(err) {
-            return handleError(err, callback);
-          }
-
-          if(unsynced) {
-            // Don't delete
-            return callback();
-          }
-
-          paths.synced.push(deletePath);
-          fs.unlink(deletePath, callback);
-        });
-      }
-
-      async.eachSeries(deletedNodes, maybeUnlink, function(err) {
-        if(err) {
-          return callback(err, paths);
-        }
-
-        callback(null, paths);
-      });
-    });
-  }
-
-  function syncEach(entry, callback) {
-    var dirPath = getDirPath(path, entry.path);
-    var syncPath = Path.join(dirPath, entry.path);
-
-    // Directory
-    if(entry.contents) {
-      return rsync.patch(fs, Path.join(path, entry.path), entry.contents, options, function(err, dirPaths) {
-        if(err) {
-          paths.update(dirPaths);
-          return handleError(err, callback);
-        }
-
-        paths.synced.push(syncPath);
-        paths.update(dirPaths);
-        removeNodes(Path.join(path, entry.path), entry.contents, callback);
-      });
-    }
-    // Link
-    else if (entry.link) {
-      return fs.symlink(entry.link, syncPath, function(err){
-        if(err) {
-          return handleError(err, callback);
-        }
-
-        paths.synced.push(syncPath);
-        callback(null, paths);
-      });
-    }
-    // File
-    if(entry.identical) {
-      return callback(null, paths);
-    }
-
-    fs.readFile(syncPath, function(err, data) {
-      var raw;
-
-      // Get slice of raw file from block's index
-      function rawslice(index) {
-        var start = index * options.size;
-        var end = start + options.size > raw.length ? raw.length : start + options.size;
-
-        return raw.slice(start, end);
-      }
-
-      if(err) {
-        if(err.code !== 'ENOENT') {
-          return handleError(err, callback);
-        }
-        raw = new Buffer(0);
-      } else {
-        raw = data;
-      }
-
-      var len = entry.diffs.length;
-      var chunks = [];
-
-      for(var i = 0; i < len; i++) {
-        var chunk = entry.diffs[i];
-
-        if(!chunk.data) {
-          // Use slice of original file
-          chunks.push(rawslice(chunk.index));
-        } else {
-          chunks.push(chunk.data);
-          if(chunk.index) {
-            chunks.push(rawslice(chunk.index));
-          }
-        }
-      }
-
-      // Before we alter the local file, make sure we don't
-      // need a conflicted copy before proceeding.
-      fsUtils.isPathUnsynced(fs, syncPath, function(err, unsynced) {
-        if(err) {
-          return handleError(err, callback);
-        }
-
-        function write() {
-          var buf = Buffer.concat(chunks);
-          fs.writeFile(syncPath, buf, function(err) {
-            if(err) {
-              return handleError(err, callback);
-            }
-
-            if(!options.time) {
-              paths.synced.push(syncPath);
-              return callback(null, paths);
-            }
-
-            // Updates the modified time of the node
-            fs.utimes(syncPath, entry.modified, entry.modified, function(err) {
-              if(err) {
-                return handleError(err, callback);
-              }
-
-              paths.synced.push(syncPath);
-              callback(null, paths);
-            });
-          });
-        }
-
-        if(unsynced) {
-          conflict.makeConflictedCopy(fs, syncPath, function(err) {
-            if(err) {
-              return handleError(err, callback);
-            }
-
-            // Because we'll overwrite the file with upstream changes,
-            // remove the unsynced attribute (local changes are in
-            // the conflicted copy now).
-            fsUtils.removeUnsynced(fs, syncPath, function(err) {
-              if(err) {
-                return handleError(err, callback);
-              }
-
-              write();
-            });
-          });
-        } else {
-          write();
-        }
-      });
-    });
-  }
-
-  // Remove deleted nodes in the destination path
-  function removeNodesInParent(diff, callback) {
-    callback = findCallback(callback, diff);
-    fs.lstat(path, function(err, stats) {
-      if(err) {
-        return handleError(err, callback);
-      }
-
-      if(!stats.isDirectory()) {
-        return callback(null, paths);
-      }
-
-      removeNodes(path, diff, callback);
-    });
-  }
-
-  if(diff && diff.length) {
-    async.eachSeries(diff, syncEach, function(err) {
-      if(err) {
-        callback(err, paths);
-      } else {
-        removeNodesInParent(diff, callback);
-      }
-    });
-  } else {
-    fs.Shell().mkdirp(path, function(err) {
-      if(err && err !== 'EEXIST') {
-        callback(err, paths);
-      } else {
-        removeNodesInParent(callback);
-      }
-    });
-  }
-};
-
-// Generate checksums for an array of paths to be used for comparison
-rsync.pathChecksums = function(fs, paths, chunkSize, callback) {
-  var paramError = validateParams(fs, paths);
-  var checksums = [];
-
-  if(!chunkSize || typeof callback !== 'function') {
-    return callback(new Errors.EINVAL('Insufficient data provided'));
-  }
-
-  if(paramError) {
-    return callback(paramError);
-  }
-
-  function generateChecksum(path, callback) {
-    var entry = {path: path};
-
-    fs.lstat(path, function(err, stat) {
-      if(err) {
-        if(err.code !== 'ENOENT') {
-          return callback(err);
-        }
-
-        // Node does not exist
-        entry.checksum = [];
-        checksums.push(entry);
-        return callback();
-      }
-
-      // Use contents of directory instead of checksums
-      if(stat.isDirectory()) {
-        return fs.readdir(path, function(err, nodeList) {
-          if(err) {
-            return callback(err);
-          }
-
-          entry.contents = nodeList;
-          checksums.push(entry);
-          callback();
-        });
-      }
-
-      // Calculate checksums for file or symbolic links
-      checksum(fs, path, chunkSize, function(err, chksum) {
-        if(err) {
-          return callback(err);
-        }
-
-        entry.checksum = chksum;
-        checksums.push(entry);
-        callback();
-      });
-    });
-  }
-
-  async.eachSeries(paths, generateChecksum, function(err) {
-    if(err) {
-      return callback(err);
-    }
-
-    callback(null, checksums);
-  });
-};
-
-// Compare two filesystem contents by comparing checksums
-rsync.compareContents = function(fs, checksums, chunkSize, callback) {
-  var EDIFF = 'DIFF';
-  var paramError = validateParams(fs, checksums);
-
-  if(!chunkSize || typeof callback !== 'function') {
-    return callback(new Errors.EINVAL('Insufficient data provided'));
-  }
-
-  if(paramError) {
-    return callback(paramError);
-  }
-
-  // Check if two checksum arrays are equal
-  function isEqual(checksum1, checksum2) {
-    var comparisonLength = checksum2.length;
-    var checksum1i, checksum2i;
-
-    if(checksum1.length !== comparisonLength) {
-      return false;
-    }
-
-    // Sort the checksum objects in each array by the 'index' property
-    checksum1 = ld_shim.map(ld_shim.sortBy(checksum1, 'index'), ld_shim.values);
-    checksum2 = ld_shim.map(ld_shim.sortBy(checksum2, 'index'), ld_shim.values);
-
-    // Compare each object's checksums
-    for(var i = 0; i < comparisonLength; i++) {
-      checksum1i = checksum1[i];
-      checksum2i = checksum2[i];
-
-      if(checksum1i[1] !== checksum2i[1] ||
-        checksum1i[2] !== checksum2i[2]) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  function compare(entry, callback) {
-    var path = entry.path;
-
-    fs.lstat(path, function(err, stat) {
-      if(err) {
-        if(err.code !== 'ENOENT') {
-          return callback(err);
-        }
-
-        // Checksums for a non-existent path are empty
-        if(entry.checksum && !entry.checksum.length) {
-          return callback();
-        }
-
-        return callback(EDIFF);
-      }
-
-      // Directory comparison of contents
-      if(stat.isDirectory()) {
-        return fs.readdir(path, function(err, nodeList) {
-          if(err) {
-            return callback(err);
-          }
-
-          if(!entry.contents || ld_shim.difference(entry.contents, nodeList).length) {
-            return callback(EDIFF);
-          }
-
-          callback();
-        });
-      }
-
-      if(!entry.checksum) {
-        return callback(EDIFF);
-      }
-
-      // Compare checksums for two files/symbolic links
-      checksum(fs, path, chunkSize, function(err, checksum) {
-        if(err) {
-          return callback(err);
-        }
-
-        if(!isEqual(checksum, entry.checksum)) {
-          return callback(EDIFF);
-        }
-
-        callback();
-      });
-    });
-  }
-
-  async.eachSeries(checksums, compare, function(err) {
-    if(err && err !== EDIFF) {
-      return callback(err, false);
-    }
-
-    if(err === EDIFF) {
-      return callback(null, false);
-    }
-
-    callback(null, true);
-  });
-};
-
-module.exports = rsync;
-
-},{"./async-lite.js":34,"./conflict.js":35,"./constants.js":36,"./filer.js":39,"./fs-utils.js":40,"./lodash-lite.js":41,"MD5":45}],43:[function(require,module,exports){
-/**
- * Sync path resolver is a library that provides
- * functionality to determine 'syncable' paths
- * It exposes the following method:
- *
- * resolve      - This method takes two paths as arguments.
- *                The goal is to find the most common ancestor
- *                between them. For e.g. the most common ancestor
- *                between '/dir' and '/dir/file.txt' is '/dir' while
- *                between '/dir' and '/file.txt' would be '/'.
- *
-*/
-
-var pathResolver = {};
-var dirname = require('./filer').Path.dirname;
-
-function getDepth(path) {
-  if(path === '/') {
-    return 0;
-  }
-
-  return 1 + getDepth(dirname(path));
-}
-
-function commonAncestor(path1, depth1, path2, depth2) {
-  if(path1 === path2) {
-    return path1;
-  }
-
-  // Regress the appropriate path
-  if(depth1 === depth2) {
-    path1 = dirname(path1);
-    depth1--;
-    path2 = dirname(path2);
-    depth2--;
-  } else if(depth1 > depth2) {
-    path1 = dirname(path1);
-    depth1--;
-  } else {
-    path2 = dirname(path2);
-    depth2--;
-  }
-
-  return commonAncestor(path1, depth1, path2, depth2);
-}
-
-pathResolver.resolve = function(path1, path2) {
-  if(!path1 && !path2) {
-    return '/';
-  }
-
-  if(!path1 || !path2) {
-    return path1 || path2;
-  }
-
-  var path1Depth = getDepth(path1);
-  var path2Depth = getDepth(path2);
-
-  return commonAncestor(path1, path1Depth, path2, path2Depth);
-};
-
-module.exports = pathResolver;
-
-},{"./filer":39}],44:[function(require,module,exports){
-// Constructor
-function SyncMessage(type, name, content) {
-  if(!isValidType(type)) {
-    throw "Invalid type";
-  }
-  if(!isValidName(name)) {
-    throw "Invalid name";
-  }
-
-  this.type = type;
-  this.name = name;
-  this.content = content || null;
-
-  // Sugar for testing instance data
-  var that = this;
-  this.is = {
-    // Types
-    get request() {
-      return that.type === SyncMessage.REQUEST;
-    },
-    get response() {
-      return that.type === SyncMessage.RESPONSE;
-    },
-    get error() {
-      return that.type === SyncMessage.ERROR;
-    },
-
-    // Names
-    get srclist() {
-      return that.name === SyncMessage.SRCLIST;
-    },
-    get sync() {
-      return that.name === SyncMessage.SYNC;
-    },
-    get chksum() {
-      return that.name === SyncMessage.CHKSUM;
-    },
-    get diffs() {
-      return that.name === SyncMessage.DIFFS;
-    },
-    get patch() {
-      return that.name === SyncMessage.PATCH;
-    },
-    get verification() {
-      return that.name === SyncMessage.VERIFICATION;
-    },
-    get reset() {
-      return that.name === SyncMessage.RESET;
-    },
-    get locked() {
-      return that.name === SyncMessage.LOCKED;
-    },
-    get authz() {
-      return that.name === SyncMessage.AUTHZ;
-    },
-    get impl() {
-      return that.name === SyncMessage.IMPL;
-    },
-    get serverReset() {
-      return that.name === SyncMessage.SERVER_RESET;
-    },
-    get downstreamLocked() {
-      return that.name === SyncMessage.DOWNSTREAM_LOCKED;
-    }
-  };
-}
-
-SyncMessage.prototype.stringify = function() {
-  return JSON.stringify({
-    type: this.type,
-    name: this.name,
-    content: this.content
-  });
-};
-
-// Try to parse data back into a SyncMessage object. If the
-// data is invalid, return a format error message instead.
-SyncMessage.parse = function(data) {
-  if(!data || !isValidType(data.type) || !isValidName(data.name)) {
-    return SyncMessage.error.format;
-  }
-
-  return new SyncMessage(data.type, data.name, data.content);
-};
-
-// SyncMessage Type constants
-SyncMessage.REQUEST = "REQUEST";
-SyncMessage.RESPONSE = "RESPONSE";
-SyncMessage.ERROR = "ERROR";
-
-// SyncMessage Name constants
-SyncMessage.SRCLIST = "SRCLIST";
-SyncMessage.SYNC = "SYNC";
-SyncMessage.CHKSUM = "CHKSUM";
-SyncMessage.DIFFS = "DIFFS";
-SyncMessage.PATCH = "PATCH";
-SyncMessage.VERIFICATION = "VERIFICATION";
-SyncMessage.RESET = "RESET";
-SyncMessage.LOCKED = "LOCKED";
-SyncMessage.AUTHZ = "AUTHORIZED";
-SyncMessage.IMPL = "IMPLEMENTATION";
-SyncMessage.SERVER_RESET = "SERVER_RESET";
-SyncMessage.DOWNSTREAM_LOCKED = "DOWNSTREAM_LOCKED";
-
-// SyncMessage Error constants
-SyncMessage.INFRMT = "INVALID FORMAT";
-SyncMessage.INCONT = "INVALID CONTENT";
-
-function isValidName(name) {
-  return name === SyncMessage.SRCLIST      ||
-         name === SyncMessage.CHKSUM       ||
-         name === SyncMessage.DIFFS        ||
-         name === SyncMessage.LOCKED       ||
-         name === SyncMessage.PATCH        ||
-         name === SyncMessage.VERIFICATION ||
-         name === SyncMessage.SYNC         ||
-         name === SyncMessage.RESET        ||
-         name === SyncMessage.AUTHZ        ||
-         name === SyncMessage.IMPL         ||
-         name === SyncMessage.INFRMT       ||
-         name === SyncMessage.INCONT       ||
-         name === SyncMessage.SERVER_RESET ||
-         name === SyncMessage.DOWNSTREAM_LOCKED;
-}
-
-function isValidType(type) {
-  return type === SyncMessage.REQUEST  ||
-         type === SyncMessage.RESPONSE ||
-         type === SyncMessage.ERROR;
-}
-
-// Sugar for getting message instances
-SyncMessage.request = {
-  get diffs() {
-    return new SyncMessage(SyncMessage.REQUEST, SyncMessage.DIFFS);
-  },
-  get chksum() {
-    return new SyncMessage(SyncMessage.REQUEST, SyncMessage.CHKSUM);
-  },
-  get sync() {
-    return new SyncMessage(SyncMessage.REQUEST, SyncMessage.SYNC);
-  },
-  get reset() {
-    return new SyncMessage(SyncMessage.REQUEST, SyncMessage.RESET);
-  }
-};
-SyncMessage.response = {
-  get diffs() {
-    return new SyncMessage(SyncMessage.RESPONSE, SyncMessage.DIFFS);
-  },
-  get patch() {
-    return new SyncMessage(SyncMessage.RESPONSE, SyncMessage.PATCH);
-  },
-  get verification() {
-    return new SyncMessage(SyncMessage.RESPONSE, SyncMessage.VERIFICATION);
-  },
-  get authz() {
-    return new SyncMessage(SyncMessage.RESPONSE, SyncMessage.AUTHZ);
-  },
-  get sync() {
-    return new SyncMessage(SyncMessage.RESPONSE, SyncMessage.SYNC);
-  },
-  get reset() {
-    return new SyncMessage(SyncMessage.RESPONSE, SyncMessage.RESET);
-  }
-};
-SyncMessage.error = {
-  get srclist() {
-    return new SyncMessage(SyncMessage.ERROR, SyncMessage.SRCLIST);
-  },
-  get diffs() {
-    return new SyncMessage(SyncMessage.ERROR, SyncMessage.DIFFS);
-  },
-  get locked() {
-    return new SyncMessage(SyncMessage.ERROR, SyncMessage.LOCKED);
-  },
-  get chksum() {
-    return new SyncMessage(SyncMessage.ERROR, SyncMessage.CHKSUM);
-  },
-  get patch() {
-    return new SyncMessage(SyncMessage.ERROR, SyncMessage.PATCH);
-  },
-  get impl() {
-    return new SyncMessage(SyncMessage.ERROR, SyncMessage.IMPL);
-  },
-  get serverReset() {
-    return new SyncMessage(SyncMessage.ERROR, SyncMessage.SERVER_RESET);
-  },
-  get downstreamLocked() {
-    return new SyncMessage(SyncMessage.ERROR, SyncMessage.DOWNSTREAM_LOCKED, 'Downstream syncs are locked!');
-  },
-  get verification() {
-    return new SyncMessage(SyncMessage.ERROR,
-                           SyncMessage.VERIFICATION,
-                           'Patch could not be verified');
-  },
-  get format() {
-    return new SyncMessage(SyncMessage.ERROR,
-                           SyncMessage.INFRMT,
-                           'Message must be formatted as a sync message');
-  },
-  get content() {
-    return new SyncMessage(SyncMessage.ERROR,
-                           SyncMessage.INCONT,
-                           'Invalid content provided');
-  }
-};
-
-module.exports = SyncMessage;
-
-},{}],45:[function(require,module,exports){
-(function (Buffer){
-(function(){
-  var crypt = require('crypt'),
-      utf8 = require('charenc').utf8,
-      bin = require('charenc').bin,
-
-  // The core
-  md5 = function (message, options) {
-    // Convert to byte array
-    if (message.constructor == String)
-      if (options && options.encoding === 'binary')
-        message = bin.stringToBytes(message);
-      else
-        message = utf8.stringToBytes(message);
-    else if (typeof Buffer != 'undefined' &&
-        typeof Buffer.isBuffer == 'function' && Buffer.isBuffer(message))
-      message = Array.prototype.slice.call(message, 0);
-    else if (!Array.isArray(message))
-      message = message.toString();
-    // else, assume byte array already
-
-    var m = crypt.bytesToWords(message),
-        l = message.length * 8,
-        a =  1732584193,
-        b = -271733879,
-        c = -1732584194,
-        d =  271733878;
-
-    // Swap endian
-    for (var i = 0; i < m.length; i++) {
-      m[i] = ((m[i] <<  8) | (m[i] >>> 24)) & 0x00FF00FF |
-             ((m[i] << 24) | (m[i] >>>  8)) & 0xFF00FF00;
-    }
-
-    // Padding
-    m[l >>> 5] |= 0x80 << (l % 32);
-    m[(((l + 64) >>> 9) << 4) + 14] = l;
-
-    // Method shortcuts
-    var FF = md5._ff,
-        GG = md5._gg,
-        HH = md5._hh,
-        II = md5._ii;
-
-    for (var i = 0; i < m.length; i += 16) {
-
-      var aa = a,
-          bb = b,
-          cc = c,
-          dd = d;
-
-      a = FF(a, b, c, d, m[i+ 0],  7, -680876936);
-      d = FF(d, a, b, c, m[i+ 1], 12, -389564586);
-      c = FF(c, d, a, b, m[i+ 2], 17,  606105819);
-      b = FF(b, c, d, a, m[i+ 3], 22, -1044525330);
-      a = FF(a, b, c, d, m[i+ 4],  7, -176418897);
-      d = FF(d, a, b, c, m[i+ 5], 12,  1200080426);
-      c = FF(c, d, a, b, m[i+ 6], 17, -1473231341);
-      b = FF(b, c, d, a, m[i+ 7], 22, -45705983);
-      a = FF(a, b, c, d, m[i+ 8],  7,  1770035416);
-      d = FF(d, a, b, c, m[i+ 9], 12, -1958414417);
-      c = FF(c, d, a, b, m[i+10], 17, -42063);
-      b = FF(b, c, d, a, m[i+11], 22, -1990404162);
-      a = FF(a, b, c, d, m[i+12],  7,  1804603682);
-      d = FF(d, a, b, c, m[i+13], 12, -40341101);
-      c = FF(c, d, a, b, m[i+14], 17, -1502002290);
-      b = FF(b, c, d, a, m[i+15], 22,  1236535329);
-
-      a = GG(a, b, c, d, m[i+ 1],  5, -165796510);
-      d = GG(d, a, b, c, m[i+ 6],  9, -1069501632);
-      c = GG(c, d, a, b, m[i+11], 14,  643717713);
-      b = GG(b, c, d, a, m[i+ 0], 20, -373897302);
-      a = GG(a, b, c, d, m[i+ 5],  5, -701558691);
-      d = GG(d, a, b, c, m[i+10],  9,  38016083);
-      c = GG(c, d, a, b, m[i+15], 14, -660478335);
-      b = GG(b, c, d, a, m[i+ 4], 20, -405537848);
-      a = GG(a, b, c, d, m[i+ 9],  5,  568446438);
-      d = GG(d, a, b, c, m[i+14],  9, -1019803690);
-      c = GG(c, d, a, b, m[i+ 3], 14, -187363961);
-      b = GG(b, c, d, a, m[i+ 8], 20,  1163531501);
-      a = GG(a, b, c, d, m[i+13],  5, -1444681467);
-      d = GG(d, a, b, c, m[i+ 2],  9, -51403784);
-      c = GG(c, d, a, b, m[i+ 7], 14,  1735328473);
-      b = GG(b, c, d, a, m[i+12], 20, -1926607734);
-
-      a = HH(a, b, c, d, m[i+ 5],  4, -378558);
-      d = HH(d, a, b, c, m[i+ 8], 11, -2022574463);
-      c = HH(c, d, a, b, m[i+11], 16,  1839030562);
-      b = HH(b, c, d, a, m[i+14], 23, -35309556);
-      a = HH(a, b, c, d, m[i+ 1],  4, -1530992060);
-      d = HH(d, a, b, c, m[i+ 4], 11,  1272893353);
-      c = HH(c, d, a, b, m[i+ 7], 16, -155497632);
-      b = HH(b, c, d, a, m[i+10], 23, -1094730640);
-      a = HH(a, b, c, d, m[i+13],  4,  681279174);
-      d = HH(d, a, b, c, m[i+ 0], 11, -358537222);
-      c = HH(c, d, a, b, m[i+ 3], 16, -722521979);
-      b = HH(b, c, d, a, m[i+ 6], 23,  76029189);
-      a = HH(a, b, c, d, m[i+ 9],  4, -640364487);
-      d = HH(d, a, b, c, m[i+12], 11, -421815835);
-      c = HH(c, d, a, b, m[i+15], 16,  530742520);
-      b = HH(b, c, d, a, m[i+ 2], 23, -995338651);
-
-      a = II(a, b, c, d, m[i+ 0],  6, -198630844);
-      d = II(d, a, b, c, m[i+ 7], 10,  1126891415);
-      c = II(c, d, a, b, m[i+14], 15, -1416354905);
-      b = II(b, c, d, a, m[i+ 5], 21, -57434055);
-      a = II(a, b, c, d, m[i+12],  6,  1700485571);
-      d = II(d, a, b, c, m[i+ 3], 10, -1894986606);
-      c = II(c, d, a, b, m[i+10], 15, -1051523);
-      b = II(b, c, d, a, m[i+ 1], 21, -2054922799);
-      a = II(a, b, c, d, m[i+ 8],  6,  1873313359);
-      d = II(d, a, b, c, m[i+15], 10, -30611744);
-      c = II(c, d, a, b, m[i+ 6], 15, -1560198380);
-      b = II(b, c, d, a, m[i+13], 21,  1309151649);
-      a = II(a, b, c, d, m[i+ 4],  6, -145523070);
-      d = II(d, a, b, c, m[i+11], 10, -1120210379);
-      c = II(c, d, a, b, m[i+ 2], 15,  718787259);
-      b = II(b, c, d, a, m[i+ 9], 21, -343485551);
-
-      a = (a + aa) >>> 0;
-      b = (b + bb) >>> 0;
-      c = (c + cc) >>> 0;
-      d = (d + dd) >>> 0;
-    }
-
-    return crypt.endian([a, b, c, d]);
-  };
-
-  // Auxiliary functions
-  md5._ff  = function (a, b, c, d, x, s, t) {
-    var n = a + (b & c | ~b & d) + (x >>> 0) + t;
-    return ((n << s) | (n >>> (32 - s))) + b;
-  };
-  md5._gg  = function (a, b, c, d, x, s, t) {
-    var n = a + (b & d | c & ~d) + (x >>> 0) + t;
-    return ((n << s) | (n >>> (32 - s))) + b;
-  };
-  md5._hh  = function (a, b, c, d, x, s, t) {
-    var n = a + (b ^ c ^ d) + (x >>> 0) + t;
-    return ((n << s) | (n >>> (32 - s))) + b;
-  };
-  md5._ii  = function (a, b, c, d, x, s, t) {
-    var n = a + (c ^ (b | ~d)) + (x >>> 0) + t;
-    return ((n << s) | (n >>> (32 - s))) + b;
-  };
-
-  // Package private blocksize
-  md5._blocksize = 16;
-  md5._digestsize = 16;
-
-  module.exports = function (message, options) {
-    if(typeof message == 'undefined')
-      return;
-
-    var digestbytes = crypt.wordsToBytes(md5(message, options));
-    return options && options.asBytes ? digestbytes :
-        options && options.asString ? bin.bytesToString(digestbytes) :
-        crypt.bytesToHex(digestbytes);
-  };
-
-})();
-
-}).call(this,require("buffer").Buffer)
-},{"buffer":50,"charenc":46,"crypt":47}],46:[function(require,module,exports){
-var charenc = {
-  // UTF-8 encoding
-  utf8: {
-    // Convert a string to a byte array
-    stringToBytes: function(str) {
-      return charenc.bin.stringToBytes(unescape(encodeURIComponent(str)));
-    },
-
-    // Convert a byte array to a string
-    bytesToString: function(bytes) {
-      return decodeURIComponent(escape(charenc.bin.bytesToString(bytes)));
-    }
-  },
-
-  // Binary encoding
-  bin: {
-    // Convert a string to a byte array
-    stringToBytes: function(str) {
-      for (var bytes = [], i = 0; i < str.length; i++)
-        bytes.push(str.charCodeAt(i) & 0xFF);
-      return bytes;
-    },
-
-    // Convert a byte array to a string
-    bytesToString: function(bytes) {
-      for (var str = [], i = 0; i < bytes.length; i++)
-        str.push(String.fromCharCode(bytes[i]));
-      return str.join('');
-    }
-  }
-};
-
-module.exports = charenc;
-
-},{}],47:[function(require,module,exports){
-(function() {
-  var base64map
-      = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/',
-
-  crypt = {
-    // Bit-wise rotation left
-    rotl: function(n, b) {
-      return (n << b) | (n >>> (32 - b));
-    },
-
-    // Bit-wise rotation right
-    rotr: function(n, b) {
-      return (n << (32 - b)) | (n >>> b);
-    },
-
-    // Swap big-endian to little-endian and vice versa
-    endian: function(n) {
-      // If number given, swap endian
-      if (n.constructor == Number) {
-        return crypt.rotl(n, 8) & 0x00FF00FF | crypt.rotl(n, 24) & 0xFF00FF00;
-      }
-
-      // Else, assume array and swap all items
-      for (var i = 0; i < n.length; i++)
-        n[i] = crypt.endian(n[i]);
-      return n;
-    },
-
-    // Generate an array of any length of random bytes
-    randomBytes: function(n) {
-      for (var bytes = []; n > 0; n--)
-        bytes.push(Math.floor(Math.random() * 256));
-      return bytes;
-    },
-
-    // Convert a byte array to big-endian 32-bit words
-    bytesToWords: function(bytes) {
-      for (var words = [], i = 0, b = 0; i < bytes.length; i++, b += 8)
-        words[b >>> 5] |= bytes[i] << (24 - b % 32);
-      return words;
-    },
-
-    // Convert big-endian 32-bit words to a byte array
-    wordsToBytes: function(words) {
-      for (var bytes = [], b = 0; b < words.length * 32; b += 8)
-        bytes.push((words[b >>> 5] >>> (24 - b % 32)) & 0xFF);
-      return bytes;
-    },
-
-    // Convert a byte array to a hex string
-    bytesToHex: function(bytes) {
-      for (var hex = [], i = 0; i < bytes.length; i++) {
-        hex.push((bytes[i] >>> 4).toString(16));
-        hex.push((bytes[i] & 0xF).toString(16));
-      }
-      return hex.join('');
-    },
-
-    // Convert a hex string to a byte array
-    hexToBytes: function(hex) {
-      for (var bytes = [], c = 0; c < hex.length; c += 2)
-        bytes.push(parseInt(hex.substr(c, 2), 16));
-      return bytes;
-    },
-
-    // Convert a byte array to a base-64 string
-    bytesToBase64: function(bytes) {
-      for (var base64 = [], i = 0; i < bytes.length; i += 3) {
-        var triplet = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
-        for (var j = 0; j < 4; j++)
-          if (i * 8 + j * 6 <= bytes.length * 8)
-            base64.push(base64map.charAt((triplet >>> 6 * (3 - j)) & 0x3F));
-          else
-            base64.push('=');
-      }
-      return base64.join('');
-    },
-
-    // Convert a base-64 string to a byte array
-    base64ToBytes: function(base64) {
-      // Remove non-base-64 characters
-      base64 = base64.replace(/[^A-Z0-9+\/]/ig, '');
-
-      for (var bytes = [], i = 0, imod4 = 0; i < base64.length;
-          imod4 = ++i % 4) {
-        if (imod4 == 0) continue;
-        bytes.push(((base64map.indexOf(base64.charAt(i - 1))
-            & (Math.pow(2, -2 * imod4 + 8) - 1)) << (imod4 * 2))
-            | (base64map.indexOf(base64.charAt(i)) >>> (6 - imod4 * 2)));
-      }
-      return bytes;
-    }
-  };
-
-  module.exports = crypt;
-})();
-
-},{}],48:[function(require,module,exports){
-(function (Buffer){
-// Browser Request
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-var XHR = XMLHttpRequest
-if (!XHR) throw new Error('missing XMLHttpRequest')
-request.log = {
-  'trace': noop, 'debug': noop, 'info': noop, 'warn': noop, 'error': noop
-}
-
-var DEFAULT_TIMEOUT = 3 * 60 * 1000 // 3 minutes
-
-//
-// request
-//
-
-function request(options, callback) {
-  // The entry-point to the API: prep the options object and pass the real work to run_xhr.
-  if(typeof callback !== 'function')
-    throw new Error('Bad callback given: ' + callback)
-
-  if(!options)
-    throw new Error('No options given')
-
-  var options_onResponse = options.onResponse; // Save this for later.
-
-  if(typeof options === 'string')
-    options = {'uri':options};
-  else
-    options = JSON.parse(JSON.stringify(options)); // Use a duplicate for mutating.
-
-  options.onResponse = options_onResponse // And put it back.
-
-  if (options.verbose) request.log = getLogger();
-
-  if(options.url) {
-    options.uri = options.url;
-    delete options.url;
-  }
-
-  if(!options.uri && options.uri !== "")
-    throw new Error("options.uri is a required argument");
-
-  if(typeof options.uri != "string")
-    throw new Error("options.uri must be a string");
-
-  var unsupported_options = ['proxy', '_redirectsFollowed', 'maxRedirects', 'followRedirect']
-  for (var i = 0; i < unsupported_options.length; i++)
-    if(options[ unsupported_options[i] ])
-      throw new Error("options." + unsupported_options[i] + " is not supported")
-
-  options.callback = callback
-  options.method = options.method || 'GET';
-  options.headers = options.headers || {};
-  options.body    = options.body || null
-  options.timeout = options.timeout || request.DEFAULT_TIMEOUT
-
-  if(options.headers.host)
-    throw new Error("Options.headers.host is not supported");
-
-  if(options.json) {
-    options.headers.accept = options.headers.accept || 'application/json'
-    if(options.method !== 'GET')
-      options.headers['content-type'] = 'application/json'
-
-    if(typeof options.json !== 'boolean')
-      options.body = JSON.stringify(options.json)
-    else if(typeof options.body !== 'string')
-      options.body = JSON.stringify(options.body)
-  }
-  
-  //BEGIN QS Hack
-  var serialize = function(obj) {
-    var str = [];
-    for(var p in obj)
-      if (obj.hasOwnProperty(p)) {
-        str.push(encodeURIComponent(p) + "=" + encodeURIComponent(obj[p]));
-      }
-    return str.join("&");
-  }
-  
-  if(options.qs){
-    var qs = (typeof options.qs == 'string')? options.qs : serialize(options.qs);
-    if(options.uri.indexOf('?') !== -1){ //no get params
-        options.uri = options.uri+'&'+qs;
-    }else{ //existing get params
-        options.uri = options.uri+'?'+qs;
-    }
-  }
-  //END QS Hack
-  
-  //BEGIN FORM Hack
-  var multipart = function(obj) {
-    //todo: support file type (useful?)
-    var result = {};
-    result.boundry = '-------------------------------'+Math.floor(Math.random()*1000000000);
-    var lines = [];
-    for(var p in obj){
-        if (obj.hasOwnProperty(p)) {
-            lines.push(
-                '--'+result.boundry+"\n"+
-                'Content-Disposition: form-data; name="'+p+'"'+"\n"+
-                "\n"+
-                obj[p]+"\n"
-            );
-        }
-    }
-    lines.push( '--'+result.boundry+'--' );
-    result.body = lines.join('');
-    result.length = result.body.length;
-    result.type = 'multipart/form-data; boundary='+result.boundry;
-    return result;
-  }
-  
-  if(options.form){
-    if(typeof options.form == 'string') throw('form name unsupported');
-    if(options.method === 'POST'){
-        var encoding = (options.encoding || 'application/x-www-form-urlencoded').toLowerCase();
-        options.headers['content-type'] = encoding;
-        switch(encoding){
-            case 'application/x-www-form-urlencoded':
-                options.body = serialize(options.form).replace(/%20/g, "+");
-                break;
-            case 'multipart/form-data':
-                var multi = multipart(options.form);
-                //options.headers['content-length'] = multi.length;
-                options.body = multi.body;
-                options.headers['content-type'] = multi.type;
-                break;
-            default : throw new Error('unsupported encoding:'+encoding);
-        }
-    }
-  }
-  //END FORM Hack
-
-  // If onResponse is boolean true, call back immediately when the response is known,
-  // not when the full request is complete.
-  options.onResponse = options.onResponse || noop
-  if(options.onResponse === true) {
-    options.onResponse = callback
-    options.callback = noop
-  }
-
-  // XXX Browsers do not like this.
-  //if(options.body)
-  //  options.headers['content-length'] = options.body.length;
-
-  // HTTP basic authentication
-  if(!options.headers.authorization && options.auth)
-    options.headers.authorization = 'Basic ' + b64_enc(options.auth.username + ':' + options.auth.password);
-
-  return run_xhr(options)
-}
-
-var req_seq = 0
-function run_xhr(options) {
-  var xhr = new XHR
-    , timed_out = false
-    , is_cors = is_crossDomain(options.uri)
-    , supports_cors = ('withCredentials' in xhr)
-
-  req_seq += 1
-  xhr.seq_id = req_seq
-  xhr.id = req_seq + ': ' + options.method + ' ' + options.uri
-  xhr._id = xhr.id // I know I will type "_id" from habit all the time.
-
-  if(is_cors && !supports_cors) {
-    var cors_err = new Error('Browser does not support cross-origin request: ' + options.uri)
-    cors_err.cors = 'unsupported'
-    return options.callback(cors_err, xhr)
-  }
-
-  xhr.timeoutTimer = setTimeout(too_late, options.timeout)
-  function too_late() {
-    timed_out = true
-    var er = new Error('ETIMEDOUT')
-    er.code = 'ETIMEDOUT'
-    er.duration = options.timeout
-
-    request.log.error('Timeout', { 'id':xhr._id, 'milliseconds':options.timeout })
-    return options.callback(er, xhr)
-  }
-
-  // Some states can be skipped over, so remember what is still incomplete.
-  var did = {'response':false, 'loading':false, 'end':false}
-
-  xhr.onreadystatechange = on_state_change
-  xhr.open(options.method, options.uri, true) // asynchronous
-  // Deal with requests for raw buffer response
-  if(options.encoding === null) {
-    xhr.responseType = 'arraybuffer';
-  }
-  if(is_cors)
-    xhr.withCredentials = !! options.withCredentials
-  xhr.send(options.body)
-  return xhr
-
-  function on_state_change(event) {
-    if(timed_out)
-      return request.log.debug('Ignoring timed out state change', {'state':xhr.readyState, 'id':xhr.id})
-
-    request.log.debug('State change', {'state':xhr.readyState, 'id':xhr.id, 'timed_out':timed_out})
-
-    if(xhr.readyState === XHR.OPENED) {
-      request.log.debug('Request started', {'id':xhr.id})
-      for (var key in options.headers)
-        xhr.setRequestHeader(key, options.headers[key])
-    }
-
-    else if(xhr.readyState === XHR.HEADERS_RECEIVED)
-      on_response()
-
-    else if(xhr.readyState === XHR.LOADING) {
-      on_response()
-      on_loading()
-    }
-
-    else if(xhr.readyState === XHR.DONE) {
-      on_response()
-      on_loading()
-      on_end()
-    }
-  }
-
-  function on_response() {
-    if(did.response)
-      return
-
-    did.response = true
-    request.log.debug('Got response', {'id':xhr.id, 'status':xhr.status})
-    clearTimeout(xhr.timeoutTimer)
-    xhr.statusCode = xhr.status // Node request compatibility
-
-    // Detect failed CORS requests.
-    if(is_cors && xhr.statusCode == 0) {
-      var cors_err = new Error('CORS request rejected: ' + options.uri)
-      cors_err.cors = 'rejected'
-
-      // Do not process this request further.
-      did.loading = true
-      did.end = true
-
-      return options.callback(cors_err, xhr)
-    }
-
-    options.onResponse(null, xhr)
-  }
-
-  function on_loading() {
-    if(did.loading)
-      return
-
-    did.loading = true
-    request.log.debug('Response body loading', {'id':xhr.id})
-    // TODO: Maybe simulate "data" events by watching xhr.responseText
-  }
-
-  function on_end() {
-    if(did.end)
-      return
-
-    did.end = true
-    request.log.debug('Request done', {'id':xhr.id})
-
-    if(options.encoding === null) {
-      xhr.body = new Buffer(new Uint8Array(xhr.response));
-    } else {
-      xhr.body = xhr.responseText
-      if(options.json) {
-        try        { xhr.body = JSON.parse(xhr.responseText) }
-        catch (er) { return options.callback(er, xhr)        }
-      }
-    }
-
-    options.callback(null, xhr, xhr.body)
-  }
-
-} // request
-
-request.withCredentials = false;
-request.DEFAULT_TIMEOUT = DEFAULT_TIMEOUT;
-
-//
-// defaults
-//
-
-request.defaults = function(options, requester) {
-  var def = function (method) {
-    var d = function (params, callback) {
-      if(typeof params === 'string')
-        params = {'uri': params};
-      else {
-        params = JSON.parse(JSON.stringify(params));
-      }
-      for (var i in options) {
-        if (params[i] === undefined) params[i] = options[i]
-      }
-      return method(params, callback)
-    }
-    return d
-  }
-  var de = def(request)
-  de.get = def(request.get)
-  de.post = def(request.post)
-  de.put = def(request.put)
-  de.head = def(request.head)
-  return de
-}
-
-//
-// HTTP method shortcuts
-//
-
-var shortcuts = [ 'get', 'put', 'post', 'head' ];
-shortcuts.forEach(function(shortcut) {
-  var method = shortcut.toUpperCase();
-  var func   = shortcut.toLowerCase();
-
-  request[func] = function(opts) {
-    if(typeof opts === 'string')
-      opts = {'method':method, 'uri':opts};
-    else {
-      opts = JSON.parse(JSON.stringify(opts));
-      opts.method = method;
-    }
-
-    var args = [opts].concat(Array.prototype.slice.apply(arguments, [1]));
-    return request.apply(this, args);
-  }
-})
-
-//
-// CouchDB shortcut
-//
-
-request.couch = function(options, callback) {
-  if(typeof options === 'string')
-    options = {'uri':options}
-
-  // Just use the request API to do JSON.
-  options.json = true
-  if(options.body)
-    options.json = options.body
-  delete options.body
-
-  callback = callback || noop
-
-  var xhr = request(options, couch_handler)
-  return xhr
-
-  function couch_handler(er, resp, body) {
-    if(er)
-      return callback(er, resp, body)
-
-    if((resp.statusCode < 200 || resp.statusCode > 299) && body.error) {
-      // The body is a Couch JSON object indicating the error.
-      er = new Error('CouchDB error: ' + (body.error.reason || body.error.error))
-      for (var key in body)
-        er[key] = body[key]
-      return callback(er, resp, body);
-    }
-
-    return callback(er, resp, body);
-  }
-}
-
-//
-// Utility
-//
-
-function noop() {}
-
-function getLogger() {
-  var logger = {}
-    , levels = ['trace', 'debug', 'info', 'warn', 'error']
-    , level, i
-
-  for(i = 0; i < levels.length; i++) {
-    level = levels[i]
-
-    logger[level] = noop
-    if(typeof console !== 'undefined' && console && console[level])
-      logger[level] = formatted(console, level)
-  }
-
-  return logger
-}
-
-function formatted(obj, method) {
-  return formatted_logger
-
-  function formatted_logger(str, context) {
-    if(typeof context === 'object')
-      str += ' ' + JSON.stringify(context)
-
-    return obj[method].call(obj, str)
-  }
-}
-
-// Return whether a URL is a cross-domain request.
-function is_crossDomain(url) {
-  var rurl = /^([\w\+\.\-]+:)(?:\/\/([^\/?#:]*)(?::(\d+))?)?/
-
-  // jQuery #8138, IE may throw an exception when accessing
-  // a field from window.location if document.domain has been set
-  var ajaxLocation
-  try { ajaxLocation = location.href }
-  catch (e) {
-    // Use the href attribute of an A element since IE will modify it given document.location
-    ajaxLocation = document.createElement( "a" );
-    ajaxLocation.href = "";
-    ajaxLocation = ajaxLocation.href;
-  }
-
-  var ajaxLocParts = rurl.exec(ajaxLocation.toLowerCase()) || []
-    , parts = rurl.exec(url.toLowerCase() )
-
-  var result = !!(
-    parts &&
-    (  parts[1] != ajaxLocParts[1]
-    || parts[2] != ajaxLocParts[2]
-    || (parts[3] || (parts[1] === "http:" ? 80 : 443)) != (ajaxLocParts[3] || (ajaxLocParts[1] === "http:" ? 80 : 443))
-    )
-  )
-
-  //console.debug('is_crossDomain('+url+') -> ' + result)
-  return result
-}
-
-// MIT License from http://phpjs.org/functions/base64_encode:358
-function b64_enc (data) {
-    // Encodes string using MIME base64 algorithm
-    var b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
-    var o1, o2, o3, h1, h2, h3, h4, bits, i = 0, ac = 0, enc="", tmp_arr = [];
-
-    if (!data) {
-        return data;
-    }
-
-    // assume utf8 data
-    // data = this.utf8_encode(data+'');
-
-    do { // pack three octets into four hexets
-        o1 = data.charCodeAt(i++);
-        o2 = data.charCodeAt(i++);
-        o3 = data.charCodeAt(i++);
-
-        bits = o1<<16 | o2<<8 | o3;
-
-        h1 = bits>>18 & 0x3f;
-        h2 = bits>>12 & 0x3f;
-        h3 = bits>>6 & 0x3f;
-        h4 = bits & 0x3f;
-
-        // use hexets to index into b64, and append result to encoded string
-        tmp_arr[ac++] = b64.charAt(h1) + b64.charAt(h2) + b64.charAt(h3) + b64.charAt(h4);
-    } while (i < data.length);
-
-    enc = tmp_arr.join('');
-
-    switch (data.length % 3) {
-        case 1:
-            enc = enc.slice(0, -2) + '==';
-        break;
-        case 2:
-            enc = enc.slice(0, -1) + '=';
-        break;
-    }
-
-    return enc;
-}
-module.exports = request;
-
-}).call(this,require("buffer").Buffer)
-},{"buffer":50}],49:[function(require,module,exports){
-// Copyright Joyent, Inc. and other Node contributors.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to permit
-// persons to whom the Software is furnished to do so, subject to the
-// following conditions:
-//
-// The above copyright notice and this permission notice shall be included
-// in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
-// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
-// USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-function EventEmitter() {
-  this._events = this._events || {};
-  this._maxListeners = this._maxListeners || undefined;
-}
-module.exports = EventEmitter;
-
-// Backwards-compat with node 0.10.x
-EventEmitter.EventEmitter = EventEmitter;
-
-EventEmitter.prototype._events = undefined;
-EventEmitter.prototype._maxListeners = undefined;
-
-// By default EventEmitters will print a warning if more than 10 listeners are
-// added to it. This is a useful default which helps finding memory leaks.
-EventEmitter.defaultMaxListeners = 10;
-
-// Obviously not all Emitters should be limited to 10. This function allows
-// that to be increased. Set to zero for unlimited.
-EventEmitter.prototype.setMaxListeners = function(n) {
-  if (!isNumber(n) || n < 0 || isNaN(n))
-    throw TypeError('n must be a positive number');
-  this._maxListeners = n;
-  return this;
-};
-
-EventEmitter.prototype.emit = function(type) {
-  var er, handler, len, args, i, listeners;
-
-  if (!this._events)
-    this._events = {};
-
-  // If there is no 'error' event listener then throw.
-  if (type === 'error') {
-    if (!this._events.error ||
-        (isObject(this._events.error) && !this._events.error.length)) {
-      er = arguments[1];
-      if (er instanceof Error) {
-        throw er; // Unhandled 'error' event
-      }
-      throw TypeError('Uncaught, unspecified "error" event.');
-    }
-  }
-
-  handler = this._events[type];
-
-  if (isUndefined(handler))
-    return false;
-
-  if (isFunction(handler)) {
-    switch (arguments.length) {
-      // fast cases
-      case 1:
-        handler.call(this);
-        break;
-      case 2:
-        handler.call(this, arguments[1]);
-        break;
-      case 3:
-        handler.call(this, arguments[1], arguments[2]);
-        break;
-      // slower
-      default:
-        len = arguments.length;
-        args = new Array(len - 1);
-        for (i = 1; i < len; i++)
-          args[i - 1] = arguments[i];
-        handler.apply(this, args);
-    }
-  } else if (isObject(handler)) {
-    len = arguments.length;
-    args = new Array(len - 1);
-    for (i = 1; i < len; i++)
-      args[i - 1] = arguments[i];
-
-    listeners = handler.slice();
-    len = listeners.length;
-    for (i = 0; i < len; i++)
-      listeners[i].apply(this, args);
-  }
-
-  return true;
-};
-
-EventEmitter.prototype.addListener = function(type, listener) {
-  var m;
-
-  if (!isFunction(listener))
-    throw TypeError('listener must be a function');
-
-  if (!this._events)
-    this._events = {};
-
-  // To avoid recursion in the case that type === "newListener"! Before
-  // adding it to the listeners, first emit "newListener".
-  if (this._events.newListener)
-    this.emit('newListener', type,
-              isFunction(listener.listener) ?
-              listener.listener : listener);
-
-  if (!this._events[type])
-    // Optimize the case of one listener. Don't need the extra array object.
-    this._events[type] = listener;
-  else if (isObject(this._events[type]))
-    // If we've already got an array, just append.
-    this._events[type].push(listener);
-  else
-    // Adding the second element, need to change to array.
-    this._events[type] = [this._events[type], listener];
-
-  // Check for listener leak
-  if (isObject(this._events[type]) && !this._events[type].warned) {
-    var m;
-    if (!isUndefined(this._maxListeners)) {
-      m = this._maxListeners;
-    } else {
-      m = EventEmitter.defaultMaxListeners;
-    }
-
-    if (m && m > 0 && this._events[type].length > m) {
-      this._events[type].warned = true;
-      console.error('(node) warning: possible EventEmitter memory ' +
-                    'leak detected. %d listeners added. ' +
-                    'Use emitter.setMaxListeners() to increase limit.',
-                    this._events[type].length);
-      if (typeof console.trace === 'function') {
-        // not supported in IE 10
-        console.trace();
-      }
-    }
-  }
-
-  return this;
-};
-
-EventEmitter.prototype.on = EventEmitter.prototype.addListener;
-
-EventEmitter.prototype.once = function(type, listener) {
-  if (!isFunction(listener))
-    throw TypeError('listener must be a function');
-
-  var fired = false;
-
-  function g() {
-    this.removeListener(type, g);
-
-    if (!fired) {
-      fired = true;
-      listener.apply(this, arguments);
-    }
-  }
-
-  g.listener = listener;
-  this.on(type, g);
-
-  return this;
-};
-
-// emits a 'removeListener' event iff the listener was removed
-EventEmitter.prototype.removeListener = function(type, listener) {
-  var list, position, length, i;
-
-  if (!isFunction(listener))
-    throw TypeError('listener must be a function');
-
-  if (!this._events || !this._events[type])
-    return this;
-
-  list = this._events[type];
-  length = list.length;
-  position = -1;
-
-  if (list === listener ||
-      (isFunction(list.listener) && list.listener === listener)) {
-    delete this._events[type];
-    if (this._events.removeListener)
-      this.emit('removeListener', type, listener);
-
-  } else if (isObject(list)) {
-    for (i = length; i-- > 0;) {
-      if (list[i] === listener ||
-          (list[i].listener && list[i].listener === listener)) {
-        position = i;
-        break;
-      }
-    }
-
-    if (position < 0)
-      return this;
-
-    if (list.length === 1) {
-      list.length = 0;
-      delete this._events[type];
-    } else {
-      list.splice(position, 1);
-    }
-
-    if (this._events.removeListener)
-      this.emit('removeListener', type, listener);
-  }
-
-  return this;
-};
-
-EventEmitter.prototype.removeAllListeners = function(type) {
-  var key, listeners;
-
-  if (!this._events)
-    return this;
-
-  // not listening for removeListener, no need to emit
-  if (!this._events.removeListener) {
-    if (arguments.length === 0)
-      this._events = {};
-    else if (this._events[type])
-      delete this._events[type];
-    return this;
-  }
-
-  // emit removeListener for all listeners on all events
-  if (arguments.length === 0) {
-    for (key in this._events) {
-      if (key === 'removeListener') continue;
-      this.removeAllListeners(key);
-    }
-    this.removeAllListeners('removeListener');
-    this._events = {};
-    return this;
-  }
-
-  listeners = this._events[type];
-
-  if (isFunction(listeners)) {
-    this.removeListener(type, listeners);
-  } else {
-    // LIFO order
-    while (listeners.length)
-      this.removeListener(type, listeners[listeners.length - 1]);
-  }
-  delete this._events[type];
-
-  return this;
-};
-
-EventEmitter.prototype.listeners = function(type) {
-  var ret;
-  if (!this._events || !this._events[type])
-    ret = [];
-  else if (isFunction(this._events[type]))
-    ret = [this._events[type]];
-  else
-    ret = this._events[type].slice();
-  return ret;
-};
-
-EventEmitter.listenerCount = function(emitter, type) {
-  var ret;
-  if (!emitter._events || !emitter._events[type])
-    ret = 0;
-  else if (isFunction(emitter._events[type]))
-    ret = 1;
-  else
-    ret = emitter._events[type].length;
-  return ret;
-};
-
-function isFunction(arg) {
-  return typeof arg === 'function';
-}
-
-function isNumber(arg) {
-  return typeof arg === 'number';
-}
-
-function isObject(arg) {
-  return typeof arg === 'object' && arg !== null;
-}
-
-function isUndefined(arg) {
-  return arg === void 0;
-}
-
-},{}],50:[function(require,module,exports){
+},{"./constants.js":30}],50:[function(require,module,exports){
 /*!
  * The buffer module from node.js, for the browser.
  *
