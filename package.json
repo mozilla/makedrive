@@ -53,7 +53,6 @@
     "MD5": "^1.2.1",
     "archiver": "^0.10.1",
     "async": "^0.9.0",
-    "bower": "1.3.8",
     "browser-request": "^0.3.1",
     "events": "^1.0.1",
     "express": "3.4.5",
@@ -74,6 +73,7 @@
   },
   "devDependencies": {
     "browserify": "^4.1.8",
+    "bower": "1.3.8",
     "chai": "^1.9.1",
     "grunt": "~0.4.1",
     "grunt-browserify": "^3.0.1",
