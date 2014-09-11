@@ -95,7 +95,7 @@
     "supertest": "0.13.x",
     "time-grunt": "^0.4.0"
   },
-  "main": "./server/index.js",
+  "main": "./client/src/index.js",
   "browser": {
     "request": "browser-request",
     "ws": "./client/src/client-ws.js"

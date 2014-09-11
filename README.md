@@ -42,7 +42,7 @@ Afterwards, install the npm modules -
 $ npm install
 ```
 
-Next, install submodules' dependencies -
+Next, install dependencies -
 ```
 $ grunt init
 ```

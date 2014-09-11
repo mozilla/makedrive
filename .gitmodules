@@ -1,3 +1,0 @@
-[submodule "client/thirdparty/filer"]
-	path = client/thirdparty/filer
-	url = https://github.com/js-platform/filer

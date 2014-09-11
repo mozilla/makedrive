@@ -150,13 +150,8 @@ module.exports = function(grunt) {
      * Testing & Dev tasks
      */
     exec: {
-      update_submodule: {
-        command: 'git submodule update --init',
-        stdout: true,
-        stderr: true
-      },
-      npm_install_submodule: {
-        command: 'bower install && grunt install && cd ./client/thirdparty/filer && npm install && rm -rf client',
+      grunt_bower: {
+        command: 'bower install && grunt install',
         stdout: true,
         stderr: true
       },
@@ -219,7 +214,7 @@ module.exports = function(grunt) {
   // Simple multi-tasks
   grunt.registerTask( "test", [ "jshint", "exec:run_mocha" ] );
   grunt.registerTask( "default", [ "test" ] );
-  grunt.registerTask( "init", [ "exec:update_submodule", "exec:npm_install_submodule" ] );
+  grunt.registerTask( "init", [ "exec:grunt_bower" ] );
   grunt.registerTask( "build", [ "init", "clean", "browserify:makedriveClient", "uglify" ] );
   grunt.registerTask( "install", [ "less", "uglify:dependencies", "uglify:angular_app" ] );
   grunt.registerTask( "dev", [ "less", "uglify:angular_app", "express:dev", "watch" ] );
