@@ -1,6 +1,6 @@
 {
   "name": "makedrive",
-  "version": "0.0.37",
+  "version": "0.0.38",
   "description": "Webmaker Filesystem",
   "scripts": {
     "postinstall": "bower install && grunt install",
