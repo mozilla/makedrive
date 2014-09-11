@@ -3,7 +3,6 @@
   "version": "0.0.38",
   "description": "Webmaker Filesystem",
   "scripts": {
-    "postinstall": "bower install && grunt install",
     "start": "node ./server/index.js",
     "test": "grunt init && grunt test"
   },

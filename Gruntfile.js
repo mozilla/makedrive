@@ -152,12 +152,12 @@ module.exports = function(grunt) {
     exec: {
       update_submodule: {
         command: 'git submodule update --init',
-        stdout: false,
+        stdout: true,
         stderr: true
       },
       npm_install_submodule: {
-        command: 'cd ./client/thirdparty/filer && npm install && rm -rf client',
-        stdout: false,
+        command: 'bower install && grunt install && cd ./client/thirdparty/filer && npm install && rm -rf client',
+        stdout: true,
         stderr: true
       },
       run_mocha: {
