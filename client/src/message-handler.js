@@ -29,7 +29,6 @@ function handleRequest(syncManager, data) {
   var fs = syncManager.fs;
   var sync = syncManager.sync;
   var session = syncManager.session;
-  var socket = syncManager.socket;
 
   function handleChecksumRequest() {
     var srcList = session.srcList = data.content.srcList;
@@ -46,7 +45,7 @@ function handleRequest(syncManager, data) {
 
       var message = SyncMessage.request.diffs;
       message.content = {checksums: checksums};
-      socket.send(message.stringify());
+      syncManager.send(message.stringify());
     });
   }
 
@@ -60,7 +59,7 @@ function handleRequest(syncManager, data) {
 
       var message = SyncMessage.response.diffs;
       message.content = {diffs: serializeDiff(diffs)};
-      socket.send(message.stringify());
+      syncManager.send(message.stringify());
     });
   }
 
@@ -81,26 +80,25 @@ function handleResponse(syncManager, data) {
   var fs = syncManager.fs;
   var sync = syncManager.sync;
   var session = syncManager.session;
-  var socket = syncManager.socket;
 
   function resendChecksums() {
     if(!session.srcList) {
       // Sourcelist was somehow reset, the entire downstream sync
       // needs to be restarted
       session.step = steps.FAILED;
-      socket.send(SyncMessage.response.reset.stringify());
+      syncManager.send(SyncMessage.response.reset.stringify());
       return onError(syncManager, new Error('Fatal Error: Could not sync filesystem from server...trying again!'));
     }
 
     rsync.checksums(fs, session.path, session.srcList, rsyncOptions, function(err, checksums) {
       if(err) {
-        socket.send(SyncMessage.response.reset.stringify());
+        syncManager.send(SyncMessage.response.reset.stringify());
         return onError(syncManager, err);
       }
 
       var message = SyncMessage.request.diffs;
       message.content = {checksums: checksums};
-      socket.send(message.stringify());
+      syncManager.send(message.stringify());
     });
   }
 
@@ -112,7 +110,7 @@ function handleResponse(syncManager, data) {
 
     rsync.sourceList(fs, session.path, rsyncOptions, function(err, srcList) {
       if(err){
-        socket.send(SyncMessage.request.reset.stringify());
+        syncManager.send(SyncMessage.request.reset.stringify());
         return onError(syncManager, err);
       }
 
@@ -120,7 +118,7 @@ function handleResponse(syncManager, data) {
 
       var message = SyncMessage.request.chksum;
       message.content = {srcList: srcList};
-      socket.send(message.stringify());
+      syncManager.send(message.stringify());
     });
   }
 
@@ -147,7 +145,7 @@ function handleResponse(syncManager, data) {
     rsync.patch(fs, session.path, diffs, rsyncOptions, function(err, paths) {
       if (err) {
         var message = SyncMessage.response.reset;
-        socket.send(message.stringify());
+        syncManager.send(message.stringify());
         return onError(syncManager, err);
       }
 
@@ -156,13 +154,13 @@ function handleResponse(syncManager, data) {
       rsync.pathChecksums(fs, paths.synced, size, function(err, checksums) {
         if(err) {
           var message = SyncMessage.response.reset;
-          socket.send(message.stringify());
+          syncManager.send(message.stringify());
           return onError(syncManager, err);
         }
 
         var message = SyncMessage.response.patch;
         message.content = {checksums: checksums, size: size};
-        socket.send(message.stringify());
+        syncManager.send(message.stringify());
       });
     });
   }
@@ -176,7 +174,7 @@ function handleResponse(syncManager, data) {
   function handleUpstreamResetResponse() {
     var message = SyncMessage.request.sync;
     message.content = {path: session.path};
-    socket.send(message.stringify());
+    syncManager.send(message.stringify());
   }
 
   if(data.is.sync) {
@@ -201,7 +199,6 @@ function handleResponse(syncManager, data) {
 function handleError(syncManager, data) {
   var sync = syncManager.sync;
   var session = syncManager.session;
-  var socket = syncManager.socket;
   var message = SyncMessage.response.reset;
 
   // DOWNSTREAM - ERROR
@@ -210,10 +207,10 @@ function handleError(syncManager, data) {
     session.state = states.READY;
     session.step = steps.SYNCED;
 
-    socket.send(message.stringify());
+    syncManager.send(message.stringify());
     onError(syncManager, new Error('Could not sync filesystem from server... trying again'));
   } else if(data.is.verification && session.is.patch && session.is.ready) {
-    socket.send(message.stringify());
+    syncManager.send(message.stringify());
     onError(syncManager, new Error('Could not sync filesystem from server... trying again'));
   } else if(data.is.locked && session.is.ready && session.is.synced) {
     // UPSTREAM - LOCK
@@ -223,7 +220,7 @@ function handleError(syncManager, data) {
             session.is.syncing) {
     // UPSTREAM - ERROR
     var message = SyncMessage.request.reset;
-    socket.send(message.stringify());
+    syncManager.send(message.stringify());
     onError(syncManager, new Error('Could not sync filesystem from server... trying again'));
   } else {
     onError(syncManager, new Error('Failed to sync with the server. Current step is: ' +

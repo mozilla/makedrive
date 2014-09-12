@@ -109,6 +109,10 @@ Option | Value | Definition
 ------ | ----- |----------------------------------
 `manual` | `true` | by default the filesystem syncs automatically in the background. This disables it.
 `memory` | `<Boolean>` | by default we use a persistent store (indexeddb or websql). Using memory=true overrides and uses a temporary ram disk.
+`autoReconnect` | `<Boolean>` | 'true' by default. When toggled to 'true', MakeDrive will automatically try to reconnect to the server if the WebSocket closed for any reason (e.g. no network connection or server crash).
+`reconnectAttempts` | `<Number>` | By default, MakeDrive will try to reconnect forever. This sets a maximum number for attempts, after which a reconnect_failed event will be emitted.
+`reconnectionDelay` | `<Number>` | Default to 1000 (ms). How long to wait before attempting a new reconnection.
+`reconnectionDelayMax` | `<Number>` | Default to 5000 (ms). Maximum amount of time to wait between reconnections. Each attempt increases the reconnection by the amount specified by reconnectionDelay.
 `provider` | `<Object>` | a Filer data provider to use instead of the default provider normally used. The provider given should already be instantiated (i.e., don't pass a constructor function).
 `forceCreate` | `<Boolean>` | by default we return the same fs instance with every call to `MakeDrive.fs()`. In some cases it is necessary to have multiple instances.  Using forceCreate=true does this.
 `interval` | `<Number>` | by default, the filesystem syncs every minute if auto syncing is turned on, otherwise the interval between syncs can be specified in ms.
@@ -135,6 +139,8 @@ Event | Description
 ----- | -------------------------------------------
  `'error'`| an error occurred while connecting/syncing. The error object is passed as the first arg to the event.
  `'connected'` | a connection was established with the sync server
+ `'reconnect_failed'` | fired when the maximum reconnect attempts is reached and a connection could not be made.
+ `'reconnecting'` | fired every time a reconnect attempt is made.
  `'disconnected'` | the connection to the sync server was lost, either due to the client or server.
  `'syncing'` | a sync with the server has begun. A subsequent `'completed'` or `'error'` event should follow at some point, indicating whether or not the sync was successful.
  `'completed'` | a sync has completed and was successful.

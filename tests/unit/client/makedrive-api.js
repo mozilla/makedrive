@@ -62,7 +62,7 @@ describe('MakeDrive Client API', function(){
 
         var layout = {'/file': 'data'};
 
-        var fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
+        var fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true, autoReconnect: false});
         var sync = fs.sync;
 
         var everSeenSyncing = false;
@@ -168,7 +168,7 @@ describe('MakeDrive Client API', function(){
 
     it('should restart a downstream sync on receiving a CHKSUM ERROR SyncMessage instead of a sourceList.', function(done){
       function clientLogic() {
-        var fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
+        var fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true, autoReconnect: false});
         var sync = fs.sync;
         sync.on('error', function(err) {
           // Confirm our client-side error is emitted as expected
@@ -220,7 +220,7 @@ describe('MakeDrive Client API', function(){
       var sync;
 
       function clientLogic() {
-        fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
+        fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true, autoReconnect: false});
         sync = fs.sync;
         sync.on('error', function(err) {
           // Confirm our client-side error is emitted as expected
@@ -285,7 +285,7 @@ describe('MakeDrive Client API', function(){
       var sync;
 
       function clientLogic() {
-        fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
+        fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true, autoReconnect: false});
         sync = fs.sync;
         sync.on('error', function(err) {
           // Confirm our client-side error is emitted as expected
@@ -354,7 +354,7 @@ describe('MakeDrive Client API', function(){
       var sync;
 
       function clientLogic() {
-        fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
+        fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true, autoReconnect: false});
         sync = fs.sync;
         sync.on('error', function(err) {
           // Confirm our client-side error is emitted as expected
@@ -432,7 +432,7 @@ describe('MakeDrive Client API', function(){
         var fs;
         var sync;
 
-        fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
+        fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true, autoReconnect: false});
         sync = fs.sync;
 
         sync.once('connected', function onConnected() {
@@ -468,7 +468,7 @@ describe('MakeDrive Client API', function(){
         var fs;
         var sync;
 
-        fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
+        fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true, autoReconnect: false});
         sync = fs.sync;
 
         sync.once('connected', function onConnected() {
@@ -504,7 +504,7 @@ describe('MakeDrive Client API', function(){
         var fs;
         var sync;
 
-        fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
+        fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true, autoReconnect: false});
         sync = fs.sync;
 
         sync.once('connected', function onConnected() {
@@ -531,7 +531,7 @@ describe('MakeDrive Client API', function(){
         var fs;
         var sync;
 
-        fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
+        fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true, autoReconnect: false});
         sync = fs.sync;
 
         sync.once('connected', function onConnected() {

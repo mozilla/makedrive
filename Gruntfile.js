@@ -104,7 +104,12 @@ module.exports = function(grunt) {
         files: ['package.json', 'bower.json'],
         commit: true,
         commitMessage: 'v%VERSION%',
-        commitFiles: ['package.json', 'bower.json', './client/dist/makedrive.js', './client/dist/makedrive.min.js'],
+        commitFiles: [
+          'package.json', 'bower.json', './client/dist/makedrive.js',
+          './client/dist/makedrive.min.js', './demo/js/compiled/app.min.js',
+          './demo/js/compiled/app.min.map', './demo/js/compiled/dependencies.min.js',
+          './demo/js/compiled/dependencies.min.map', './demo/assets/css/main.css'
+        ],
         createTag: true,
         tagName: 'v%VERSION%',
         tagMessage: 'v%VERSION%',
@@ -185,6 +190,13 @@ module.exports = function(grunt) {
           spawn: false
         }
       },
+      makeDriveClient: {
+        files: ['client/src/*.js'],
+        tasks: ["build"],
+        options: {
+          spawn: false
+        }
+      },
       less: {
         files: ['demo/assets/less/*'],
         tasks: ['less:dist'],
@@ -215,9 +227,9 @@ module.exports = function(grunt) {
   grunt.registerTask( "test", [ "jshint", "exec:run_mocha" ] );
   grunt.registerTask( "default", [ "test" ] );
   grunt.registerTask( "init", [ "exec:grunt_bower" ] );
-  grunt.registerTask( "build", [ "init", "clean", "browserify:makedriveClient", "uglify" ] );
+  grunt.registerTask( "build", [ "clean", "browserify:makedriveClient", "uglify:develop" ] );
   grunt.registerTask( "install", [ "less", "uglify:dependencies", "uglify:angular_app" ] );
-  grunt.registerTask( "dev", [ "less", "uglify:angular_app", "express:dev", "watch" ] );
+  grunt.registerTask( "dev", [ "less", "uglify:angular_app", "build", "express:dev", "watch" ] );
 
   // Complex multi-tasks
   grunt.registerTask('publish', 'Publish MakeDrive as a new version to NPM, bower and github.', function(patchLevel) {

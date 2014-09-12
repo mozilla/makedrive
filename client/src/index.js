@@ -82,7 +82,6 @@ var SyncFileSystem = require('./sync-filesystem.js');
 var Filer = require('../../lib/filer.js');
 var resolvePath = require('../../lib/sync-path-resolver').resolve;
 var EventEmitter = require('events').EventEmitter;
-var request = require('request');
 
 var MakeDrive = {};
 module.exports = MakeDrive;
@@ -90,6 +89,7 @@ module.exports = MakeDrive;
 function createFS(options) {
   options.manual = options.manual === true;
   options.memory = options.memory === true;
+  options.autoReconnect = options.autoReconnect !== false;
 
   // Use a supplied provider, in memory RAM disk, or Fallback provider (default).
   var provider;
@@ -281,7 +281,7 @@ function createFS(options) {
       // instance for all rsync operations on the filesystem, so that we
       // can untangle changes done by user vs. sync code.
       manager = new SyncManager(sync, _fs);
-      manager.init(url, token, function(err) {
+      manager.init(url, token, options, function(err) {
         if(err) {
           sync.onError(err);
           return;
@@ -297,40 +297,7 @@ function createFS(options) {
         };
       });
     }
-
-    // If we were provided a token, we can connect right away, otherwise
-    // we need to get one first via the /api/sync route
-    if(token) {
-      connect(token);
-    } else {
-      // Remove WebSocket protocol from URL, and swap for http:// or https://
-      // ws://drive.webmaker.org/ -> http://drive.webmaker.org/api/sync
-      var apiSync = url.replace(/^([^\/]*\/\/)?/, function(match, p1) {
-        return p1 === 'wss://' ? 'https://' : 'http://';
-      });
-      // Also add /api/sync to the end:
-      apiSync = apiSync.replace(/\/?$/, '/api/sync');
-
-      request({
-        url: apiSync,
-        method: 'GET',
-        json: true,
-        withCredentials: true
-      }, function(err, msg, body) {
-        var statusCode;
-        var error;
-
-        statusCode = msg && msg.statusCode;
-        error = statusCode !== 200 ?
-          { message: err || 'Unable to get token', code: statusCode } : null;
-
-        if(error) {
-          sync.onError(error);
-        } else {
-          connect(body);
-        }
-      });
-    }
+    connect(token);
   };
 
   // Disconnect from the server

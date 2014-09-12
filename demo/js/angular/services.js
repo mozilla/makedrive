@@ -8,7 +8,11 @@ angular
       var Make = {};
       $rootScope.canSave = false;
       var fs = $window.MakeDrive.fs({
-        manual: true
+        manual: true,
+        autoReconnect: true,
+        reconnectionDelay: 500,
+        reconnectionDelayMax: 1500,
+        reconnectAttempts: 20
       });
       var sh = $window.MakeDrive.fs().Shell();
       var sync = fs.sync;
