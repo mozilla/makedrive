@@ -5,7 +5,7 @@
 var filesystem = require( "./filesystem" );
 var SyncMessage = require('../../lib/syncmessage');
 var rsync = require('../../lib/rsync');
-var rsyncUtils = require('../../lib/rsync-utils');
+var rsyncUtils = rsync.utils;
 var diffHelper = require('../../lib/diff');
 var rsyncOptions = require('../../lib/constants').rsyncDefaults;
 var env = require('../../server/lib/environment');

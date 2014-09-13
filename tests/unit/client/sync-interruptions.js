@@ -3,7 +3,7 @@ var util = require('../../lib/util.js');
 var MakeDrive = require('../../../client/src');
 var Filer = require('../../../lib/filer.js');
 var SyncMessage = require('../../../lib/syncmessage.js');
-var rsync = require('../../../lib/rsync.js');
+var rsync = require('../../../lib/rsync');
 var WebSocketServer = require('ws').Server;
 var rsyncOptions = require('../../../lib/constants').rsyncDefaults;
 

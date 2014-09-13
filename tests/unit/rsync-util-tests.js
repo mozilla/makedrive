@@ -3,7 +3,7 @@ var expect = require('chai').expect;
 var fs;
 var provider;
 var CHUNK_SIZE = 5;
-var rsyncUtils = require('../../lib/rsync-utils.js');
+var rsyncUtils = require('../../lib/rsync').utils;
 
 function fsInit() {
   provider = new Filer.FileSystem.providers.Memory("rsync1");
@@ -24,12 +24,15 @@ function fsCleanup() {
 }
 
 describe('[Rsync Util Tests]', function() {
-  describe('Rsync PathChecksums', function() {
+  describe('Rsync GenerateChecksums', function() {
     beforeEach(fsInit);
     afterEach(fsCleanup);
+    console.log(rsyncUtils.pathChecksums);
 
     it('should be a function', function (done) {
-      expect(rsyncUtils.pathChecksums).to.be.a.function;
+      console.log(expect(rsyncUtils.pathChecksums).to.be.a.function);
+      expect(undefined).to.be.a.function;
+        expect(rsyncUtils.pathChecksums).to.be.a.function;
       done();
     });
 
@@ -82,15 +85,15 @@ describe('[Rsync Util Tests]', function() {
       });
     });
 
-    it('should return empty contents for a directory path', function (done) {
+    it('should return empty checksums for a directory path', function (done) {
       fs.mkdir('/dir', function (err) {
         expect(err).to.not.exist;
         rsyncUtils.generateChecksums(fs, ['/dir'], CHUNK_SIZE, function (err, checksums) {
           expect(err).to.not.exist;
           expect(checksums).to.exist;
           expect(checksums).to.have.length(1);
-          expect(checksums[0]).to.include.keys('contents');
-          expect(checksums[0].contents).to.have.length(0);
+          expect(checksums[0]).to.include.keys('checksum');
+          expect(checksums[0].checksum).to.have.length(0);
           done();
         });
       });
@@ -117,18 +120,16 @@ describe('[Rsync Util Tests]', function() {
                     expect(err).to.not.exist;
                     expect(checksums).to.exist;
                     expect(checksums).to.have.length(paths.length);
-                    expect(checksums[0]).to.include.keys('contents');
-                    expect(checksums[0].contents).to.have.length(2);
-                    expect(checksums[0].contents).to.have.members(['myfile1.txt', 'subdir1']);
+                    expect(checksums[0]).to.include.keys('checksum');
+                    expect(checksums[0].checksum).to.have.length(0);
                     expect(checksums[1]).to.include.keys('checksum');
                     expect(checksums[1].checksum).to.have.length.above(0);
-                    expect(checksums[2]).to.include.keys('contents');
-                    expect(checksums[2].contents).to.have.length(0);
-                    expect(checksums[3]).to.include.keys('contents');
-                    expect(checksums[3].contents).to.have.length(0);
-                    expect(checksums[4]).to.include.keys('contents');
-                    expect(checksums[4].contents).to.have.length(1);
-                    expect(checksums[4].contents).to.have.members(['myfile2.txt']);
+                    expect(checksums[2]).to.include.keys('checksum');
+                    expect(checksums[2].checksum).to.have.length(0);
+                    expect(checksums[3]).to.include.keys('checksum');
+                    expect(checksums[3].checksum).to.have.length(0);
+                    expect(checksums[4]).to.include.keys('checksum');
+                    expect(checksums[4].checksum).to.have.length(0);
                     expect(checksums[5]).to.include.keys('checksum');
                     expect(checksums[5].checksum).to.have.length.above(0);
                     done();

@@ -1,6 +1,6 @@
 var SyncMessage = require('../../lib/syncmessage');
 var rsync = require('../../lib/rsync');
-var rsyncUtils = require('../../lib/rsync-utils');
+var rsyncUtils = rsync.utils;
 var rsyncOptions = require('../../lib/constants').rsyncDefaults;
 var serializeDiff = require('../../lib/diff').serialize;
 var deserializeDiff = require('../../lib/diff').deserialize;
