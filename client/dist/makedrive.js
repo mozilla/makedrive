@@ -929,16 +929,18 @@ SyncManager.prototype.init = function(url, token, options, callback) {
   }
 
   function getToken(callback) {
-    // Remove WebSocket protocol from URL, and swap for http:// or https://
-    // ws://drive.webmaker.org/ -> http://drive.webmaker.org/api/sync
-    var apiSync = url.replace(/^([^\/]*\/\/)?/, function(match, p1) {
-      return p1 === 'wss://' ? 'https://' : 'http://';
-    });
-    // Also add /api/sync to the end:
-    apiSync = apiSync.replace(/\/?$/, '/api/sync');
+    var apiSyncURL;
+    try {
+      apiSyncURL = new URL(url);
+    } catch(err) {
+      sync.onError(err);
+    }
+    apiSyncURL.protocol = apiSyncURL.protocol === 'wss://' ? 'https://' : 'http://';
+    apiSyncURL.pathname = "api/sync"
+    apiSyncURL = apiSyncURL.toString();
 
     request({
-      url: apiSync,
+      url: apiSyncURL,
       method: 'GET',
       json: true,
       withCredentials: true
