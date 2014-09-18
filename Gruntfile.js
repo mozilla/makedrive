@@ -192,7 +192,7 @@ module.exports = function(grunt) {
       },
       makeDriveClient: {
         files: ['client/src/*.js'],
-        tasks: ["build"],
+        tasks: ["uglify:develop"],
         options: {
           spawn: false
         }
