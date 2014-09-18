@@ -1,5 +1,16 @@
 !function(e){if("object"==typeof exports&&"undefined"!=typeof module)module.exports=e();else if("function"==typeof define&&define.amd)define([],e);else{var f;"undefined"!=typeof window?f=window:"undefined"!=typeof global?f=global:"undefined"!=typeof self&&(f=self),f.MakeDrive=e()}}(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
 (function (global){
+function parse(url) { return new global.URL(url); }
+function format(urlObj) { return urlObj.toString(); }
+
+module.exports = {
+  parse: parse,
+  format: format
+};
+
+}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
+},{}],2:[function(require,module,exports){
+(function (global){
 /**
  * In node.js we want to use the ws module for WebSocket. In the
  * browser we can just use the native WebSocket. Here we adapt
@@ -28,7 +39,7 @@ global.WebSocket.prototype.once = global.WebSocket.prototype.once || function(ev
 module.exports = global.WebSocket;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],2:[function(require,module,exports){
+},{}],3:[function(require,module,exports){
 (function (global){
 /**
  * MakeDrive is a single/shared Filer filesystem instance with
@@ -381,7 +392,7 @@ MakeDrive.Path = Filer.Path;
 MakeDrive.Errors = Filer.Errors;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../../lib/filer.js":13,"../../lib/sync-path-resolver":17,"./sync-filesystem.js":4,"./sync-manager.js":5,"events":23}],3:[function(require,module,exports){
+},{"../../lib/filer.js":14,"../../lib/sync-path-resolver":18,"./sync-filesystem.js":5,"./sync-manager.js":6,"events":24}],4:[function(require,module,exports){
 var SyncMessage = require('../../lib/syncmessage');
 var rsync = require('../../lib/rsync');
 var rsyncOptions = require('../../lib/constants').rsyncDefaults;
@@ -633,7 +644,7 @@ function handleMessage(syncManager, data) {
 
 module.exports = handleMessage;
 
-},{"../../lib/constants":10,"../../lib/diff":11,"../../lib/filer":13,"../../lib/rsync":16,"../../lib/syncmessage":18,"./sync-states":6,"./sync-steps":7}],4:[function(require,module,exports){
+},{"../../lib/constants":11,"../../lib/diff":12,"../../lib/filer":14,"../../lib/rsync":17,"../../lib/syncmessage":19,"./sync-states":7,"./sync-steps":8}],5:[function(require,module,exports){
 /**
  * An extended Filer FileSystem with wrapped methods
  * for writing that manage file metadata (xattribs)
@@ -815,15 +826,16 @@ function SyncFileSystem(fs) {
 
 module.exports = SyncFileSystem;
 
-},{"../../lib/conflict.js":9,"../../lib/constants.js":10,"../../lib/filer-shell.js":12,"../../lib/filer.js":13,"../../lib/fs-utils.js":14,"../../lib/sync-path-resolver.js":17}],5:[function(require,module,exports){
+},{"../../lib/conflict.js":10,"../../lib/constants.js":11,"../../lib/filer-shell.js":13,"../../lib/filer.js":14,"../../lib/fs-utils.js":15,"../../lib/sync-path-resolver.js":18}],6:[function(require,module,exports){
 var SyncMessage = require( '../../lib/syncmessage' ),
     messageHandler = require('./message-handler'),
     states = require('./sync-states'),
     steps = require('./sync-steps'),
     WebSocket = require('ws'),
     fsUtils = require('../../lib/fs-utils'),
-    async = require('../../lib/async-lite.js');
-    var request = require('request');
+    async = require('../../lib/async-lite.js'),
+    request = require('request'),
+    url = require('url');
 
 function SyncManager(sync, fs) {
   var manager = this;
@@ -873,7 +885,7 @@ function SyncManager(sync, fs) {
   };
 }
 
-SyncManager.prototype.init = function(url, token, options, callback) {
+SyncManager.prototype.init = function(wsUrl, token, options, callback) {
   var manager = this;
   var session = manager.session;
   var sync = manager.sync;
@@ -931,13 +943,13 @@ SyncManager.prototype.init = function(url, token, options, callback) {
   function getToken(callback) {
     var apiSyncURL;
     try {
-      apiSyncURL = new URL(url);
+      apiSyncURL = url.parse(wsUrl);
     } catch(err) {
       sync.onError(err);
     }
-    apiSyncURL.protocol = apiSyncURL.protocol === 'wss://' ? 'https://' : 'http://';
-    apiSyncURL.pathname = "api/sync"
-    apiSyncURL = apiSyncURL.toString();
+    apiSyncURL.protocol = apiSyncURL.protocol === 'wss:' ? 'https:' : 'http:';
+    apiSyncURL.pathname = "api/sync";
+    apiSyncURL = url.format(apiSyncURL);
 
     request({
       url: apiSyncURL,
@@ -962,7 +974,7 @@ SyncManager.prototype.init = function(url, token, options, callback) {
 
   function connect(reconnecting) {
     clearTimeout(timeout);
-    socket = new WebSocket(url);
+    socket = new WebSocket(wsUrl);
     socket.onmessage = handleAuth;
     socket.onopen = function() {
       manager.socket = socket;
@@ -1079,21 +1091,20 @@ SyncManager.prototype.send = function(syncMessage) {
     ws.send(syncMessage);
   } catch(err) {
     // This will also emit an error.
-    sync.onError(err);
     ws.close();
   }
 };
 
 module.exports = SyncManager;
 
-},{"../../lib/async-lite.js":8,"../../lib/fs-utils":14,"../../lib/syncmessage":18,"./message-handler":3,"./sync-states":6,"./sync-steps":7,"request":22,"ws":1}],6:[function(require,module,exports){
+},{"../../lib/async-lite.js":9,"../../lib/fs-utils":15,"../../lib/syncmessage":19,"./message-handler":4,"./sync-states":7,"./sync-steps":8,"request":23,"url":1,"ws":2}],7:[function(require,module,exports){
 module.exports = {
   SYNCING: "SYNC IN PROGRESS",
   READY: "READY",
   ERROR: "ERROR",
   CLOSED: "CLOSED"
 };
-},{}],7:[function(require,module,exports){
+},{}],8:[function(require,module,exports){
 module.exports = {
   INIT: "SYNC INITIALIZED",
   CHKSUM: "CHECKSUM",
@@ -1102,11 +1113,11 @@ module.exports = {
   SYNCED: "SYNCED",
   FAILED: "FAILED"
 };
-},{}],8:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 // We're sharing Filer's same stripped-down version of async, in order to save space.
 module.exports = require('../node_modules/filer/lib/async.js');
 
-},{"../node_modules/filer/lib/async.js":24}],9:[function(require,module,exports){
+},{"../node_modules/filer/lib/async.js":25}],10:[function(require,module,exports){
 /**
  * Utility functions for working with Conflicted Files.
  */
@@ -1203,7 +1214,7 @@ module.exports = {
   removeFileConflict: removeFileConflict
 };
 
-},{"./constants.js":10,"./filer.js":13,"./fs-utils.js":14}],10:[function(require,module,exports){
+},{"./constants.js":11,"./filer.js":14,"./fs-utils.js":15}],11:[function(require,module,exports){
 module.exports = {
   rsyncDefaults: {
     size: 5,
@@ -1217,7 +1228,7 @@ module.exports = {
   }
 };
 
-},{}],11:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 /**
  * Functions to process lists of Node Diff objects (i.e.,
  * diffs of files, folders). A Node Diff object takes the
@@ -1297,15 +1308,15 @@ module.exports.deserialize = function(nodeDiffs) {
   return processFn(nodeDiffs, jsonToBuffer);
 };
 
-},{"./filer.js":13}],12:[function(require,module,exports){
+},{"./filer.js":14}],13:[function(require,module,exports){
 // Filer doesn't expose the Shell() ctor directly, so provide a shortcut.
 // See client/src/sync-filesystem.js
 module.exports = require('../node_modules/filer/src/shell/shell.js');
 
-},{"../node_modules/filer/src/shell/shell.js":47}],13:[function(require,module,exports){
+},{"../node_modules/filer/src/shell/shell.js":48}],14:[function(require,module,exports){
 module.exports = require('filer');
 
-},{"filer":37}],14:[function(require,module,exports){
+},{"filer":38}],15:[function(require,module,exports){
 /**
  * Extra common fs operations we do throughout MakeDrive.
  */
@@ -1416,7 +1427,7 @@ module.exports = {
   fgetUnsynced: fgetUnsynced
 };
 
-},{"./constants.js":10}],15:[function(require,module,exports){
+},{"./constants.js":11}],16:[function(require,module,exports){
 module.exports = {
   difference: function(arr,farr) {
     return arr.filter(function(v) {
@@ -1448,7 +1459,7 @@ module.exports = {
   }
 };
 
-},{}],16:[function(require,module,exports){
+},{}],17:[function(require,module,exports){
 // rsync.js
 // Implement rsync to sync between two Filer filesystems
 // Portions used from Node.js Anchor module
@@ -2544,7 +2555,7 @@ rsync.compareContents = function(fs, checksums, chunkSize, callback) {
 
 module.exports = rsync;
 
-},{"./async-lite.js":8,"./conflict.js":9,"./constants.js":10,"./filer.js":13,"./fs-utils.js":14,"./lodash-lite.js":15,"MD5":19}],17:[function(require,module,exports){
+},{"./async-lite.js":9,"./conflict.js":10,"./constants.js":11,"./filer.js":14,"./fs-utils.js":15,"./lodash-lite.js":16,"MD5":20}],18:[function(require,module,exports){
 /**
  * Sync path resolver is a library that provides
  * functionality to determine 'syncable' paths
@@ -2608,7 +2619,7 @@ pathResolver.resolve = function(path1, path2) {
 
 module.exports = pathResolver;
 
-},{"./filer":13}],18:[function(require,module,exports){
+},{"./filer":14}],19:[function(require,module,exports){
 // Constructor
 function SyncMessage(type, name, content) {
   if(!isValidType(type)) {
@@ -2819,7 +2830,7 @@ SyncMessage.error = {
 
 module.exports = SyncMessage;
 
-},{}],19:[function(require,module,exports){
+},{}],20:[function(require,module,exports){
 (function (Buffer){
 (function(){
   var crypt = require('crypt'),
@@ -2983,7 +2994,7 @@ module.exports = SyncMessage;
 })();
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":50,"charenc":20,"crypt":21}],20:[function(require,module,exports){
+},{"buffer":51,"charenc":21,"crypt":22}],21:[function(require,module,exports){
 var charenc = {
   // UTF-8 encoding
   utf8: {
@@ -3018,7 +3029,7 @@ var charenc = {
 
 module.exports = charenc;
 
-},{}],21:[function(require,module,exports){
+},{}],22:[function(require,module,exports){
 (function() {
   var base64map
       = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/',
@@ -3116,7 +3127,7 @@ module.exports = charenc;
   module.exports = crypt;
 })();
 
-},{}],22:[function(require,module,exports){
+},{}],23:[function(require,module,exports){
 // Browser Request
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -3592,7 +3603,7 @@ function b64_enc (data) {
 }
 module.exports = request;
 
-},{}],23:[function(require,module,exports){
+},{}],24:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -3895,7 +3906,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],24:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 (function (process){
 /*global setImmediate: false, setTimeout: false, console: false */
 
@@ -3984,7 +3995,7 @@ function isUndefined(arg) {
 }());
 
 }).call(this,require('_process'))
-},{"_process":54}],25:[function(require,module,exports){
+},{"_process":55}],26:[function(require,module,exports){
 // Based on https://github.com/diy/intercom.js/blob/master/lib/events.js
 // Copyright 2012 DIY Co Apache License, Version 2.0
 // http://www.apache.org/licenses/LICENSE-2.0
@@ -4057,7 +4068,7 @@ EventEmitter.prototype.removeAllListeners = pub.removeAllListeners;
 
 module.exports = EventEmitter;
 
-},{}],26:[function(require,module,exports){
+},{}],27:[function(require,module,exports){
 (function (global){
 // Based on https://github.com/diy/intercom.js/blob/master/lib/intercom.js
 // Copyright 2012 DIY Co Apache License, Version 2.0
@@ -4379,7 +4390,7 @@ Intercom.getInstance = (function() {
 module.exports = Intercom;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../src/shared.js":45,"./eventemitter.js":25}],27:[function(require,module,exports){
+},{"../src/shared.js":46,"./eventemitter.js":26}],28:[function(require,module,exports){
 // Cherry-picked bits of underscore.js, lodash.js
 
 /**
@@ -4478,7 +4489,7 @@ function nodash(value) {
 
 module.exports = nodash;
 
-},{}],28:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 /*
  * base64-arraybuffer
  * https://github.com/niklasvh/base64-arraybuffer
@@ -4539,7 +4550,7 @@ module.exports = nodash;
   };
 })("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/");
 
-},{}],29:[function(require,module,exports){
+},{}],30:[function(require,module,exports){
 (function (Buffer){
 function FilerBuffer (subject, encoding, nonZero) {
 
@@ -4566,7 +4577,7 @@ Object.keys(Buffer).forEach(function (p) {
 module.exports = FilerBuffer;
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":50}],30:[function(require,module,exports){
+},{"buffer":51}],31:[function(require,module,exports){
 var O_READ = 'READ';
 var O_WRITE = 'WRITE';
 var O_CREATE = 'CREATE';
@@ -4648,7 +4659,7 @@ module.exports = {
   }
 };
 
-},{}],31:[function(require,module,exports){
+},{}],32:[function(require,module,exports){
 var MODE_FILE = require('./constants.js').MODE_FILE;
 
 module.exports = function DirectoryEntry(id, type) {
@@ -4656,7 +4667,7 @@ module.exports = function DirectoryEntry(id, type) {
   this.type = type || MODE_FILE;
 };
 
-},{"./constants.js":30}],32:[function(require,module,exports){
+},{"./constants.js":31}],33:[function(require,module,exports){
 (function (Buffer){
 // Adapt encodings to work with Buffer or Uint8Array, they expect the latter
 function decode(buf) {
@@ -4673,7 +4684,7 @@ module.exports = {
 };
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":50}],33:[function(require,module,exports){
+},{"buffer":51}],34:[function(require,module,exports){
 var errors = {};
 [
   /**
@@ -4779,7 +4790,7 @@ var errors = {};
 
 module.exports = errors;
 
-},{}],34:[function(require,module,exports){
+},{}],35:[function(require,module,exports){
 var _ = require('../../lib/nodash.js');
 
 var Path = require('../path.js');
@@ -6859,7 +6870,7 @@ module.exports = {
   ftruncate: ftruncate
 };
 
-},{"../../lib/nodash.js":27,"../buffer.js":29,"../constants.js":30,"../directory-entry.js":31,"../encoding.js":32,"../errors.js":33,"../node.js":38,"../open-file-description.js":39,"../path.js":40,"../stats.js":48,"../super-node.js":49}],35:[function(require,module,exports){
+},{"../../lib/nodash.js":28,"../buffer.js":30,"../constants.js":31,"../directory-entry.js":32,"../encoding.js":33,"../errors.js":34,"../node.js":39,"../open-file-description.js":40,"../path.js":41,"../stats.js":49,"../super-node.js":50}],36:[function(require,module,exports){
 var _ = require('../../lib/nodash.js');
 
 var isNullPath = require('../path.js').isNull;
@@ -7202,7 +7213,7 @@ FileSystem.prototype.Shell = function(options) {
 
 module.exports = FileSystem;
 
-},{"../../lib/intercom.js":26,"../../lib/nodash.js":27,"../constants.js":30,"../errors.js":33,"../fs-watcher.js":36,"../path.js":40,"../providers/index.js":41,"../shared.js":45,"../shell/shell.js":47,"./implementation.js":34}],36:[function(require,module,exports){
+},{"../../lib/intercom.js":27,"../../lib/nodash.js":28,"../constants.js":31,"../errors.js":34,"../fs-watcher.js":37,"../path.js":41,"../providers/index.js":42,"../shared.js":46,"../shell/shell.js":48,"./implementation.js":35}],37:[function(require,module,exports){
 var EventEmitter = require('../lib/eventemitter.js');
 var Path = require('./path.js');
 var Intercom = require('../lib/intercom.js');
@@ -7266,7 +7277,7 @@ FSWatcher.prototype.constructor = FSWatcher;
 
 module.exports = FSWatcher;
 
-},{"../lib/eventemitter.js":25,"../lib/intercom.js":26,"./path.js":40}],37:[function(require,module,exports){
+},{"../lib/eventemitter.js":26,"../lib/intercom.js":27,"./path.js":41}],38:[function(require,module,exports){
 module.exports = {
   FileSystem: require('./filesystem/interface.js'),
   Buffer: require('./buffer.js'),
@@ -7274,7 +7285,7 @@ module.exports = {
   Errors: require('./errors.js')
 };
 
-},{"./buffer.js":29,"./errors.js":33,"./filesystem/interface.js":35,"./path.js":40}],38:[function(require,module,exports){
+},{"./buffer.js":30,"./errors.js":34,"./filesystem/interface.js":36,"./path.js":41}],39:[function(require,module,exports){
 var MODE_FILE = require('./constants.js').MODE_FILE;
 
 function Node(options) {
@@ -7329,7 +7340,7 @@ Node.create = function(options, callback) {
 
 module.exports = Node;
 
-},{"./constants.js":30}],39:[function(require,module,exports){
+},{"./constants.js":31}],40:[function(require,module,exports){
 module.exports = function OpenFileDescription(path, id, flags, position) {
   this.path = path;
   this.id = id;
@@ -7337,7 +7348,7 @@ module.exports = function OpenFileDescription(path, id, flags, position) {
   this.position = position;
 };
 
-},{}],40:[function(require,module,exports){
+},{}],41:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -7563,7 +7574,7 @@ module.exports = {
   isNull: isNull
 };
 
-},{}],41:[function(require,module,exports){
+},{}],42:[function(require,module,exports){
 var IndexedDB = require('./indexeddb.js');
 var WebSQL = require('./websql.js');
 var Memory = require('./memory.js');
@@ -7600,7 +7611,7 @@ module.exports = {
   }())
 };
 
-},{"./indexeddb.js":42,"./memory.js":43,"./websql.js":44}],42:[function(require,module,exports){
+},{"./indexeddb.js":43,"./memory.js":44,"./websql.js":45}],43:[function(require,module,exports){
 (function (global){
 var FILE_SYSTEM_NAME = require('../constants.js').FILE_SYSTEM_NAME;
 var FILE_STORE_NAME = require('../constants.js').FILE_STORE_NAME;
@@ -7746,7 +7757,7 @@ IndexedDB.prototype.getReadWriteContext = function() {
 module.exports = IndexedDB;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../buffer.js":29,"../constants.js":30,"../errors.js":33}],43:[function(require,module,exports){
+},{"../buffer.js":30,"../constants.js":31,"../errors.js":34}],44:[function(require,module,exports){
 var FILE_SYSTEM_NAME = require('../constants.js').FILE_SYSTEM_NAME;
 // NOTE: prefer setImmediate to nextTick for proper recursion yielding.
 // see https://github.com/js-platform/filer/pull/24
@@ -7838,7 +7849,7 @@ Memory.prototype.getReadWriteContext = function() {
 
 module.exports = Memory;
 
-},{"../../lib/async.js":24,"../constants.js":30}],44:[function(require,module,exports){
+},{"../../lib/async.js":25,"../constants.js":31}],45:[function(require,module,exports){
 (function (global){
 var FILE_SYSTEM_NAME = require('../constants.js').FILE_SYSTEM_NAME;
 var FILE_STORE_NAME = require('../constants.js').FILE_STORE_NAME;
@@ -8013,7 +8024,7 @@ WebSQL.prototype.getReadWriteContext = function() {
 module.exports = WebSQL;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../buffer.js":29,"../constants.js":30,"../errors.js":33,"base64-arraybuffer":28}],45:[function(require,module,exports){
+},{"../buffer.js":30,"../constants.js":31,"../errors.js":34,"base64-arraybuffer":29}],46:[function(require,module,exports){
 function guid() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
     var r = Math.random()*16|0, v = c == 'x' ? r : (r&0x3|0x8);
@@ -8041,7 +8052,7 @@ module.exports = {
   nop: nop
 };
 
-},{}],46:[function(require,module,exports){
+},{}],47:[function(require,module,exports){
 var defaults = require('../constants.js').ENVIRONMENT;
 
 module.exports = function Environment(env) {
@@ -8058,7 +8069,7 @@ module.exports = function Environment(env) {
   };
 };
 
-},{"../constants.js":30}],47:[function(require,module,exports){
+},{"../constants.js":31}],48:[function(require,module,exports){
 var Path = require('../path.js');
 var Errors = require('../errors.js');
 var Environment = require('./environment.js');
@@ -8489,7 +8500,7 @@ Shell.prototype.mkdirp = function(path, callback) {
 
 module.exports = Shell;
 
-},{"../../lib/async.js":24,"../encoding.js":32,"../errors.js":33,"../path.js":40,"./environment.js":46}],48:[function(require,module,exports){
+},{"../../lib/async.js":25,"../encoding.js":33,"../errors.js":34,"../path.js":41,"./environment.js":47}],49:[function(require,module,exports){
 var Constants = require('./constants.js');
 
 function Stats(fileNode, devName) {
@@ -8526,7 +8537,7 @@ function() {
 
 module.exports = Stats;
 
-},{"./constants.js":30}],49:[function(require,module,exports){
+},{"./constants.js":31}],50:[function(require,module,exports){
 var Constants = require('./constants.js');
 
 function SuperNode(options) {
@@ -8554,7 +8565,7 @@ SuperNode.create = function(options, callback) {
 
 module.exports = SuperNode;
 
-},{"./constants.js":30}],50:[function(require,module,exports){
+},{"./constants.js":31}],51:[function(require,module,exports){
 /*!
  * The buffer module from node.js, for the browser.
  *
@@ -9606,7 +9617,7 @@ function decodeUtf8Char (str) {
   }
 }
 
-},{"base64-js":51,"ieee754":52,"is-array":53}],51:[function(require,module,exports){
+},{"base64-js":52,"ieee754":53,"is-array":54}],52:[function(require,module,exports){
 var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 ;(function (exports) {
@@ -9728,7 +9739,7 @@ var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 	exports.fromByteArray = uint8ToBase64
 }(typeof exports === 'undefined' ? (this.base64js = {}) : exports))
 
-},{}],52:[function(require,module,exports){
+},{}],53:[function(require,module,exports){
 exports.read = function(buffer, offset, isLE, mLen, nBytes) {
   var e, m,
       eLen = nBytes * 8 - mLen - 1,
@@ -9814,7 +9825,7 @@ exports.write = function(buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128;
 };
 
-},{}],53:[function(require,module,exports){
+},{}],54:[function(require,module,exports){
 
 /**
  * isArray
@@ -9849,7 +9860,7 @@ module.exports = isArray || function (val) {
   return !! val && '[object Array]' == str.call(val);
 };
 
-},{}],54:[function(require,module,exports){
+},{}],55:[function(require,module,exports){
 // shim for using process in browser
 
 var process = module.exports = {};
@@ -9914,5 +9925,5 @@ process.chdir = function (dir) {
     throw new Error('process.chdir is not supported');
 };
 
-},{}]},{},[2])(2)
+},{}]},{},[3])(3)
 });
