@@ -98,6 +98,7 @@
   "main": "./client/src/index.js",
   "browser": {
     "request": "browser-request",
+    "url": "./client/src/client-url.js",
     "ws": "./client/src/client-ws.js"
   }
 }

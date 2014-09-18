@@ -4,8 +4,9 @@ var SyncMessage = require( '../../lib/syncmessage' ),
     steps = require('./sync-steps'),
     WebSocket = require('ws'),
     fsUtils = require('../../lib/fs-utils'),
-    async = require('../../lib/async-lite.js');
-    var request = require('request');
+    async = require('../../lib/async-lite.js'),
+    request = require('request'),
+    url = require('url');
 
 function SyncManager(sync, fs) {
   var manager = this;
@@ -55,7 +56,7 @@ function SyncManager(sync, fs) {
   };
 }
 
-SyncManager.prototype.init = function(url, token, options, callback) {
+SyncManager.prototype.init = function(wsUrl, token, options, callback) {
   var manager = this;
   var session = manager.session;
   var sync = manager.sync;
@@ -113,13 +114,13 @@ SyncManager.prototype.init = function(url, token, options, callback) {
   function getToken(callback) {
     var apiSyncURL;
     try {
-      apiSyncURL = new URL(url);
+      apiSyncURL = url.parse(wsUrl);
     } catch(err) {
       sync.onError(err);
     }
-    apiSyncURL.protocol = apiSyncURL.protocol === 'wss://' ? 'https://' : 'http://';
+    apiSyncURL.protocol = apiSyncURL.protocol === 'wss:' ? 'https:' : 'http:';
     apiSyncURL.pathname = "api/sync";
-    apiSyncURL = apiSyncURL.toString();
+    apiSyncURL = url.format(apiSyncURL);
 
     request({
       url: apiSyncURL,
@@ -144,7 +145,7 @@ SyncManager.prototype.init = function(url, token, options, callback) {
 
   function connect(reconnecting) {
     clearTimeout(timeout);
-    socket = new WebSocket(url);
+    socket = new WebSocket(wsUrl);
     socket.onmessage = handleAuth;
     socket.onopen = function() {
       manager.socket = socket;
@@ -261,7 +262,6 @@ SyncManager.prototype.send = function(syncMessage) {
     ws.send(syncMessage);
   } catch(err) {
     // This will also emit an error.
-    sync.onError(err);
     ws.close();
   }
 };
