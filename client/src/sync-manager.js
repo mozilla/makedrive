@@ -118,7 +118,7 @@ SyncManager.prototype.init = function(url, token, options, callback) {
       sync.onError(err);
     }
     apiSyncURL.protocol = apiSyncURL.protocol === 'wss://' ? 'https://' : 'http://';
-    apiSyncURL.pathname = "api/sync"
+    apiSyncURL.pathname = "api/sync";
     apiSyncURL = apiSyncURL.toString();
 
     request({
