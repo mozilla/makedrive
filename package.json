@@ -1,6 +1,6 @@
 {
   "name": "makedrive",
-  "version": "0.0.40",
+  "version": "0.0.41",
   "description": "Webmaker Filesystem",
   "scripts": {
     "start": "node ./server/index.js",
