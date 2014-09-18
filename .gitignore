@@ -28,4 +28,3 @@ node_modules
 .env
 client/dist
 client/vendors
-demo/js/compiled
