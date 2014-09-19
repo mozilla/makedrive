@@ -4,6 +4,7 @@ var fs;
 var provider;
 var CHUNK_SIZE = 5;
 var rsyncUtils = require('../../lib/rsync').utils;
+var testUtils = require('../lib/util.js');
 
 function fsInit() {
   provider = new Filer.FileSystem.providers.Memory("rsync1");
@@ -27,13 +28,9 @@ describe('[Rsync Util Tests]', function() {
   describe('Rsync GenerateChecksums', function() {
     beforeEach(fsInit);
     afterEach(fsCleanup);
-    console.log(rsyncUtils.pathChecksums);
 
-    it('should be a function', function (done) {
-      console.log(expect(rsyncUtils.pathChecksums).to.be.a.function);
-      expect(undefined).to.be.a.function;
-        expect(rsyncUtils.pathChecksums).to.be.a.function;
-      done();
+    it('should be a function', function() {
+      expect(rsyncUtils.generateChecksums).to.be.a.function;
     });
 
     it('should return an EINVAL error if a filesystem is not provided', function (done) {
@@ -87,7 +84,7 @@ describe('[Rsync Util Tests]', function() {
 
     it('should return empty checksums for a directory path', function (done) {
       fs.mkdir('/dir', function (err) {
-        expect(err).to.not.exist;
+        if(err) throw err;
         rsyncUtils.generateChecksums(fs, ['/dir'], CHUNK_SIZE, function (err, checksums) {
           expect(err).to.not.exist;
           expect(checksums).to.exist;
@@ -100,44 +97,34 @@ describe('[Rsync Util Tests]', function() {
     });
 
     it('should succeed generating checksums for a list of paths', function (done) {
-      var paths = ['/dir1', '/dir1/myfile1.txt', '/dir1/subdir1',
-                   '/dir2',
-                   '/dir3', '/dir3/myfile2.txt'];
+      var layout = {'/dir1': null, 
+                    '/dir1/myfile1.txt': 'This is a file', 
+                    '/dir1/subdir1': null,
+                    '/dir2': null,
+                    '/dir3': null, 
+                    '/dir3/myfile2.txt': 'This is also a file'};
+      var paths = Object.keys(layout);
 
-      fs.mkdir('/dir1', function (err) {
-        expect(err).to.not.exist;
-        fs.writeFile('/dir1/myfile1.txt', 'This is a file', function (err) {
+      testUtils.createFilesystemLayout(fs, layout, function (err) {
+        if(err) throw err;
+
+        rsyncUtils.generateChecksums(fs, paths, CHUNK_SIZE, function (err, checksums) {
           expect(err).to.not.exist;
-          fs.mkdir('/dir2', function (err) {
-            expect(err).to.not.exist;
-            fs.mkdir('/dir1/subdir1', function (err) {
-              expect(err).to.not.exist;
-              fs.mkdir('/dir3', function (err) {
-                expect(err).to.not.exist;
-                fs.writeFile('/dir3/myfile2.txt', 'This is also a file', function (err) {
-                  expect(err).to.not.exist;
-                  rsyncUtils.generateChecksums(fs, paths, CHUNK_SIZE, function (err, checksums) {
-                    expect(err).to.not.exist;
-                    expect(checksums).to.exist;
-                    expect(checksums).to.have.length(paths.length);
-                    expect(checksums[0]).to.include.keys('checksum');
-                    expect(checksums[0].checksum).to.have.length(0);
-                    expect(checksums[1]).to.include.keys('checksum');
-                    expect(checksums[1].checksum).to.have.length.above(0);
-                    expect(checksums[2]).to.include.keys('checksum');
-                    expect(checksums[2].checksum).to.have.length(0);
-                    expect(checksums[3]).to.include.keys('checksum');
-                    expect(checksums[3].checksum).to.have.length(0);
-                    expect(checksums[4]).to.include.keys('checksum');
-                    expect(checksums[4].checksum).to.have.length(0);
-                    expect(checksums[5]).to.include.keys('checksum');
-                    expect(checksums[5].checksum).to.have.length.above(0);
-                    done();
-                  });
-                });
-              });
-            });
-          });
+          expect(checksums).to.exist;
+          expect(checksums).to.have.length(paths.length);
+          expect(checksums[0]).to.include.keys('checksum');
+          expect(checksums[0].checksum).to.have.length(0);
+          expect(checksums[1]).to.include.keys('checksum');
+          expect(checksums[1].checksum).to.have.length.above(0);
+          expect(checksums[2]).to.include.keys('checksum');
+          expect(checksums[2].checksum).to.have.length(0);
+          expect(checksums[3]).to.include.keys('checksum');
+          expect(checksums[3].checksum).to.have.length(0);
+          expect(checksums[4]).to.include.keys('checksum');
+          expect(checksums[4].checksum).to.have.length(0);
+          expect(checksums[5]).to.include.keys('checksum');
+          expect(checksums[5].checksum).to.have.length.above(0);
+          done();
         });
       });
     });
@@ -190,86 +177,59 @@ describe('[Rsync Util Tests]', function() {
     });
 
     it('should return true if checksums match contents for a set of paths', function (done) {
-      var paths = ['/dir1', '/dir1/myfile1.txt', '/dir1/subdir1',
-                   '/dir2',
-                   '/dir3', '/dir3/myfile2.txt'];
+      var layout = {'/dir1': null, 
+                    '/dir1/myfile1.txt': 'This is a file', 
+                    '/dir1/subdir1': null,
+                    '/dir2': null,
+                    '/dir3': null, 
+                    '/dir3/myfile2.txt': 'This is also a file'};
+      var paths = Object.keys(layout);
 
-      fs.mkdir('/dir1', function (err) {
-        expect(err).to.not.exist;
-        fs.writeFile('/dir1/myfile1.txt', 'This is a file', function (err) {
+      testUtils.createFilesystemLayout(fs, layout, function (err) {
+        if(err) throw err;
+
+        rsyncUtils.generateChecksums(fs, paths, CHUNK_SIZE, function (err, checksums) {
           expect(err).to.not.exist;
-          fs.mkdir('/dir2', function (err) {
+          expect(checksums).to.exist;
+          rsyncUtils.compareContents(fs, checksums, CHUNK_SIZE, function (err, equal) {
             expect(err).to.not.exist;
-            fs.mkdir('/dir1/subdir1', function (err) {
-              expect(err).to.not.exist;
-              fs.mkdir('/dir3', function (err) {
-                expect(err).to.not.exist;
-                fs.writeFile('/dir3/myfile2.txt', 'This is also a file', function (err) {
-                  expect(err).to.not.exist;
-                  rsyncUtils.generateChecksums(fs, paths, CHUNK_SIZE, function (err, checksums) {
-                    expect(err).to.not.exist;
-                    expect(checksums).to.exist;
-                    rsyncUtils.compareContents(fs, checksums, CHUNK_SIZE, function (err, equal) {
-                      expect(err).to.not.exist;
-                      expect(equal).to.equal(true);
-                      done();
-                    });
-                  });
-                });
-              });
-            });
+            expect(equal).to.equal(true);
+            done();
           });
         });
       });
     });
 
     it('should return false if checksums do not match contents for a set of paths', function (done) {
-      var paths = ['/dir1', '/dir1/myfile1.txt', '/dir1/subdir1',
-                   '/dir2',
-                   '/dir3', '/dir3/myfile2.txt'];
+      var layout1 = {'/dir1': null, 
+                    '/dir1/myfile1.txt': 'This is a file', 
+                    '/dir1/subdir1': null,
+                    '/dir2': null,
+                    '/dir3': null, 
+                    '/dir3/myfile2.txt': 'This is also a file'};
+      var layout2 = {'/dir1': null, 
+                    '/dir1/myfile1.txt': 'This is a file',
+                    '/dir1/subdir1': null,
+                    '/dir2': null,
+                    '/dir3': null, 
+                    '/dir3/myfile2.txt': 'This is also a filr'};
+      var paths = Object.keys(layout1);
+      
+      testUtils.createFilesystemLayout(fs, layout1, function (err) {
+        if(err) throw err;
 
-      fs.mkdir('/dir1', function (err) {
-        expect(err).to.not.exist;
-        fs.writeFile('/dir1/myfile1.txt', 'This is a file', function (err) {
-          expect(err).to.not.exist;
-          fs.mkdir('/dir2', function (err) {
+        testUtils.createFilesystemLayout(fs2, layout2, function (err){
+          if(err) throw err;
+
+          rsyncUtils.generateChecksums(fs, paths, CHUNK_SIZE, function (err, checksums) {
             expect(err).to.not.exist;
-            fs.mkdir('/dir1/subdir1', function (err) {
+            expect(checksums).to.exist;
+            rsyncUtils.generateChecksums(fs2, paths, CHUNK_SIZE, function (err, checksums2) {
               expect(err).to.not.exist;
-              fs.mkdir('/dir3', function (err) {
+              rsyncUtils.compareContents(fs2, checksums, CHUNK_SIZE, function (err, equal) {
                 expect(err).to.not.exist;
-                fs.writeFile('/dir3/myfile2.txt', 'This is also a file', function (err) {
-                  expect(err).to.not.exist;
-                  fs2.mkdir('/dir1', function (err) {
-                    expect(err).to.not.exist;
-                    fs2.writeFile('/dir1/myfile1.txt', 'This is a file', function (err) {
-                      expect(err).to.not.exist;
-                      fs2.mkdir('/dir2', function (err) {
-                        expect(err).to.not.exist;
-                        fs2.mkdir('/dir1/subdir1', function (err) {
-                          expect(err).to.not.exist;
-                          fs2.mkdir('/dir3', function (err) {
-                            expect(err).to.not.exist;
-                            fs2.writeFile('/dir3/myfile2.txt', 'This is also a filr', function (err) {
-                              expect(err).to.not.exist;
-                              rsyncUtils.generateChecksums(fs, paths, CHUNK_SIZE, function (err, checksums) {
-                                expect(err).to.not.exist;
-                                expect(checksums).to.exist;
-                                rsyncUtils.generateChecksums(fs2, paths, CHUNK_SIZE, function (err, checksums2) {
-                                  rsyncUtils.compareContents(fs2, checksums, CHUNK_SIZE, function (err, equal) {
-                                    expect(err).to.not.exist;
-                                    expect(equal).to.equal(false);
-                                    done();
-                                  });
-                                });
-                              });
-                            });
-                          });
-                        });
-                      });
-                    });
-                  });
-                });
+                expect(equal).to.equal(false);
+                done();
               });
             });
           });
