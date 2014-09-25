@@ -147,7 +147,12 @@ function createFS(options) {
   // Our fs instance is a modified Filer fs, with extra sync awareness
   // for conflict mediation, etc.  We keep an internal reference to the
   // raw Filer fs, and use the SyncFileSystem instance externally.
-  var _fs = new Filer.FileSystem({provider: provider});
+  var _fs = new Filer.FileSystem({provider: provider}, function(err) {
+    // FS creation errors will be logged for now for debugging purposes
+    if(err) {
+      console.error('MakeDrive Filesystem Initialization Error: ', err);
+    }
+  });
   var fs = new SyncFileSystem(_fs);
   var sync = fs.sync = new EventEmitter();
   var manager;
@@ -3200,6 +3205,7 @@ module.exports = charenc;
 })();
 
 },{}],27:[function(require,module,exports){
+(function (Buffer){
 // Browser Request
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -3398,6 +3404,10 @@ function run_xhr(options) {
 
   xhr.onreadystatechange = on_state_change
   xhr.open(options.method, options.uri, true) // asynchronous
+  // Deal with requests for raw buffer response
+  if(options.encoding === null) {
+    xhr.responseType = 'arraybuffer';
+  }
   if(is_cors)
     xhr.withCredentials = !! options.withCredentials
   xhr.send(options.body)
@@ -3470,10 +3480,14 @@ function run_xhr(options) {
     did.end = true
     request.log.debug('Request done', {'id':xhr.id})
 
-    xhr.body = xhr.responseText
-    if(options.json) {
-      try        { xhr.body = JSON.parse(xhr.responseText) }
-      catch (er) { return options.callback(er, xhr)        }
+    if(options.encoding === null) {
+      xhr.body = new Buffer(new Uint8Array(xhr.response));
+    } else {
+      xhr.body = xhr.responseText
+      if(options.json) {
+        try        { xhr.body = JSON.parse(xhr.responseText) }
+        catch (er) { return options.callback(er, xhr)        }
+      }
     }
 
     options.callback(null, xhr, xhr.body)
@@ -3675,7 +3689,8 @@ function b64_enc (data) {
 }
 module.exports = request;
 
-},{}],28:[function(require,module,exports){
+}).call(this,require("buffer").Buffer)
+},{"buffer":55}],28:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -3735,8 +3750,10 @@ EventEmitter.prototype.emit = function(type) {
       er = arguments[1];
       if (er instanceof Error) {
         throw er; // Unhandled 'error' event
+      } else {
+        throw TypeError('Uncaught, unspecified "error" event.');
       }
-      throw TypeError('Uncaught, unspecified "error" event.');
+      return false;
     }
   }
 
