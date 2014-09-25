@@ -104,7 +104,12 @@ function createFS(options) {
   // Our fs instance is a modified Filer fs, with extra sync awareness
   // for conflict mediation, etc.  We keep an internal reference to the
   // raw Filer fs, and use the SyncFileSystem instance externally.
-  var _fs = new Filer.FileSystem({provider: provider});
+  var _fs = new Filer.FileSystem({provider: provider}, function(err) {
+    // FS creation errors will be logged for now for debugging purposes
+    if(err) {
+      console.error('MakeDrive Filesystem Initialization Error: ', err);
+    }
+  });
   var fs = new SyncFileSystem(_fs);
   var sync = fs.sync = new EventEmitter();
   var manager;

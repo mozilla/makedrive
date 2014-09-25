@@ -28,6 +28,10 @@ module.exports = {
     if (!cachedFS[options.name]) {
       cachedFS[options.name] = new Filer.FileSystem({
         provider: new Provider(options)
+      }, function(err) {
+        if(err) {
+          console.error('MakeDrive Filesystem Initialization Error: ', err);
+        }
       });
     }
     return cachedFS[options.name];
