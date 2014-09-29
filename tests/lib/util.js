@@ -18,6 +18,8 @@ var MakeDrive = require('../../client/src/index.js');
 // Ensure the client timeout restricts tests to a reasonable length
 var env = require('../../server/lib/environment');
 env.set('CLIENT_TIMEOUT_MS', 1000);
+// Set maximum file size limit to 2000000 bytes
+env.set('MAX_SYNC_SIZE_BYTES', 2000000);
 
 // Enable a username:password for BASIC_AUTH_USERS to enable /api/get route
 env.set('BASIC_AUTH_USERS', 'testusername:testpassword');

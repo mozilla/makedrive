@@ -192,7 +192,7 @@ module.exports = function(grunt) {
       },
       makeDriveClient: {
         files: ['client/src/*.js'],
-        tasks: ["build"],
+        tasks: ["makedriveClient"],
         options: {
           spawn: false
         }
@@ -228,6 +228,7 @@ module.exports = function(grunt) {
   grunt.registerTask( "default", [ "test" ] );
   grunt.registerTask( "init", [ "exec:grunt_bower" ] );
   grunt.registerTask( "build", [ "clean", "browserify:makedriveClient", "uglify" ] );
+  grunt.registerTask( "makedriveClient", [ "clean", "browserify:makedriveClient", "uglify:develop" ] );
   grunt.registerTask( "install", [ "less", "uglify:dependencies", "uglify:angular_app" ] );
   grunt.registerTask( "dev", [ "less", "uglify:angular_app", "build", "express:dev", "watch" ] );
 

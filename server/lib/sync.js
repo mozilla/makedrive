@@ -21,6 +21,7 @@ var ActiveSyncManager = require('../../server/lib/active-sync-manager');
 var connectedClients = {};
 
 var CLIENT_TIMEOUT_MS = env.get('CLIENT_TIMEOUT_MS') || 5000;
+var MAX_SYNC_SIZE_BYTES = env.get('MAX_SYNC_SIZE_BYTES', Math.Infinity);
 
 function Sync(username, id, ws) {
   EventEmitter.call(this);
@@ -409,6 +410,20 @@ function handleRequest(sync, data) {
     }
 
     var srcList = data.content.srcList;
+
+    // Check file size limit
+    for (var key in srcList) {
+      var obj = srcList[key];
+      for (var prop in obj) {
+        if(obj.hasOwnProperty(prop) && prop === 'size') {
+          if(obj.size > MAX_SYNC_SIZE_BYTES) {
+            sync.state = Sync.LISTENING;
+            ActiveSyncManager.remove(sync.username);
+            return sync.sendMessage(SyncMessage.error.maxsizeExceeded, true);
+          }
+        }
+      }
+    }
 
     rsync.checksums(sync.fs, sync.path, srcList, rsyncOptions, function(err, checksums) {
       if(err) {
