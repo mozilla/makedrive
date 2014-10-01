@@ -58,6 +58,26 @@ module.exports = function createRoutes( app, webmakerAuth ) {
     res.json(200, token);
   });
 
+  /**
+   * Server-to-Server Basic AUTH route for getting paths for a user
+   */
+  if(env.get('BASIC_AUTH_USERS')) {
+    app.get('/api/get', middleware.basicAuthHandler, function(req, res) {
+      var username = req.params.username;
+      var path = req.params.path;
+
+      if(!username) {
+        return res.json(400, {error: 'Missing username param'});
+      }
+      if(!path) {
+	return res.json(400, {error: 'Missing username param'});
+      }
+
+      var server = new FilerWebServer(username, res, {json: true});
+      server.handle(path);
+    });
+  }
+
   app.get( "/healthcheck", function( req, res ) {
     res.json({
       http: "okay",
