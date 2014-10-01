@@ -2,6 +2,11 @@ var Sync = require('./lib/sync');
 var env = require('./lib/environment');
 var websocketAuth = require('./lib/websocket-auth');
 
+// Get list of basic auth usernames:passwords from .env (if any)
+// Username/password pairs should be listed like "username1:password1,username2:password2"
+var basicAuthUsers = require('querystring').parse(env.get('BASIC_AUTH_USERS'), ',', ':');
+var basicAuth = require('express').basicAuth;
+
 function generateError( code, msg ) {
   var err = new Error( msg );
   err.status = code;
@@ -9,6 +14,17 @@ function generateError( code, msg ) {
 }
 
 module.exports = {
+  basicAuthHandler: basicAuth(function(user, pass) {
+    for (var username in basicAuthUsers) {
+      if (basicAuthUsers.hasOwnProperty(username)) {
+        if (user === username && pass === basicAuthUsers[username]) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }),
+
   authenticationHandler: function( req, res, next ) {
     var username = req.session && req.session.user && req.session.user.username;
 

@@ -19,6 +19,9 @@ var MakeDrive = require('../../client/src/index.js');
 var env = require('../../server/lib/environment');
 env.set('CLIENT_TIMEOUT_MS', 1000);
 
+// Enable a username:password for BASIC_AUTH_USERS to enable /api/get route
+env.set('BASIC_AUTH_USERS', 'testusername:testpassword');
+
 var app = require('../../server/server.js');
 
 var serverURL = 'http://127.0.0.1:' + env.get('PORT'),
