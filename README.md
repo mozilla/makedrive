@@ -90,6 +90,11 @@ Each one is accessed by simply being appended to the URL that presently hosts Ma
 &nbsp;&nbsp;`/j/` - Similar to the `/p/` route, but serves the path information in `JSON` format for APIs.<br>
 &nbsp;&nbsp;`/z/` - Used to export the current user's project data in compressed ZIP format.
 
+There is also an optional `/s/:username/:path` route for server-to-server requests. This route
+requires HTTP Basic AUTH, and is disabled by default. It is designed for servers vs. users to be able
+to get file and folder data for a user. It is not meant for user access. It can be enabled by adding a
+`username:password` pair to the `.env` file for the `BASIC_AUTH_USERS` variable.
+
 ## API Reference
 
 ###Constructor

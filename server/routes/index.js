@@ -59,7 +59,7 @@ module.exports = function createRoutes(app, webmakerAuth) {
    * Server-to-Server Basic AUTH route for getting paths for a user
    */
   if(env.get('BASIC_AUTH_USERS')) {
-    app.get('/api/get/:username/*', middleware.basicAuthHandler, function(req, res) {
+    app.get('/s/:username/*', middleware.basicAuthHandler, function(req, res) {
       var username = req.params.username;
       var path = '/' + req.params[0];
 

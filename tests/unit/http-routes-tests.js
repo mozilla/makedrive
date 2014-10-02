@@ -216,7 +216,7 @@ describe('[HTTP route tests]', function() {
   });
 
 
-  describe('/api/get/ route tests', function() {
+  describe('/s/:username/* route tests', function() {
     it('should return a 404 error page if the path is not recognized', function(done) {
       var username = util.username();
       var content = "This is the content of the file.";
@@ -225,7 +225,7 @@ describe('[HTTP route tests]', function() {
         if(err) throw err;
 
         request.get({
-          url: util.serverURL + '/api/get/' + username + '/no/file/here.html',
+          url: util.serverURL + '/s/' + username + '/no/file/here.html',
           auth: {
             user: 'testusername',
             pass: 'testpassword'
@@ -247,7 +247,7 @@ describe('[HTTP route tests]', function() {
         if(err) throw err;
 
         request.get({
-          url: util.serverURL + '/api/get/' + username + '/no/file/here.html',
+          url: util.serverURL + '/s/' + username + '/no/file/here.html',
           auth: {
             user: 'wrong-testusername',
             pass: 'wrong-testpassword'
@@ -269,7 +269,7 @@ describe('[HTTP route tests]', function() {
         if(err) throw err;
 
         request.get({
-          url: util.serverURL + '/api/get/' + username + '/index.html',
+          url: util.serverURL + '/s/' + username + '/index.html',
           auth: {
             user: 'testusername',
             pass: 'testpassword'
@@ -291,7 +291,7 @@ describe('[HTTP route tests]', function() {
         if(err) throw err;
 
         request.get({
-          url: util.serverURL + '/api/get/' + username + '/binary',
+          url: util.serverURL + '/s/' + username + '/binary',
           auth: {
             user: 'testusername',
             pass: 'testpassword'
@@ -314,7 +314,7 @@ describe('[HTTP route tests]', function() {
         if(err) throw err;
 
         request.get({
-          url: util.serverURL + '/api/get/' + username + '/',
+          url: util.serverURL + '/s/' + username + '/',
           auth: {
             user: 'testusername',
             pass: 'testpassword'
