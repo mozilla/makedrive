@@ -19,7 +19,7 @@ module.exports = {
       if (basicAuthUsers.hasOwnProperty(username)) {
         if (user === username && pass === basicAuthUsers[username]) {
           return true;
-	      }
+        }
       }
     }
     return false;
