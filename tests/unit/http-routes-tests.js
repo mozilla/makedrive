@@ -214,4 +214,132 @@ describe('[HTTP route tests]', function() {
       });
     });
   });
+
+
+  describe('/api/get/ route tests', function() {
+    it('should return a 404 error page if the path is not recognized', function(done) {
+      var username = util.username();
+      var content = "This is the content of the file.";
+
+      util.upload(username, '/index.html', content, function(err) {
+        if(err) throw err;
+
+        request.get({
+          url: util.serverURL + '/api/get/' + username + '/no/file/here.html',
+          auth: {
+            user: 'testusername',
+            pass: 'testpassword'
+          },
+          json: true
+        }, function(err, res, body) {
+          expect(err).not.to.exist;
+          expect(res.statusCode).to.equal(404);
+          done();
+        });
+      });
+    });
+
+    it('should return a 401 error if invalid username:password is used for basic auth', function(done) {
+      var username = util.username();
+      var content = "This is the content of the file.";
+
+      util.upload(username, '/index.html', content, function(err) {
+        if(err) throw err;
+
+        request.get({
+          url: util.serverURL + '/api/get/' + username + '/no/file/here.html',
+          auth: {
+            user: 'wrong-testusername',
+            pass: 'wrong-testpassword'
+          },
+          json: true
+        }, function(err, res, body) {
+          expect(err).not.to.exist;
+          expect(res.statusCode).to.equal(401);
+          done();
+        });
+      });
+    });
+
+    it('should return the file requested if it exists and correct auth is provided', function(done) {
+      var username = util.username();
+      var content = "This is the content of the file.";
+
+      util.upload(username, '/index.html', content, function(err) {
+        if(err) throw err;
+
+        request.get({
+          url: util.serverURL + '/api/get/' + username + '/index.html',
+          auth: {
+            user: 'testusername',
+            pass: 'testpassword'
+          }
+        }, function(err, res, body) {
+          expect(err).not.to.exist;
+          expect(res.statusCode).to.equal(200);
+          expect(body).to.equal(content);
+          done();
+        });
+      });
+    });
+
+    it('should return a Buffer for a binary file requested if it exists and correct auth is provided', function(done) {
+      var username = util.username();
+      var content = new Buffer([1, 2, 3, 4]);
+
+      util.upload(username, '/binary', content, function(err) {
+        if(err) throw err;
+
+        request.get({
+          url: util.serverURL + '/api/get/' + username + '/binary',
+          auth: {
+            user: 'testusername',
+            pass: 'testpassword'
+          },
+          encoding: null
+        }, function(err, res, body) {
+          expect(err).not.to.exist;
+          expect(res.statusCode).to.equal(200);
+          expect(body).to.deep.equal(content);
+          done();
+        });
+      });
+    });
+
+    it('should return a JSON dir listing if a dir path is requested and correct auth is provided', function(done) {
+      var username = util.username();
+      var content = "This is the content of the file.";
+
+      util.upload(username, '/index.html', content, function(err) {
+        if(err) throw err;
+
+        request.get({
+          url: util.serverURL + '/api/get/' + username + '/',
+          auth: {
+            user: 'testusername',
+            pass: 'testpassword'
+          },
+          json: true
+        }, function(err, res, body) {
+          expect(err).not.to.exist;
+          expect(res.statusCode).to.equal(200);
+          /**
+           * We expect JSON something like this:
+           * [{path: 'index.html',
+           *   links: 1,
+           *   size: 32,
+           *   modified: 1407336648736,
+           *   type: 'FILE'}]
+           */
+          expect(body.length).to.equal(1);
+          expect(body[0].path).to.equal('index.html');
+          expect(body[0].links).to.equal(1);
+          expect(body[0].size).to.be.a.number;
+          expect(body[0].modified).to.be.a.number;
+          expect(body[0].type).to.equal('FILE');
+          done();
+        });
+      });
+    });
+  });
 });

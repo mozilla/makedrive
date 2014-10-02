@@ -1,14 +1,11 @@
 // Expose internals
-var middleware = require( '../middleware.js' ),
-    env = require('../lib/environment'),
-    version = require('../../package.json').version,
-    FilerWebServer = require('../lib/filer-www'),
-    Sync = require( '../lib/sync'),
-    SyncMessage = require('../../lib/syncmessage'),
-    WebSocketServer = require('ws').Server,
-    websocketAuth = require('../lib/websocket-auth');
+var middleware = require('../middleware.js');
+var env = require('../lib/environment');
+var version = require('../../package.json').version;
+var FilerWebServer = require('../lib/filer-www');
+var websocketAuth = require('../lib/websocket-auth');
 
-module.exports = function createRoutes( app, webmakerAuth ) {
+module.exports = function createRoutes(app, webmakerAuth) {
 
   app.get( "/", function( req, res ) {
     res.send( "MakeDrive: https://wiki.mozilla.org/Webmaker/MakeDrive" );
@@ -62,18 +59,18 @@ module.exports = function createRoutes( app, webmakerAuth ) {
    * Server-to-Server Basic AUTH route for getting paths for a user
    */
   if(env.get('BASIC_AUTH_USERS')) {
-    app.get('/api/get', middleware.basicAuthHandler, function(req, res) {
+    app.get('/api/get/:username/*', middleware.basicAuthHandler, function(req, res) {
       var username = req.params.username;
-      var path = req.params.path;
+      var path = '/' + req.params[0];
 
       if(!username) {
         return res.json(400, {error: 'Missing username param'});
       }
       if(!path) {
-	return res.json(400, {error: 'Missing username param'});
+        return res.json(400, {error: 'Missing path'});
       }
 
-      var server = new FilerWebServer(username, res, {json: true});
+      var server = new FilerWebServer(username, res, {raw: true});
       server.handle(path);
     });
   }

@@ -16,13 +16,13 @@ function generateError( code, msg ) {
 module.exports = {
   basicAuthHandler: basicAuth(function(user, pass) {
     for (var username in basicAuthUsers) {
-      if (userList.hasOwnProperty(username)) {
-        if (user === username && pass === userList[username]) {
+      if (basicAuthUsers.hasOwnProperty(username)) {
+        if (user === username && pass === basicAuthUsers[username]) {
           return true;
-	}
+	      }
       }
     }
-    return false;	
+    return false;
   }),
 
   authenticationHandler: function( req, res, next ) {
