@@ -43,7 +43,8 @@ module.exports = {
   },
 
   crossOriginHandler: function( req, res, next ) {
-    if (env.get("ALLOWED_CORS_DOMAINS").indexOf(req.headers.origin) > -1) {
+    var allowedCorsDomains = env.get("ALLOWED_CORS_DOMAINS");
+    if (allowedCorsDomains === "*" || allowedCorsDomains.indexOf(req.headers.origin) > -1) {
       res.header('Access-Control-Allow-Origin', req.headers.origin);
       res.header('Access-Control-Allow-Credentials', true);
     }
