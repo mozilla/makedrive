@@ -30,7 +30,11 @@ $ git clone https://github.com/mozilla/makedrive.git
 
 2) In your MakeDrive directory, install all of the necessary MakeDrive dependencies:
 
-If you don't already have `grunt-cli` installed globally, here is the console command using `npm` -
+If you don't already have `grunt-cli` and `bower` installed globally, here is the console command using `npm` -
+
+```
+$ sudo npm install bower -g
+```
 
 ```
 $ sudo npm install grunt-cli -g
@@ -44,7 +48,7 @@ $ npm install
 
 Next, install dependencies -
 ```
-$ grunt init
+$ bower install
 ```
 
 3) Copy the distributed environment file via command line, or manually using a code editor:

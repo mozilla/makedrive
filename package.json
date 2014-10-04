@@ -4,7 +4,7 @@
   "description": "Webmaker Filesystem",
   "scripts": {
     "start": "node ./server/index.js",
-    "test": "grunt init && grunt test"
+    "test": "grunt test"
   },
   "repository": {
     "type": "git",

@@ -155,11 +155,6 @@ module.exports = function(grunt) {
      * Testing & Dev tasks
      */
     exec: {
-      grunt_bower: {
-        command: 'bower install && grunt install',
-        stdout: true,
-        stderr: true
-      },
       run_mocha: {
         command: '"./node_modules/.bin/mocha" --timeout 70000 --recursive --reporter spec ./tests',
         stdout: true,
@@ -226,10 +221,8 @@ module.exports = function(grunt) {
   // Simple multi-tasks
   grunt.registerTask( "test", [ "jshint", "exec:run_mocha" ] );
   grunt.registerTask( "default", [ "test" ] );
-  grunt.registerTask( "init", [ "exec:grunt_bower" ] );
   grunt.registerTask( "build", [ "clean", "browserify:makedriveClient", "uglify" ] );
   grunt.registerTask( "makedriveClient", [ "clean", "browserify:makedriveClient", "uglify:develop" ] );
-  grunt.registerTask( "install", [ "less", "uglify:dependencies", "uglify:angular_app" ] );
   grunt.registerTask( "dev", [ "less", "uglify:angular_app", "build", "express:dev", "watch" ] );
 
   // Complex multi-tasks
