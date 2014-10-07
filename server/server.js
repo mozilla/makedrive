@@ -29,7 +29,8 @@ var port;
 
 // Logging middleware
 if(env.get('ENABLE_GELF_LOGS')) {
-  logger = require('messina')('MakeDrive-' + env.get('NODE_ENV', 'development'));
+  messina = require("messina");
+  logger = messina("makedrive-" + env.get("NODE_ENV") || "development");
   logger.init();
   app.use(logger.middleware());
 } else {
@@ -96,7 +97,7 @@ app.use(middleware.fourOhFourHandler);
 // Declare routes
 routes(app, webmakerAuth);
 
-port = process.env.PORT || env.get('PORT', 9090);
+port = process.env.PORT || env.get('PORT') || 9090;
 server = http.createServer(app);
 server.listen(port);
 
