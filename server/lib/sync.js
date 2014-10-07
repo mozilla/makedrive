@@ -21,7 +21,7 @@ var ActiveSyncManager = require('../../server/lib/active-sync-manager');
 var connectedClients = {};
 
 var CLIENT_TIMEOUT_MS = env.get('CLIENT_TIMEOUT_MS') || 5000;
-var MAX_SYNC_SIZE_BYTES = env.get('MAX_SYNC_SIZE_BYTES', Math.Infinity);
+var MAX_SYNC_SIZE_BYTES = env.get('MAX_SYNC_SIZE_BYTES') || Math.Infinity;
 
 function Sync(username, id, ws) {
   EventEmitter.call(this);
