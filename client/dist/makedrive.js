@@ -623,6 +623,9 @@ function handleError(syncManager, data) {
     var message = SyncMessage.request.reset;
     syncManager.send(message.stringify());
     onError(syncManager, new Error('Could not sync filesystem from server... trying again'));
+  } else if(data.is.maxsizeExceeded) {
+    // We are only emitting the error since this is can be sync again from the client
+    syncManager.sync.emit('error', new Error('Maximum file size exceeded'));
   } else {
     onError(syncManager, new Error('Failed to sync with the server. Current step is: ' +
                                     session.step + '. Current state is: ' + session.state));
@@ -2760,6 +2763,9 @@ function SyncMessage(type, name, content) {
     },
     get downstreamLocked() {
       return that.name === SyncMessage.DOWNSTREAM_LOCKED;
+    },
+    get fileSizeError() {
+      return that.type === SyncMessage.ERROR && that.name === SyncMessage.MAXSIZE;
     }
   };
 }
@@ -2800,6 +2806,7 @@ SyncMessage.AUTHZ = "AUTHORIZED";
 SyncMessage.IMPL = "IMPLEMENTATION";
 SyncMessage.SERVER_RESET = "SERVER_RESET";
 SyncMessage.DOWNSTREAM_LOCKED = "DOWNSTREAM_LOCKED";
+SyncMessage.MAXSIZE = "MAXSIZE";
 
 // SyncMessage Error constants
 SyncMessage.INFRMT = "INVALID FORMAT";
@@ -2819,7 +2826,8 @@ function isValidName(name) {
          name === SyncMessage.INFRMT       ||
          name === SyncMessage.INCONT       ||
          name === SyncMessage.SERVER_RESET ||
-         name === SyncMessage.DOWNSTREAM_LOCKED;
+         name === SyncMessage.DOWNSTREAM_LOCKED ||
+         name === SyncMessage.MAXSIZE;
 }
 
 function isValidType(type) {
@@ -2887,6 +2895,9 @@ SyncMessage.error = {
   },
   get downstreamLocked() {
     return new SyncMessage(SyncMessage.ERROR, SyncMessage.DOWNSTREAM_LOCKED, 'Downstream syncs are locked!');
+  },
+  get maxsizeExceeded() {
+    return new SyncMessage(SyncMessage.ERROR, SyncMessage.MAXSIZE, 'Maximum file size exceeded');
   },
   get verification() {
     return new SyncMessage(SyncMessage.ERROR,
@@ -3205,7 +3216,6 @@ module.exports = charenc;
 })();
 
 },{}],27:[function(require,module,exports){
-(function (Buffer){
 // Browser Request
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -3404,10 +3414,6 @@ function run_xhr(options) {
 
   xhr.onreadystatechange = on_state_change
   xhr.open(options.method, options.uri, true) // asynchronous
-  // Deal with requests for raw buffer response
-  if(options.encoding === null) {
-    xhr.responseType = 'arraybuffer';
-  }
   if(is_cors)
     xhr.withCredentials = !! options.withCredentials
   xhr.send(options.body)
@@ -3480,14 +3486,10 @@ function run_xhr(options) {
     did.end = true
     request.log.debug('Request done', {'id':xhr.id})
 
-    if(options.encoding === null) {
-      xhr.body = new Buffer(new Uint8Array(xhr.response));
-    } else {
-      xhr.body = xhr.responseText
-      if(options.json) {
-        try        { xhr.body = JSON.parse(xhr.responseText) }
-        catch (er) { return options.callback(er, xhr)        }
-      }
+    xhr.body = xhr.responseText
+    if(options.json) {
+      try        { xhr.body = JSON.parse(xhr.responseText) }
+      catch (er) { return options.callback(er, xhr)        }
     }
 
     options.callback(null, xhr, xhr.body)
@@ -3689,8 +3691,7 @@ function b64_enc (data) {
 }
 module.exports = request;
 
-}).call(this,require("buffer").Buffer)
-},{"buffer":55}],28:[function(require,module,exports){
+},{}],28:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -3750,10 +3751,8 @@ EventEmitter.prototype.emit = function(type) {
       er = arguments[1];
       if (er instanceof Error) {
         throw er; // Unhandled 'error' event
-      } else {
-        throw TypeError('Uncaught, unspecified "error" event.');
       }
-      return false;
+      throw TypeError('Uncaught, unspecified "error" event.');
     }
   }
 
