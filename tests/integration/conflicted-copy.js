@@ -206,4 +206,48 @@ describe('MakeDrive Client - conflicted copy integration', function(){
     // Sync client1's change to server
     client1.sync.request();
   });
+
+  it('should not fail a sync if the path modified is a conflicted copy', function(done) {
+    var layout1 = {'/dir1/file1': layout['/dir1/file1'] + '+1'};
+    var layout2 = {'/dir1/file1': layout1['/dir1/file1']};
+
+    client1.sync.once('completed', function() {
+      client2.sync.once('completed', function() {
+        client2.fs.readdir('/dir1', function(err, entries) {
+          if(err) throw err;
+          expect(entries.length).to.equal(2);
+          expect(entries).to.include('file1');
+
+          // Make sure this is a real conflicted copy, both in name
+          // and also in terms of attributes on the file.
+          var conflictedCopyFilename = findConflictedFilename(entries);
+          expect(conflict.filenameContainsConflicted(conflictedCopyFilename)).to.be.true;
+          // Add the conflicted copy to the layout
+          layout2[conflictedCopyFilename] = 'Changed Data';
+
+          client2.fs.writeFile(conflictedCopyFilename, layout2[conflictedCopyFilename], function(err) {
+            if(err) throw err;
+
+            client2.sync.once('completed', function() {
+              util.ensureFilesystem(client2.fs, layout2, function(err) {
+                expect(err).not.to.exist;
+              });
+            });
+
+            client1.sync.once('completed', function() {
+              util.ensureFilesystem(client1.fs, layout1, function(err) {
+                expect(err).not.to.exist;
+
+                done();
+              });
+            });
+
+            client2.sync.request();
+          });
+        });
+      });
+    });
+
+    client1.sync.request();
+  });
 });
