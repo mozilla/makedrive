@@ -1700,6 +1700,11 @@ module.exports = function diff(fs, path, checksumList, options, callback) {
     });
   }
 
+  // If there are no checksums to calculate diffs for, bail
+  if(!checksumList.length) {
+    return callback(null, diffList);
+  }
+
   fs.lstat(path, function(err, stat) {
     if(err) {
       return callback(err);
@@ -1859,11 +1864,13 @@ module.exports = function patch(fs, path, diffList, options, callback) {
     }
 
     fs.lstat(path, function(err, stats) {
-      if(err) {
+      if(err && err.code !== 'ENOENT') {
         return callback(err);
       }
 
-      if(!stats.isDirectory()) {
+      // Bail if the path is a file/link or 
+      // the path does not exist, i.e. nothing was patched
+      if((err && err.code === 'ENOENT') || !stats.isDirectory()) {
         return callback(null, paths);
       }
 
@@ -3216,6 +3223,7 @@ module.exports = charenc;
 })();
 
 },{}],27:[function(require,module,exports){
+(function (Buffer){
 // Browser Request
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -3414,6 +3422,10 @@ function run_xhr(options) {
 
   xhr.onreadystatechange = on_state_change
   xhr.open(options.method, options.uri, true) // asynchronous
+  // Deal with requests for raw buffer response
+  if(options.encoding === null) {
+    xhr.responseType = 'arraybuffer';
+  }
   if(is_cors)
     xhr.withCredentials = !! options.withCredentials
   xhr.send(options.body)
@@ -3486,10 +3498,14 @@ function run_xhr(options) {
     did.end = true
     request.log.debug('Request done', {'id':xhr.id})
 
-    xhr.body = xhr.responseText
-    if(options.json) {
-      try        { xhr.body = JSON.parse(xhr.responseText) }
-      catch (er) { return options.callback(er, xhr)        }
+    if(options.encoding === null) {
+      xhr.body = new Buffer(new Uint8Array(xhr.response));
+    } else {
+      xhr.body = xhr.responseText
+      if(options.json) {
+        try        { xhr.body = JSON.parse(xhr.responseText) }
+        catch (er) { return options.callback(er, xhr)        }
+      }
     }
 
     options.callback(null, xhr, xhr.body)
@@ -3691,7 +3707,8 @@ function b64_enc (data) {
 }
 module.exports = request;
 
-},{}],28:[function(require,module,exports){
+}).call(this,require("buffer").Buffer)
+},{"buffer":55}],28:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -3751,8 +3768,10 @@ EventEmitter.prototype.emit = function(type) {
       er = arguments[1];
       if (er instanceof Error) {
         throw er; // Unhandled 'error' event
+      } else {
+        throw TypeError('Uncaught, unspecified "error" event.');
       }
-      throw TypeError('Uncaught, unspecified "error" event.');
+      return false;
     }
   }
 
