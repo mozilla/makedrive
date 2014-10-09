@@ -214,6 +214,13 @@ function createFS(options) {
     }
   };
 
+  // The server stopped our upstream sync mid-way through.
+  sync.onInterrupted = function() {
+    fs.pathToSync = pathCache;
+    sync.state = sync.SYNC_CONNECTED;
+    sync.emit('error', new Error('Sync interrupted by server.'));
+  };
+
   sync.onError = function(err) {
     // Regress to the path that needed to be synced but failed
     // (likely because of a sync LOCK)
@@ -626,6 +633,9 @@ function handleError(syncManager, data) {
   } else if(data.is.maxsizeExceeded) {
     // We are only emitting the error since this is can be sync again from the client
     syncManager.sync.emit('error', new Error('Maximum file size exceeded'));
+  } else if(data.is.interrupted && session.is.syncing) {
+    // SERVER INTERRUPTED SYNC (LOCK RELEASED EARLY)
+    sync.onInterrupted();
   } else {
     onError(syncManager, new Error('Failed to sync with the server. Current step is: ' +
                                     session.step + '. Current state is: ' + session.state));
@@ -1234,6 +1244,24 @@ module.exports = {
   attributes: {
     unsynced: 'makedrive-unsynced',
     conflict: 'makedrive-conflict'
+  },
+
+  server: {
+    syncChannel: 'makedrive-sync',
+    lockRequestChannel: 'makedrive-lock-request',
+    lockResponseChannel: 'makedrive-lock-response',
+    states: {
+      CREATED: 'CREATED',
+      CLOSED: 'CLOSED',
+      CLOSING: 'CLOSING',
+      CONNECTING: 'CONNECTING',
+      LISTENING: 'LISTENING',
+      INIT: 'INIT',
+      OUT_OF_DATE: 'OUT_OF_DATE',
+      CHKSUM: 'CHKSUM',
+      PATCH: 'PATCH',
+      ERROR: 'ERROR'
+    }
   }
 };
 
@@ -2814,6 +2842,7 @@ SyncMessage.IMPL = "IMPLEMENTATION";
 SyncMessage.SERVER_RESET = "SERVER_RESET";
 SyncMessage.DOWNSTREAM_LOCKED = "DOWNSTREAM_LOCKED";
 SyncMessage.MAXSIZE = "MAXSIZE";
+SyncMessage.INTERRUPTED = "INTERRUPTED";
 
 // SyncMessage Error constants
 SyncMessage.INFRMT = "INVALID FORMAT";
@@ -2920,6 +2949,9 @@ SyncMessage.error = {
     return new SyncMessage(SyncMessage.ERROR,
                            SyncMessage.INCONT,
                            'Invalid content provided');
+  },
+  get interrupted() {
+    return new SyncMessage(SyncMessage.ERROR, SyncMessage.INTERRUPTED);
   }
 };
 
@@ -3223,7 +3255,6 @@ module.exports = charenc;
 })();
 
 },{}],27:[function(require,module,exports){
-(function (Buffer){
 // Browser Request
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -3422,10 +3453,6 @@ function run_xhr(options) {
 
   xhr.onreadystatechange = on_state_change
   xhr.open(options.method, options.uri, true) // asynchronous
-  // Deal with requests for raw buffer response
-  if(options.encoding === null) {
-    xhr.responseType = 'arraybuffer';
-  }
   if(is_cors)
     xhr.withCredentials = !! options.withCredentials
   xhr.send(options.body)
@@ -3498,14 +3525,10 @@ function run_xhr(options) {
     did.end = true
     request.log.debug('Request done', {'id':xhr.id})
 
-    if(options.encoding === null) {
-      xhr.body = new Buffer(new Uint8Array(xhr.response));
-    } else {
-      xhr.body = xhr.responseText
-      if(options.json) {
-        try        { xhr.body = JSON.parse(xhr.responseText) }
-        catch (er) { return options.callback(er, xhr)        }
-      }
+    xhr.body = xhr.responseText
+    if(options.json) {
+      try        { xhr.body = JSON.parse(xhr.responseText) }
+      catch (er) { return options.callback(er, xhr)        }
     }
 
     options.callback(null, xhr, xhr.body)
@@ -3707,8 +3730,7 @@ function b64_enc (data) {
 }
 module.exports = request;
 
-}).call(this,require("buffer").Buffer)
-},{"buffer":55}],28:[function(require,module,exports){
+},{}],28:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -3768,10 +3790,8 @@ EventEmitter.prototype.emit = function(type) {
       er = arguments[1];
       if (er instanceof Error) {
         throw er; // Unhandled 'error' event
-      } else {
-        throw TypeError('Uncaught, unspecified "error" event.');
       }
-      return false;
+      throw TypeError('Uncaught, unspecified "error" event.');
     }
   }
 
