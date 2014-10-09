@@ -70,14 +70,14 @@ function createClient(callback) {
     redisUrl.password = redisUrl.auth ? redisUrl.auth.split(':')[1] : null;
 
     client = redis.createClient(redisUrl.port, redisUrl.hostname);
+    if(redisUrl.password) {
+      client.auth(redisUrl.password);
+    }
 
     // Caller needs to figure out what to do with errors, hang-ups.
     client.on('error', onerror);
     client.on('end', onend);
     client.on('ready', function() {
-      if(redisUrl.password) {
-        client.auth(redisUrl.password);
-      }
 
       log.info('Connected to redis hostname=%s port=%s', redisUrl.hostname, redisUrl.port);
       callback(null, client);
