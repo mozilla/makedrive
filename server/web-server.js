@@ -14,6 +14,7 @@ var env = require('./lib/environment');
 var middleware = require('./middleware');
 var routes = require('./routes');
 var log = require('./lib/logger.js');
+var nunjucks = require('nunjucks');
 
 var app = express();
 var webmakerAuth = new WebmakerAuth({
@@ -24,6 +25,11 @@ var webmakerAuth = new WebmakerAuth({
 });
 var port = process.env.PORT || env.get('PORT') || 9090;
 var server;
+
+nunjucks.configure('views', {
+  autoescape: true,
+  express: app
+});
 
 app.use(log.middleware());
 app.disable('x-powered-by');
@@ -47,6 +53,7 @@ app.use(express.static(Path.join(__dirname, '../client')));
 if(env.get('NODE_ENV') === 'development') {
   app.use('/demo', express.static(Path.join(__dirname, '../demo')));
 }
+
 app.use(express.json());
 app.use(express.urlencoded());
 app.use(webmakerAuth.cookieParser());

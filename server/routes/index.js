@@ -5,6 +5,8 @@ var version = require('../../package.json').version;
 var FilerWebServer = require('../lib/filer-www');
 var WebsocketAuth = require('../lib/websocket-auth');
 var ClientInfo = require('../lib/client-info.js');
+var ImageFinder = require('../lib/image-finder.js');
+var log = require('../lib/logger.js');
 
 module.exports = function createRoutes(app) {
 
@@ -71,6 +73,26 @@ module.exports = function createRoutes(app) {
 
       var server = new FilerWebServer(username, res, {raw: true});
       server.handle(path);
+    });
+  }
+
+  /**
+   * Image gallery from a user's Filer filesystem
+   */
+  if(env.get('IMAGES_ROUTE')) {
+    app.get('/images', middleware.authenticationHandler, function(req, res) {
+      var username = req.params.username;
+      var images = new ImageFinder(username);
+      images.find(function(err, paths) {
+        if(err) {
+          log.error(err, 'Error trying to retrieve images from filesystem for user %s.', username);
+        }
+        res.render('index.html', {
+          list: paths,
+          err: err,
+          username: username
+        });
+      });
     });
   }
 

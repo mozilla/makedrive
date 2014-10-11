@@ -114,12 +114,11 @@ angular
         if(jQuery.jstree.reference("#jstree")) {
           jQuery.jstree.reference("#jstree").destroy();
         }
-        $http
-          .get('/j/')
-          .success(function(data) {
-            newListing = getContent(data);
-            createTree(newListing);
-          });
+        sh.ls('/', {recursive: true}, function(err, data) {
+          if(err) console.error(err);
+          newListing = getContent(data);
+          createTree(newListing);
+        });
       }
       return Make;
     }

@@ -68,6 +68,7 @@
     "mime": "^1.2.11",
     "newrelic": "1.4.0",
     "node-uuid": "^1.4.1",
+    "nunjucks": "^1.1.0",
     "recluster": "^0.3.7",
     "redis": "^0.12.1",
     "useragent": "^2.1.0",
