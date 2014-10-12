@@ -79,8 +79,6 @@ describe('Client bugs', function() {
   });
 
   describe('[Issue 372]', function(){
-    var fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
-    var sync = fs.sync;
 
     function findConflictedFilename(entries) {
       entries.splice(entries.indexOf('hello'), 1);
@@ -92,6 +90,9 @@ describe('Client bugs', function() {
      * and change the file's content then try to connect and sync again.
      */
     it('should sync and create conflicted copy', function(done) {
+      var fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
+      var sync = fs.sync;
+
       util.authenticatedConnection(function( err, result ) {
         if(err) throw err;
 
@@ -117,12 +118,15 @@ describe('Client bugs', function() {
 
               expect(entries).to.have.length(2);
               expect(entries).to.include('hello');
+
               // Make sure this is a real conflicted copy, both in name
               // and also in terms of attributes on the file.
               var conflictedCopyFilename = findConflictedFilename(entries);
+
               conflict.isConflictedCopy(fs, conflictedCopyFilename, function(err, conflicted) {
                 expect(err).not.to.exist;
                 expect(conflicted).to.be.true;
+
                 // Make sure the conflicted copy has the changes we expect
                 fs.readFile(conflictedCopyFilename, 'utf8', function(err, data) {
                   if(err) throw err;
@@ -145,6 +149,7 @@ describe('Client bugs', function() {
                 if(err) throw err;
 
                 expect(unsynced).to.be.true;
+
                 // Get a new token for this second connection
                 util.getWebsocketToken(result, function(err, result) {
                   if(err) throw err;
