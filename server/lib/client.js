@@ -16,11 +16,7 @@ var log = require('./logger.js');
 
 var noop = function(){};
 
-function handleBroadcastMessage(channel, msg, client) {
-  if(channel !== Constants.server.syncChannel) {
-    return;
-  }
-
+function handleBroadcastMessage(msg, client) {
   try {
     msg = JSON.parse(msg);
   } catch(err) {
@@ -98,9 +94,10 @@ function Client(ws) {
   };
 
   // Process update messages from other servers
-  redis.on('message', function(channel, msg) {
-    handleBroadcastMessage(channel, msg, self);
-  });
+  self._broadcastMessageHandlerFn = function(msg) {
+    handleBroadcastMessage(msg, self);
+  };
+  redis.on('sync', self._broadcastMessageHandlerFn);
 
   // Sugar for testing states
   self.is = Object.create(Object.prototype, {
@@ -145,9 +142,8 @@ Client.prototype.close = function(error) {
   self.state = States.CLOSING;
 
   // Stop processing update broadcast messages
-  redis.removeListener('message', function(channel, msg) {
-    handleBroadcastMessage(channel, msg, self);
-  });
+  redis.removeListener('sync', self._broadcastMessageHandlerFn);
+  self._broadcastMessageHandlerFn = null;
 
   // Cleanup the sync protocol handler, waiting until any
   // uninterruptable sync steps have completed.

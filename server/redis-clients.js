@@ -14,7 +14,7 @@ var EventEmitter = require('events').EventEmitter;
 var url = require('url');
 var redis = require('redis');
 var env = require('./lib/environment.js');
-var Constants = require('../lib/constants.js');
+var ChannelConstants = require('../lib/constants.js').server;
 var log = require('./lib/logger.js');
 
 // Internal-only client for working with keys
@@ -52,9 +52,22 @@ function onend() {
   onerror(new Error('Redis server hung-up'));
 }
 
-// redis subscription messages
+// redis subscription messages. Split the different types out based on channel
 function onmessage(channel, message) {
-  module.exports.emit('message', channel, message);
+  switch(channel) {
+    case ChannelConstants.syncChannel:
+      module.exports.emit('sync', message);
+      break;
+    case ChannelConstants.lockRequestChannel:
+      module.exports.emit('lock-request', message);
+      break;
+    case ChannelConstants.lockResponseChannel:
+      module.exports.emit('lock-response', message);
+      break;
+    default:
+      log.warn('[Redis] Got unexpected message on channel `%s`. Message was: `%s`', channel, message);
+      break;
+  }
 }
 
 function createClient(callback) {
@@ -114,9 +127,9 @@ module.exports.start = function(callback) {
 
         // Subscribe to the channels we care about
         sub.on('message', onmessage);
-        sub.subscribe(Constants.server.syncChannel);
-        sub.subscribe(Constants.server.lockRequestChannel);
-        sub.subscribe(Constants.server.lockResponseChannel);
+        sub.subscribe(ChannelConstants.syncChannel);
+        sub.subscribe(ChannelConstants.lockRequestChannel);
+        sub.subscribe(ChannelConstants.lockResponseChannel);
 
         callback();
       });

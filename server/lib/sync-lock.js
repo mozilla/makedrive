@@ -18,11 +18,7 @@ var env = require('../../server/lib/environment');
 var CLIENT_TIMEOUT_MS = env.get('CLIENT_TIMEOUT_MS') || 5000;
 var log = require('./logger.js');
 
-function handleLockRequest(channel, message, lock) {
-  if(channel !== Constants.server.lockRequestChannel) {
-    return;
-  }
-
+function handleLockRequest(message, lock) {
   try {
     message = JSON.parse(message);
   } catch(err) {
@@ -62,10 +58,8 @@ function handleLockRequest(channel, message, lock) {
   });
 }
 
-function handleLockResponse(channel, message, key, id, waitTimer, callback) {
-  if(channel !== Constants.server.lockResponseChannel) {
-    return;
-  }
+function handleLockResponse(message, key, client, waitTimer, callback) {
+  var id = client.id;
 
   try {
     message = JSON.parse(message);
@@ -82,9 +76,8 @@ function handleLockResponse(channel, message, key, id, waitTimer, callback) {
   // Stop the timer from expiring, since we got a response in time.
   clearTimeout(waitTimer);
 
-  redis.removeListener('message', function(channel, message) {
-    handleLockResponse(channel, message, key, id, waitTimer, callback);
-  });
+  redis.removeListener('lock-response', client._handleLockResponseFn);
+  client._handleLockResponseFn = null;
 
   // The result of the request is defined in the `unlocked` param,
   // which is true if we now hold the lock, false if not.
@@ -106,9 +99,10 @@ function SyncLock(key, id) {
 
   // Listen for requests to release this lock early.
   var lock = this;
-  redis.on('message', function(channel, message) {
-    handleLockRequest(channel, message, lock);
-  });
+  lock._handleLockRequestFn = function(message) {
+    handleLockRequest(message, lock);
+  };
+  redis.on('lock-request', lock._handleLockRequestFn);
 
   // By default, deny lock requests. Users of this lock
   // can override this if the lock is releasable early.
@@ -138,9 +132,8 @@ SyncLock.prototype.release = function(callback) {
   var key = lock.key;
 
   // Stop listening for requests to release this lock
-  redis.removeListener('message', function(channel, message) {
-    handleLockRequest(channel, message, lock);
-  });
+  redis.removeListener('lock-request', lock._handleLockRequestFn);
+  lock._handleLockRequestFn = null;
 
   // Try to delete the lock in redis
   redis.del(key, function(err, reply) {
@@ -187,9 +180,8 @@ function request(client, callback) {
     // Act if we don't hear back from the lock owner in a reasonable
     // amount of time, and set the lock ourselves.
     var waitTimer = setTimeout(function() {
-      redis.removeListener('message', function(channel, message) {
-        handleLockResponse(channel, message, key, id, waitTimer, callback);
-      });
+      redis.removeListener('lock-response', client._handleLockResponseFn);
+      client._handleLockResponseFn = null;
 
       redis.set(key, id, function(err, reply) {
         if(err) {
@@ -210,9 +202,10 @@ function request(client, callback) {
     waitTimer.unref();
 
     // Listen for a response from the client holding the lock
-    redis.on('message', function(channel, message) {
-      handleLockResponse(channel, message, key, id, waitTimer, callback);
-    });
+    client._handleLockResponseFn = function(message) {
+      handleLockResponse(message, key, client, waitTimer, callback);
+    };
+    redis.on('lock-response', client._handleLockResponseFn);
 
     // Ask the client holding the lock to give it to us
     log.debug({client: client}, 'Requesting lock override.');

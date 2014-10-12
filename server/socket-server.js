@@ -9,7 +9,7 @@ module.exports = new EventEmitter();
 
 module.exports.start = function(server, callback) {
   try {
-    wss = new WebSocketServer({server: server});
+    wss = new WebSocketServer({server: server, clientTracking: false});
   } catch(err) {
     log.error(err, 'Could not start Socket Server');
     return callback(err);
