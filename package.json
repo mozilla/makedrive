@@ -4,7 +4,8 @@
   "description": "Webmaker Filesystem",
   "scripts": {
     "start": "node ./server/index.js | ./node_modules/.bin/bunyan",
-    "test": "grunt test"
+    "test": "grunt test",
+    "postinstall": "bower install"
   },
   "repository": {
     "type": "git",
@@ -50,9 +51,9 @@
     "url": "https://github.com/mozilla/makedrive/issues"
   },
   "dependencies": {
+    "bower": "1.3.8",
     "MD5": "^1.2.1",
     "archiver": "^0.10.1",
-    "async": "^0.9.0",
     "browser-request": "^0.3.1",
     "events": "^1.0.1",
     "express": "3.4.5",
@@ -62,8 +63,6 @@
     "grunt-contrib-less": "^0.11.4",
     "habitat": "1.1.0",
     "helmet": "0.2.0",
-    "knox": "0.8.9",
-    "lodash": "^2.4.1",
     "bunyan": "^1.1.3",
     "mime": "^1.2.11",
     "newrelic": "1.4.0",
@@ -77,8 +76,8 @@
     "hiredis": "^0.1.17"
   },
   "devDependencies": {
+    "async": "^0.9.0",
     "browserify": "^4.1.8",
-    "bower": "1.3.8",
     "chai": "^1.9.1",
     "grunt": "~0.4.1",
     "grunt-browserify": "^3.0.1",

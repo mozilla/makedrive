@@ -5,7 +5,7 @@
  */
 var archiver = require('archiver');
 var Path = require('../../../lib/filer.js').Path;
-var async = require('async');
+var async = require('../../../lib/async-lite.js');
 var util = require('./util.js');
 
 function archivePath(fs, path, res) {
