@@ -50,6 +50,8 @@ function initClient(client) {
       name: username
     });
 
+    log.info({client: client}, 'Client connected');
+
     runClient(client);
   };
 }

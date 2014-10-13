@@ -176,7 +176,7 @@ Client.prototype.close = function(error) {
     self.fs = null;
 
     self.state = States.CLOSED;
-    log.debug({client: self}, 'Client closed.');
+    log.info({client: self}, 'Client closed.');
     self.emit('closed');
   });
 };
