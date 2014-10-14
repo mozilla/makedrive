@@ -4,6 +4,7 @@ var env = require('../lib/environment');
 var version = require('../../package.json').version;
 var FilerWebServer = require('../lib/filer-www');
 var WebsocketAuth = require('../lib/websocket-auth');
+var ClientInfo = require('../lib/client-info.js');
 
 module.exports = function createRoutes(app) {
 
@@ -45,6 +46,10 @@ module.exports = function createRoutes(app) {
   app.get( "/api/sync", middleware.crossOriginHandler, middleware.authenticationHandler, function( req, res ) {
     var username = req.params.username;
     var token = WebsocketAuth.generateTokenForClient(username);
+
+    // Record info about this connection, which will be updated later
+    // when the user fully authenticates.
+    ClientInfo.init(token, req.headers['user-agent']);
 
     res.json(200, token);
   });

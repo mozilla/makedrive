@@ -51,10 +51,11 @@
     "url": "https://github.com/mozilla/makedrive/issues"
   },
   "dependencies": {
-    "bower": "1.3.8",
     "MD5": "^1.2.1",
     "archiver": "^0.10.1",
+    "bower": "1.3.8",
     "browser-request": "^0.3.1",
+    "bunyan": "^1.1.3",
     "events": "^1.0.1",
     "express": "3.4.5",
     "filer": "0.0.28",
@@ -63,12 +64,12 @@
     "grunt-contrib-less": "^0.11.4",
     "habitat": "1.1.0",
     "helmet": "0.2.0",
-    "bunyan": "^1.1.3",
     "mime": "^1.2.11",
     "newrelic": "1.4.0",
     "node-uuid": "^1.4.1",
     "recluster": "^0.3.7",
     "redis": "^0.12.1",
+    "useragent": "^2.1.0",
     "webmaker-auth": "0.0.14",
     "ws": "^0.4.31"
   },

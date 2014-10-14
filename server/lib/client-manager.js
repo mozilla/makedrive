@@ -5,6 +5,7 @@ var filesystem = require('./filesystem');
 var Constants = require('../../lib/constants.js');
 var States = Constants.server.states;
 var log = require('./logger.js');
+var ClientInfo = require('./client-info.js');
 
 /**
  * Handle initial connection and authentication, bind user data
@@ -23,6 +24,7 @@ function initClient(client) {
       data = JSON.parse(msg.data);
     } catch(err) {
       log.error({client: client, err: err}, 'Error parsing client token. Data was `%s`', msg.data);
+      ClientInfo.remove(token);
       client.close({
         code: 1011,
         message: 'Error: token could not be parsed.'
@@ -35,6 +37,7 @@ function initClient(client) {
     var username = WebsocketAuth.getAuthorizedUsername(token);
     if (!username) {
       log.warn({client: client}, 'Client sent an invalid or expired token (could not get username): token=%s', token);
+      ClientInfo.remove(token);
       client.close({
         code: 1008,
         message: 'Error: invalid token.'
@@ -49,6 +52,7 @@ function initClient(client) {
       keyPrefix: username,
       name: username
     });
+    ClientInfo.update(client);
 
     log.info({client: client}, 'Client connected');
 

@@ -9,6 +9,7 @@ var getCommonPath = require('../../lib/sync-path-resolver').resolve;
 var SyncLock = require('./sync-lock.js');
 var redis = require('../redis-clients.js');
 var log = require('./logger.js');
+var ClientInfo = require('./client-info.js');
 
 var Constants = require('../../lib/constants.js');
 var ServerStates = Constants.server.states;
@@ -233,6 +234,11 @@ function releaseLock(client) {
   client.lock.removeAllListeners();
   client.lock = null;
   client.state = States.LISTENING;
+
+  // Figure out how long this sync was active
+  var startTime = client._syncStarted;
+  delete client._syncStarted;
+  return Date.now() - startTime;
 }
 
 SyncProtocolHandler.prototype.handleSyncInitRequest = function(message) {
@@ -266,6 +272,9 @@ SyncProtocolHandler.prototype.handleSyncInitRequest = function(message) {
         client.lock = lock;
         client.state = States.CHKSUM;
         client.path = message.content.path;
+
+        // Track the length of time this sync takes
+        client._syncStarted = Date.now();
 
         response = SyncMessage.response.sync;
         response.content = {path: message.content.path};
@@ -417,8 +426,12 @@ SyncProtocolHandler.prototype.end = function(patchResponse) {
         log.error({err: err, client: client}, 'Error releasing lock');
       }
 
-      releaseLock(client);
-      log.info({client: client}, 'Completed upstream sync to server');
+      var duration = releaseLock(client);
+      var info = ClientInfo.find(client);
+      if(info) {
+        info.upstreamSyncs++;
+      }
+      log.info({client: client}, 'Completed upstream sync to server in %s ms.', duration);
 
       client.sendMessage(patchResponse);
 
@@ -531,6 +544,7 @@ SyncProtocolHandler.prototype.handleDiffRequest = function(message) {
   SyncLock.isUserLocked(client.username, function(err, locked) {
     if(err) {
       log.error({err: err, client: client}, 'Error trying to look-up lock for user with redis');
+      delete client._syncStarted;
       response = SyncMessage.error.srclist;
       client.sendMessage(response);
       return;
@@ -539,6 +553,7 @@ SyncProtocolHandler.prototype.handleDiffRequest = function(message) {
     if(locked && !client.is.initiating) {
       response = SyncMessage.error.downstreamLocked;
       client.downstreamInterrupted = true;
+      delete client._syncStarted;
       client.sendMessage(response);
       return;
     }
@@ -548,6 +563,7 @@ SyncProtocolHandler.prototype.handleDiffRequest = function(message) {
     rsync.diff(client.fs, client.path, checksums, rsyncOptions, function(err, diffs) {
       if(err) {
         log.error({err: err, client: client}, 'rsync.diff() error');
+        delete client._syncStarted;
         response = SyncMessage.error.diffs;
       } else {
         response = SyncMessage.response.diffs;
@@ -584,9 +600,13 @@ SyncProtocolHandler.prototype.handleDownstreamReset = function(message) {
       return;
     }
 
+    // Track the length of time this sync takes
+    client._syncStarted = Date.now();
+
     rsync.sourceList(client.fs, '/', rsyncOptions, function(err, srcList) {
       if(err) {
         log.error({err: err, client: client}, 'rsync.sourceList() error');
+        delete client._syncStarted;
         response = SyncMessage.error.srclist;
       } else {
         response = SyncMessage.request.chksum;
@@ -627,7 +647,14 @@ SyncProtocolHandler.prototype.handlePatchResponse = function(message) {
       response = SyncMessage.error.verification;
     }
 
-    log.info({client: client}, 'Completed downstream sync to client');
+    var duration = Date.now() - client._syncStarted;
+    delete client._syncStarted;
+    var info = ClientInfo.find(client);
+    if(info) {
+      info.downstreamSyncs++;
+    }
+    log.info({client: client}, 'Completed downstream sync to client in %s ms', duration);
+
     client.sendMessage(response);
   });
 };
