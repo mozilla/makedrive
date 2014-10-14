@@ -76,34 +76,48 @@ function SyncFileSystem(fs) {
       // second for some.
       var pathOrFD = args[pathArgPos];
 
-      // In most cases we want to use the path itself, but in the case
-      // that a node is being removed, we want the parent dir.
-      pathOrFD = useParentPath ? Path.dirname(pathOrFD) : pathOrFD;
-
-      // Check to see if it is a path or an open file descriptor
-      // TODO: Deal with a case of fs.open for a path with a write flag
-      // https://github.com/mozilla/makedrive/issues/210.
-      if(!fs.openFiles[pathOrFD]) {
-        self.pathToSync = pathOrFD;
-        // Record the path that was modified on the fs
-        fs.modifiedPath = pathOrFD;
-      }
-
-      args[lastIdx] = function wrappedCallback() {
-        var args = Array.prototype.slice.call(arguments, 0);
-        if(args[0]) {
-          return callback(args[0]);
+      // Don't record extra sync-level details about modifications to an
+      // existing conflicted copy, since we don't sync them.
+      conflict.isConflictedCopy(fs, pathOrFD, function(err, conflicted) {
+        // Deal with errors other than the path not existing (this fs
+        // call might be creating it, in which case it's also not conflicted).
+        if(err && err.code !== 'ENOENT') {
+          return callback.apply(null, [err]);
         }
 
-        setUnsyncedFn(pathOrFD, function(err) {
-          if(err) {
-            return callback(err);
-          }
-          callback.apply(null, args);
-        });
-      };
+        // In most cases we want to use the path itself, but in the case
+        // that a node is being removed, we want the parent dir.
+        pathOrFD = useParentPath ? Path.dirname(pathOrFD) : pathOrFD;
 
-      fs[method].apply(fs, args);
+        conflicted = !!conflicted;
+
+        // Record base sync path if this is a regular, non-conflicted path.
+        if(!conflicted && !fs.openFiles[pathOrFD]) {
+          // Check to see if it is a path or an open file descriptor
+          // TODO: Deal with a case of fs.open for a path with a write flag
+          // https://github.com/mozilla/makedrive/issues/210.
+          self.pathToSync = pathOrFD;
+          // Record the path that was modified on the fs
+          fs.modifiedPath = pathOrFD;
+        }
+
+        args[lastIdx] = function wrappedCallback() {
+          var args = Array.prototype.slice.call(arguments, 0);
+          // Error object on callback, bail now
+          if(args[0]) {
+            return callback.apply(null, args);
+          }
+
+          setUnsyncedFn(pathOrFD, function(err) {
+            if(err) {
+              return callback(err);
+            }
+            callback.apply(null, args);
+          });
+        };
+
+        fs[method].apply(fs, args);
+      });
     };
   }
 
