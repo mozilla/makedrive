@@ -5,17 +5,11 @@ var version = require('../../package.json').version;
 var FilerWebServer = require('../lib/filer-www');
 var WebsocketAuth = require('../lib/websocket-auth');
 
-module.exports = function createRoutes(app, webmakerAuth) {
+module.exports = function createRoutes(app) {
 
   app.get( "/", function( req, res ) {
     res.send( "MakeDrive: https://wiki.mozilla.org/Webmaker/MakeDrive" );
   });
-
-  app.post( "/verify", webmakerAuth.handlers.verify );
-  app.post( "/authenticate", webmakerAuth.handlers.authenticate );
-  app.post( "/create", webmakerAuth.handlers.create );
-  app.post( "/logout", webmakerAuth.handlers.logout );
-  app.post( "/check-username", webmakerAuth.handlers.exists );
 
   function setupWWWRoutes(route, options) {
     app.get(route, middleware.authenticationHandler, function( req, res ) {

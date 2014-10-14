@@ -7,7 +7,6 @@
     "makerstrap": "0.1.8",
     "ace-builds": "1.1.3",
     "jstree": "~3.0.2",
-    "webmaker-auth-client": "~0.1.11",
     "angular-bootstrap": "~0.11.0",
     "angular-ui": "~0.4.0",
     "filer-dialogs": "https://github.com/ScottDowne/filer-dialogs.git",

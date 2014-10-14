@@ -70,7 +70,7 @@ app.use(middleware.errorHandler);
 app.use(middleware.fourOhFourHandler);
 
 // Declare routes
-routes(app, webmakerAuth);
+routes(app);
 
 module.exports = new EventEmitter();
 module.exports.app = app;
