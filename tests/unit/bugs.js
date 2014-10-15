@@ -4,7 +4,6 @@ var SyncMessage = require('../../lib/syncmessage');
 var MakeDrive = require('../../client/src');
 var Filer = require('../../lib/filer.js');
 var fsUtils = require('../../lib/fs-utils.js');
-var conflict = require('../../lib/conflict.js');
 
 describe("Server bugs", function() {
   describe("[Issue 169]", function() {
@@ -77,24 +76,22 @@ describe('Client bugs', function() {
   });
 
   describe('[Issue 372]', function(){
-
-    function findConflictedFilename(entries) {
-      entries.splice(entries.indexOf('hello'), 1);
-      return Filer.Path.join('/', entries[0]);
-    }
-
     /**
      * This test creates a file and sync then disconenct
      * and change the file's content then try to connect and sync again.
      */
-    it('should sync and create conflicted copy', function(done) {
+    it('should upstream newer changes made when disconnected and not create a conflicted copy', function(done) {
       var fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
       var sync = fs.sync;
+      var jar;
 
-      util.authenticatedConnection(function( err, result ) {
+      util.authenticatedConnection(function(err, result) {
         if(err) throw err;
 
-        var layout = {'/hello': 'hello'};
+        var layout = {'/hello': 'hello',
+                      '/dir/world': 'world'
+                     };
+        jar = result.jar;
 
         sync.once('connected', function onConnected() {
           util.createFilesystemLayout(fs, layout, function(err) {
@@ -111,33 +108,21 @@ describe('Client bugs', function() {
         sync.once('disconnected', function onDisconnected() {
           // Re-sync with server and make sure we get our empty dir back
           sync.once('connected', function onSecondDownstreamSync() {
-            fs.readdir('/', function(err, entries) {
-              if(err) throw err;
+            layout['/hello'] = 'hello world';
 
-              expect(entries).to.have.length(2);
-              expect(entries).to.include('hello');
-
-              // Make sure this is a real conflicted copy, both in name
-              // and also in terms of attributes on the file.
-              var conflictedCopyFilename = findConflictedFilename(entries);
-
-              conflict.isConflictedCopy(fs, conflictedCopyFilename, function(err, conflicted) {
-                expect(err).not.to.exist;
-                expect(conflicted).to.be.true;
-
-                // Make sure the conflicted copy has the changes we expect
-                fs.readFile(conflictedCopyFilename, 'utf8', function(err, data) {
-                  if(err) throw err;
-
-                  // Should have the modified content
-                  expect(data).to.equal('hello world');
-                  done();
-                });
-              });
+            util.ensureFilesystem(fs, layout, function(err) {
+              expect(err).not.to.exist;
             });
           });
 
-          util.ensureRemoteFilesystem(layout, result.jar, function(err) {
+          sync.once('completed', function reconnectedUpstream() {
+            util.ensureRemoteFilesystem(layout, jar, function(err) {
+              expect(err).not.to.exist;
+              done();
+            });
+          });
+
+          util.ensureRemoteFilesystem(layout, jar, function(err) {
             if(err) throw err;
 
             fs.writeFile('/hello', 'hello world', function (err) {
@@ -152,6 +137,7 @@ describe('Client bugs', function() {
                 util.getWebsocketToken(result, function(err, result) {
                   if(err) throw err;
 
+                  jar = result.jar;
                   sync.connect(util.socketURL, result.token);
                 });
               });

@@ -631,9 +631,8 @@ SyncProtocolHandler.prototype.handlePatchResponse = function(message) {
   }
 
   var checksums = message.content.checksums;
-  var size = message.content.size || 5;
 
-  rsync.utils.compareContents(client.fs, checksums, size, function(err, equal) {
+  rsync.utils.compareContents(client.fs, checksums, function(err, equal) {
     var response;
 
     // We need to check if equal is true because equal can have three possible

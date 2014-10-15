@@ -7,6 +7,8 @@ var deserializeDiff = require('../../lib/diff').deserialize;
 var states = require('./sync-states');
 var steps = require('./sync-steps');
 var dirname = require('../../lib/filer').Path.dirname;
+var async = require('../../lib/async-lite');
+var fsUtils = require('../../lib/fs-utils');
 
 function onError(syncManager, err) {
   syncManager.session.step = steps.FAILED;
@@ -124,9 +126,47 @@ function handleResponse(syncManager, data) {
   }
 
   function handlePatchAckResponse() {
+    var syncedPaths = data.content.syncedPaths;
     session.state = states.READY;
     session.step = steps.SYNCED;
-    sync.onCompleted(data.content.syncedPaths);
+
+    function stampChecksum(path, callback) {
+      fs.lstat(path, function(err, stats) {
+        if(err) {
+          if(err.code !== 'ENOENT') {
+            return callback(err);
+          }
+
+          // Non-existent paths (usually due to renames or
+          // deletes that are included in the syncedPaths)
+          // cannot be stamped with a checksum
+          return callback();
+        }
+
+        if(!stats.isFile()) {
+          return callback();
+        }
+
+        rsyncUtils.getChecksum(fs, path, function(err, checksum) {
+          if(err) {
+            return callback(err);
+          }
+
+          fsUtils.setChecksum(fs, path, checksum, callback);
+        });
+      });
+    }
+
+    // As soon as an upstream sync happens, the files synced
+    // become the last synced versions and must be stamped
+    // with their checksums to version them
+    async.eachSeries(syncedPaths, stampChecksum, function(err) {
+      if(err) {
+        return onError(syncManager, err);
+      }
+
+      sync.onCompleted(data.content.syncedPaths);
+    });
   }
 
   function handlePatchResponse() {
@@ -150,9 +190,11 @@ function handleResponse(syncManager, data) {
         return onError(syncManager, err);
       }
 
-      var size = rsyncOptions.size || 5;
+      if(paths.needsUpstream.length) {
+        session.needsUpstream = paths.needsUpstream;
+      }
 
-      rsyncUtils.generateChecksums(fs, paths.synced, size, function(err, checksums) {
+      rsyncUtils.generateChecksums(fs, paths.synced, true, function(err, checksums) {
         if(err) {
           var message = SyncMessage.response.reset;
           syncManager.send(message.stringify());
@@ -160,7 +202,7 @@ function handleResponse(syncManager, data) {
         }
 
         var message = SyncMessage.response.patch;
-        message.content = {checksums: checksums, size: size};
+        message.content = {checksums: checksums};
         syncManager.send(message.stringify());
       });
     });
@@ -169,7 +211,9 @@ function handleResponse(syncManager, data) {
   function handleVerificationResponse() {
     session.srcList = null;
     session.step = steps.SYNCED;
-    sync.onCompleted();
+    var needsUpstream = session.needsUpstream;
+    delete session.needsUpstream;
+    sync.onCompleted(null, needsUpstream);
   }
 
   function handleUpstreamResetResponse() {

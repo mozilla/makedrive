@@ -81,6 +81,7 @@ var SyncManager = require('./sync-manager.js');
 var SyncFileSystem = require('./sync-filesystem.js');
 var Filer = require('../../lib/filer.js');
 var EventEmitter = require('events').EventEmitter;
+var resolvePath = require('../../lib/sync-path-resolver.js').resolveFromArray;
 
 var MakeDrive = {};
 module.exports = MakeDrive;
@@ -117,6 +118,11 @@ function createFS(options) {
   var autoSync;
   var pathCache;
 
+  // Path that needs to be used for an upstream sync
+  // to sync files that were determined to be more 
+  // up-to-date on the client during a downstream sync
+  var upstreamPath;
+
   // State of the sync connection
   sync.SYNC_DISCONNECTED = "SYNC DISCONNECTED";
   sync.SYNC_CONNECTING = "SYNC CONNECTING";
@@ -151,6 +157,30 @@ function createFS(options) {
     manager = null;
   }
 
+  function requestSync(path) {
+    // If we're not connected (or are already syncing), ignore this request
+    if(sync.state === sync.SYNC_DISCONNECTED || sync.state === sync.SYNC_ERROR) {
+      sync.emit('error', new Error('Invalid state. Expected ' + sync.SYNC_CONNECTED + ', got ' + sync.state));
+      return;
+    }
+
+    // If there were no changes to the filesystem and
+    // no path was passed to sync, ignore this request
+    if(!fs.pathToSync && !path) {
+      return;
+    }
+
+    // If a path was passed sync using it
+    if(path) {
+      return manager.syncPath(path);
+    }
+
+    // Cache the path that needs to be synced for error recovery
+    pathCache = fs.pathToSync;
+    fs.pathToSync = null;
+    manager.syncPath(pathCache);
+  }
+
   // Turn on auto-syncing if its not already on
   sync.auto = function(interval) {
     var syncInterval = interval|0 > 0 ? interval|0 : 15 * 1000;
@@ -180,7 +210,7 @@ function createFS(options) {
   sync.onError = function(err) {
     // Regress to the path that needed to be synced but failed
     // (likely because of a sync LOCK)
-    fs.pathToSync = pathCache;
+    fs.pathToSync = upstreamPath || pathCache;
     sync.state = sync.SYNC_ERROR;
     sync.emit('error', err);
   };
@@ -200,21 +230,12 @@ function createFS(options) {
 
   // Request that a sync begin.
   sync.request = function() {
-    // If we're not connected (or are already syncing), ignore this request
-    if(sync.state === sync.SYNC_DISCONNECTED || sync.state === sync.SYNC_ERROR) {
-      sync.emit('error', new Error('Invalid state. Expected ' + sync.SYNC_CONNECTED + ', got ' + sync.state));
-      return;
-    }
-
-    // If there were no changes to the filesystem, ignore this request
-    if(!fs.pathToSync) {
-      return;
-    }
-
-    // Cache the path that needs to be synced for error recovery
-    pathCache = fs.pathToSync;
-    fs.pathToSync = null;
-    manager.syncPath(pathCache);
+    // sync.request does not take any parameters
+    // as the path to sync is determined internally
+    // requestSync on the other hand optionally takes
+    // a path to sync which can be specified for
+    // internal use
+    requestSync();
   };
 
   // Try to connect to the server.
@@ -234,7 +255,7 @@ function createFS(options) {
     // Upgrade connection state to `connecting`
     sync.state = sync.SYNC_CONNECTING;
 
-    function downstreamSyncCompleted() {
+    function downstreamSyncCompleted(paths, needUpstream) {
       // Re-wire message handler functions for regular syncing
       // now that initial downstream sync is completed.
       sync.onSyncing = function() {
@@ -242,26 +263,36 @@ function createFS(options) {
         sync.emit('syncing');
       };
 
-      sync.onCompleted = function(paths) {
+      sync.onCompleted = function(paths, needUpstream) {
         // If changes happened to the files that needed to be synced
         // during the sync itself, they will be overwritten
-        // https://github.com/mozilla/makedrive/issues/129 and
-        // https://github.com/mozilla/makedrive/issues/3
+        // https://github.com/mozilla/makedrive/issues/129
 
         function complete() {
           sync.state = sync.SYNC_CONNECTED;
           sync.emit('completed');
         }
 
-        if(!paths) {
+        if(!paths && !needUpstream) {
           return complete();
         }
 
+        // Changes in the client are newer (determined during
+        // the sync) and need to be upstreamed
+        if(needUpstream) {
+          upstreamPath = resolvePath(needUpstream);
+          complete();
+          return requestSync(upstreamPath);
+        }
+
+        // If changes happened during a downstream sync
+        // Change the path that needs to be synced
         manager.resetUnsynced(paths, function(err) {
           if(err) {
             return sync.onError(err);
           }
 
+          upstreamPath = null;
           complete();
         });
       };
@@ -285,6 +316,16 @@ function createFS(options) {
       }
 
       sync.emit('connected');
+
+      // If the downstream was completed and some
+      // versions of files were not synced as they were
+      // newer on the client, upstream them
+      if(needUpstream) {
+        upstreamPath = resolvePath(needUpstream);
+        requestSync(upstreamPath);
+      } else {
+        upstreamPath = null;
+      }
     }
 
     function connect(token) {
@@ -302,9 +343,9 @@ function createFS(options) {
         sync.onSyncing = function() {
           // do nothing, wait for onCompleted()
         };
-        sync.onCompleted = function() {
+        sync.onCompleted = function(paths, needUpstream) {
           // Downstream sync is done, finish connect() setup
-          downstreamSyncCompleted();
+          downstreamSyncCompleted(paths, needUpstream);
         };
       });
     }

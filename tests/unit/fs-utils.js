@@ -3,6 +3,7 @@ var util = require('../lib/util.js');
 var Filer = require('../../lib/filer.js');
 var FileSystem = Filer.FileSystem;
 var fsUtils = require('../../lib/fs-utils.js');
+var CHECKSUM = require('MD5')('This is data').toString();
 
 describe('MakeDrive fs-utils.js', function(){
   var fs;
@@ -34,6 +35,12 @@ describe('MakeDrive fs-utils.js', function(){
     expect(fsUtils.fsetUnsynced).to.be.a.function;
     expect(fsUtils.getUnsynced).to.be.a.function;
     expect(fsUtils.fgetUnsynced).to.be.a.function;
+    expect(fsUtils.removeChecksum).to.be.a.function;
+    expect(fsUtils.fremoveChecksum).to.be.a.function;
+    expect(fsUtils.setChecksum).to.be.a.function;
+    expect(fsUtils.fsetChecksum).to.be.a.function;
+    expect(fsUtils.getChecksum).to.be.a.function;
+    expect(fsUtils.fgetChecksum).to.be.a.function;
   });
 
   it('should copy an existing file on forceCopy()', function(done) {
@@ -127,7 +134,7 @@ describe('MakeDrive fs-utils.js', function(){
     });
   });
 
-  it('should work with fd vs. path', function(done) {
+  it('should work with fd vs. path for unsynced metadata', function(done) {
     fs.open('/dir/file', 'w', function(err, fd) {
       if(err) throw err;
 
@@ -154,4 +161,63 @@ describe('MakeDrive fs-utils.js', function(){
     });
   });
 
+  it('should give checksum for getChecksum() if path has checksum metadata', function(done) {
+    fsUtils.setChecksum(fs, '/dir/file', CHECKSUM, function(err) {
+      expect(err).not.to.exist;
+
+      fsUtils.getChecksum(fs, '/dir/file', function(err, checksum) {
+        expect(err).not.to.exist;
+        expect(checksum).to.equal(CHECKSUM);
+        done();
+      });
+    });
+  });
+
+  it('should remove checksum metadata when calling removeChecksum()', function(done) {
+    fsUtils.setChecksum(fs, '/dir/file', CHECKSUM, function(err) {
+      expect(err).not.to.exist;
+
+      fsUtils.getChecksum(fs, '/dir/file', function(err, checksum) {
+        expect(err).not.to.exist;
+        expect(checksum).to.equal(CHECKSUM);
+
+        fsUtils.removeChecksum(fs, '/dir/file', function(err) {
+          expect(err).not.to.exist;
+
+          fsUtils.getChecksum(fs, '/dir/file', function(err, checksum) {
+            expect(err).not.to.exist;
+            expect(checksum).not.to.exist;
+            done();
+          });
+        });
+      });
+    });
+  });
+
+  it('should work with fd vs. path for checksum metadata', function(done) {
+    fs.open('/dir/file', 'w', function(err, fd) {
+      if(err) throw err;
+
+      fsUtils.fsetChecksum(fs, fd, CHECKSUM, function(err) {
+        expect(err).not.to.exist;
+
+        fsUtils.fgetChecksum(fs, fd, function(err, checksum) {
+          expect(err).not.to.exist;
+          expect(checksum).to.equal(CHECKSUM);
+
+          fsUtils.fremoveChecksum(fs, fd, function(err) {
+            expect(err).not.to.exist;
+
+            fsUtils.fgetChecksum(fs, fd, function(err, checksum) {
+              expect(err).not.to.exist;
+              expect(checksum).not.to.exist;
+
+              fs.close(fd);
+              done();
+            });
+          });
+        });
+      });
+    });
+  });
 });

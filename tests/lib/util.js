@@ -439,14 +439,12 @@ var downstreamSyncSteps = {
     rsync.patch(fs, data.path, data.diffs, rsyncOptions, function(err, paths) {
       expect(err, "[Rsync patch error: \"" + err + "\"]").not.to.exist;
 
-      var size = rsyncOptions.size || 5;
-
-      rsyncUtils.generateChecksums(fs, paths.synced, size, function(err, checksums) {
+      rsyncUtils.generateChecksums(fs, paths.synced, function(err, checksums) {
         expect(err, "[Rsync path checksum error: \"" + err + "\"]").not.to.exist;
         expect(checksums).to.exist;
 
         var patchResponse = SyncMessage.response.patch;
-        patchResponse.content = {checksums: checksums, size: size};
+        patchResponse.content = {checksums: checksums};
 
         socketPackage.socket.send(patchResponse.stringify());
       });
@@ -936,6 +934,7 @@ function ensureFilesystem(fs, layout, callback) {
     if(err) {
       return callback(err);
     }
+
     ensureFilesystemContents(fs, layout, callback);
   });
 }
