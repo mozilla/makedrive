@@ -1,9 +1,9 @@
-var bunyan = require('bunyan');
 var env = require('./environment.js');
 var ClientInfo = require('./client-info.js');
+var messina = require('messina'); 
 
-var logger = bunyan.createLogger({
-  name: 'MakeDrive',
+var logger = messina({
+  name: 'MakeDrive-' + (env.get('NODE_ENV') || 'development'),
   serializers: {
     // See lib/syncmessage.js
     syncMessage: function syncMessageSerializer(msg) {

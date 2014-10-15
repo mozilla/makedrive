@@ -24,20 +24,9 @@ var webmakerAuth = new WebmakerAuth({
   domain: env.get('COOKIE_DOMAIN')
 });
 var port = process.env.PORT || env.get('PORT') || 9090;
-var logger;
 var server;
 
-// TODO - figure out how to make this play nicely with lib/logger.js
-// https://github.com/mozilla/makedrive/issues/389
-//if(env.get('ENABLE_GELF_LOGS')) {
-//  logger = require('messina')('MakeDrive-' + (env.get('NODE_ENV') || 'development')));
-//  logger.init();
-//  app.use(logger.middleware());
-//} else {
-//  app.use(express.logger('dev'));
-//}
-
-// General middleware
+app.use(log.middleware());
 app.disable('x-powered-by');
 app.use(function(req, res, next) {
   var d = domain.create();
