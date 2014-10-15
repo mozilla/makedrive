@@ -60,7 +60,7 @@
     "express": "3.4.5",
     "filer": "0.0.28",
     "filer-fs": "0.1.2",
-    "filer-s3": "0.1.0",
+    "filer-s3": "0.1.1",
     "grunt-contrib-less": "^0.11.4",
     "habitat": "1.1.0",
     "helmet": "0.2.0",
