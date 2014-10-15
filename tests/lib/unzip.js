@@ -1,5 +1,6 @@
 module.exports = function(fs, zipfile, options, callback) {
-  var Path = require('../../lib/filer.js').Path;
+  var Filer = require('../../lib/filer.js');
+  var Path = Filer.Path;
   var JSZip = require('jszip');
   var async = require('async');
   var sh = fs.Shell();
@@ -11,7 +12,7 @@ module.exports = function(fs, zipfile, options, callback) {
   callback = callback || function(){};
 
   if(!zipfile) {
-    callback(new Errors.EINVAL('Missing zipfile argument'));
+    callback(new Filer.Errors.EINVAL('Missing zipfile argument'));
     return;
   }
 

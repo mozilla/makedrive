@@ -16,7 +16,6 @@ var routes = require('./routes');
 var log = require('./lib/logger.js');
 
 var app = express();
-var distDir = Path.resolve(__dirname, 'dist');
 var webmakerAuth = new WebmakerAuth({
   loginURL: env.get('LOGIN'),
   secretKey: env.get('SESSION_SECRET'),

@@ -250,7 +250,7 @@ describe('MakeDrive Client SyncFileSystem', function(){
     sh.rm('/dir', {recursive: true}, function(err) {
       if(err) throw err;
 
-      fs.stat('/dir', function(err, stats) {
+      fs.stat('/dir', function(err) {
         expect(err).to.exist;
         expect(err.code).to.equal('ENOENT');
 

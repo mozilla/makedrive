@@ -1,4 +1,3 @@
-var env = require('../../../server/lib/environment');
 var expect = require('chai').expect;
 var util = require('../../lib/util.js');
 var MakeDrive = require('../../../client/src');
@@ -65,7 +64,7 @@ describe('Syncing file larger than size limit', function(){
         expect(everError).to.be.false;
         done();
       });
-      sync.once('error', function onClientError(error) {
+      sync.once('error', function onClientError() {
         everError = true;
       });
 

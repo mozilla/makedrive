@@ -1,7 +1,5 @@
 var SyncMessage = require('../../lib/syncmessage');
-var Client = require('./client.js');
 var rsync = require('../../lib/rsync');
-var rsyncUtils = rsync.utils;
 var diffHelper = require('../../lib/diff');
 var EventEmitter = require('events').EventEmitter;
 var util = require('util');
@@ -17,7 +15,6 @@ var rsyncOptions = Constants.rsyncDefaults;
 var States = Constants.server.states;
 
 var env = require('./environment.js');
-var CLIENT_TIMEOUT_MS = env.get('CLIENT_TIMEOUT_MS') || 5000;
 var MAX_SYNC_SIZE_BYTES = env.get('MAX_SYNC_SIZE_BYTES') || Math.Infinity;
 
 
@@ -106,7 +103,7 @@ SyncProtocolHandler.prototype.close = function(callback) {
     // Holding lock, release it
     lock.release(function(err) {
       if(err) {
-        log.error({err: err, client: client}, 'Error releasing sync lock');
+        log.error({err: err, client: self.client}, 'Error releasing sync lock');
         return done(err);
       }
       done();
@@ -306,16 +303,18 @@ function checkFileSizeLimit(client, srcList) {
   }
 
   for (var key in srcList) {
-    var obj = srcList[key];
-    for (var prop in obj) {
-      if(obj.hasOwnProperty(prop) && prop === 'size') {
-        if(obj.size > MAX_SYNC_SIZE_BYTES) {
-          // Fail this sync, contains a file that is too large.
-          log.warn({client: client},
-                   'Client tried to exceed file sync size limit: file was %s bytes, limit is %s',
-                   obj.size, MAX_SYNC_SIZE_BYTES);
-          maxSizeExceeded();
-          return false;
+    if(srcList.hasOwnProperty(key)) {
+      var obj = srcList[key];
+      for (var prop in obj) {
+        if(obj.hasOwnProperty(prop) && prop === 'size') {
+          if(obj.size > MAX_SYNC_SIZE_BYTES) {
+            // Fail this sync, contains a file that is too large.
+            log.warn({client: client},
+                     'Client tried to exceed file sync size limit: file was %s bytes, limit is %s',
+                     obj.size, MAX_SYNC_SIZE_BYTES);
+            maxSizeExceeded();
+            return false;
+          }
         }
       }
     }

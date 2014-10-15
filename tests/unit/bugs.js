@@ -24,7 +24,7 @@ describe("[Issue 169]", function() {
             expect(err).to.not.exist;
 
             var socketPackage2 = util.openSocket(socketData2, {
-              onMessage: function(message) {
+              onMessage: function() {
                 util.cleanupSockets(function() {
                   connectionData.done();
                   done();

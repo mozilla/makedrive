@@ -100,7 +100,7 @@ function upload(username, path, contents, callback) {
         'Content-Type': 'application/octet-stream'
       },
       body: contents
-    }, function(err, res, body) {
+    }, function(err, res) {
       expect(err).not.to.exist;
       expect(res.statusCode).to.equal(200);
       callback();
@@ -170,6 +170,10 @@ function getWebsocketToken(options, callback){
   });
 }
 
+function jar() {
+  return request.jar();
+}
+
 function authenticate(options, callback){
   // If no options passed, generate a unique username and jar
   if(typeof options === 'function') {
@@ -188,7 +192,7 @@ function authenticate(options, callback){
     request.post({
       url: serverURL + '/mocklogin/' + options.username,
       jar: options.jar
-    }, function(err, res, body) {
+    }, function(err, res) {
       if(err) {
         return callback(err);
       }
@@ -225,10 +229,6 @@ function authenticateAndConnect(options, callback) {
       callback(null, result1);
     });
   });
-}
-
-function jar() {
-  return request.jar();
 }
 
 /**
@@ -335,7 +335,6 @@ function cleanupSockets(done) {
 }
 
 function sendSyncMessage(socketPackage, syncMessage, callback) {
-  var socket = socketPackage.socket;
   socketPackage.setMessage(callback);
   socketPackage.socket.send(syncMessage.stringify());
 }
@@ -609,7 +608,7 @@ function prepareDownstreamSync(finalStep, username, token, cb){
             if(err){
               return cb(err);
             }
-            if (finalStep == "generateDiffs") {
+            if (finalStep === "generateDiffs") {
               return cb(null, data1, fs, socketPackage);
             }
             downstreamSyncSteps.patchClientFilesystem(socketPackage, data1, fs, function(err, data2) {
@@ -632,6 +631,15 @@ function prepareDownstreamSync(finalStep, username, token, cb){
   });
 }
 
+function completeDownstreamSync(username, token, cb) {
+  prepareDownstreamSync("patch", username, token, function(err, data, fs, socketPackage) {
+    if(err){
+      cb(err);
+    }
+    cb(null, data, fs, socketPackage);
+  });
+}
+
 function prepareUpstreamSync(finalStep, username, token, cb){
   if (typeof cb !== "function") {
     cb = token;
@@ -650,11 +658,11 @@ function prepareUpstreamSync(finalStep, username, token, cb){
     }
 
     upstreamSyncSteps.requestSync(socketPackage, data, function(data1) {
-      if (finalStep == "requestSync") {
+      if (finalStep === "requestSync") {
         return cb(data1, fs, socketPackage);
       }
       upstreamSyncSteps.generateChecksums(socketPackage, data1, fs, function(data2) {
-        if (finalStep == "generateChecksums") {
+        if (finalStep === "generateChecksums") {
           return cb(data2, fs, socketPackage);
         }
         upstreamSyncSteps.patchServerFilesystem(socketPackage, data2, fs, function(err, data3) {
@@ -665,15 +673,6 @@ function prepareUpstreamSync(finalStep, username, token, cb){
         });
       });
     });
-  });
-}
-
-function completeDownstreamSync(username, token, cb) {
-  prepareDownstreamSync("patch", username, token, function(err, data, fs, socketPackage) {
-    if(err){
-      cb(err);
-    }
-    cb(null, data, fs, socketPackage);
   });
 }
 

@@ -2,7 +2,7 @@ var SyncMessage = require( '../../lib/syncmessage' ),
     messageHandler = require('./message-handler'),
     states = require('./sync-states'),
     steps = require('./sync-steps'),
-    WebSocket = require('ws'),
+    WS = require('ws'),
     fsUtils = require('../../lib/fs-utils'),
     async = require('../../lib/async-lite.js'),
     request = require('request'),
@@ -145,7 +145,7 @@ SyncManager.prototype.init = function(wsUrl, token, options, callback) {
 
   function connect(reconnecting) {
     clearTimeout(timeout);
-    socket = new WebSocket(wsUrl);
+    socket = new WS(wsUrl);
     socket.onmessage = handleAuth;
     socket.onopen = function() {
       manager.socket = socket;

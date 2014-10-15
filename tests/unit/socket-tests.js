@@ -1,9 +1,6 @@
 var expect = require('chai').expect;
 var util = require('../lib/util.js');
 var SyncMessage = require('../../lib/syncmessage');
-var deserialize = require('../../lib/diff').deserialize;
-
-var env = require('../../server/lib/environment');
 
 describe('[Downstream Syncing with Websockets]', function(){
   describe('The server', function(){
@@ -45,7 +42,7 @@ describe('[Downstream Syncing with Websockets]', function(){
             expect(message.content).to.be.an('object');
 
             var socketPackage2 = util.openSocket(socketData, {
-              onClose: function(code, reason) {
+              onClose: function(code) {
                 expect(code).to.equal(1008);
                 util.cleanupSockets(result.done, socketPackage, socketPackage2);
               }
@@ -97,7 +94,7 @@ describe('[Downstream Syncing with Websockets]', function(){
               };
 
               var socketPackage2 = util.openSocket(socketData, {
-                onMessage: function(message) {
+                onMessage: function() {
                   util.cleanupSockets(function() {
                     result.done();
                     result2.done();
@@ -306,7 +303,7 @@ describe('[Downstream Syncing with Websockets]', function(){
             expect(msg.content).to.exist;
             expect(msg.content.diffs).to.exist;
             cb();
-          }, function(data) {
+          }, function() {
             util.cleanupSockets(result.done, socketPackage);
           });
         });
@@ -369,7 +366,7 @@ describe('[Downstream Syncing with Websockets]', function(){
 
               cb();
             });
-          }, function(data) {
+          }, function() {
             util.cleanupSockets(result.done, socketPackage);
           });
         });

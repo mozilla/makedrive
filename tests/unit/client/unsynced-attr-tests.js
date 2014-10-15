@@ -118,7 +118,11 @@ describe('MakeDrive Client FileSystem Unsynced Attribute', function() {
 
           sync.once('completed', function onSecondUpstreamCompleted() {
             // Add the synced path back to the 'synced' layout
-            for(var k in newLayout) layout[k] = newLayout[k];
+            for(var k in newLayout) {
+              if(newLayout.hasOwnProperty(k)) {
+                layout[k] = newLayout[k];
+              }
+            }
 
             util.ensureRemoteFilesystem(layout, result.jar, function(err) {
               expect(err).not.to.exist;
@@ -142,7 +146,11 @@ describe('MakeDrive Client FileSystem Unsynced Attribute', function() {
               expect(unsynced).to.be.true;
 
               // Remove the unsynced path from the 'synced' layout
-              for(var k in newLayout) delete layout[k];
+              for(var k in newLayout) {
+                if(newLayout.hasOwnProperty(k)) {
+                  delete layout[k];
+                }
+              }
 
               // Check that the synced files do not have the unsynced attribute
               checkUnsyncedAttr(fs, layout, false, function(err, synced) {
@@ -161,20 +169,15 @@ describe('MakeDrive Client FileSystem Unsynced Attribute', function() {
   });
 
   it('should remove the \'unsynced\' attribute on non-existent files', function (done) {
-    util.authenticatedConnection(function(err, result) {
+    var fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
+    var sync = fs.sync;
+    var manager = new syncManager(sync, fs);
+
+    var paths = ['/random/garbage/', '/woah/daddy/'];
+
+    manager.resetUnsynced(paths, function(err){
       expect(err).not.to.exist;
-
-      var fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
-      var sync = fs.sync;
-      var manager = new syncManager(sync, fs);
-
-      var paths = ['/random/garbage/', '/woah/daddy/'];
-
-      manager.resetUnsynced(paths, function(err){
-        expect(err).not.to.exist;
-
-        done();
-      });
+      done();
     });
   });
 });

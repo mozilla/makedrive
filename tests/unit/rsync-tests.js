@@ -633,7 +633,6 @@ describe('[Rsync Functional tests]', function() {
   });
 
   it('should successfully sync changes in a long file', function (done) {
-    var content;
     var layout = {'/test/index': '<!DOCTYPE html>\n<html>\n<head>\n  <meta charset="utf-8">\n  <title>Sample HTML File</title>\n</head>\n<body>\n  <h1>Webmaker</h1>\n  <img src="webmaker-logo.jpg">\n</body>\n</html>\n I have now changed this file'};
     var patchedPaths = {synced: ['/test', '/test/index']};
 

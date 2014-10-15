@@ -72,16 +72,16 @@ describe('[Interruptions during a sync]', function() {
         socket = ws;
 
         // Stub WS auth
-        ws.once('message', function(msg, flags) {
+        ws.once('message', function(msg) {
           msg = msg.data || msg;
           msg = parseMessage(msg);
 
           // after auth
-          ws.once('message', function(msg, flags){
+          ws.once('message', function(msg){
             msg = parseMessage(msg);
             expect(msg).to.deep.equal(SyncMessage.response.authz);
 
-            ws.once('message', function(msg, flags) {
+            ws.once('message', function(msg) {
               // The second message from the client should be a REQUEST DIFFS
               msg = parseMessage(msg);
               expect(msg.type).to.equal(SyncMessage.REQUEST);

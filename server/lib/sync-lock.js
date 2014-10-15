@@ -58,39 +58,6 @@ function handleLockRequest(message, lock) {
   });
 }
 
-function handleLockResponse(message, key, client, waitTimer, callback) {
-  var id = client.id;
-
-  try {
-    message = JSON.parse(message);
-  } catch(err) {
-    log.error(err, 'Could not parse lock response message from redis: `%s`', message);
-    return callback(err);
-  }
-
-  // Not meant for this lock, skip
-  if(key !== message.key) {
-    return;
-  }
-
-  // Stop the timer from expiring, since we got a response in time.
-  clearTimeout(waitTimer);
-
-  redis.removeListener('lock-response', client._handleLockResponseFn);
-  client._handleLockResponseFn = null;
-
-  // The result of the request is defined in the `unlocked` param,
-  // which is true if we now hold the lock, false if not.
-  if(message.unlocked) {
-    var lock = new SyncLock(key, id);
-    log.debug({syncLock: lock}, 'Lock override acquired.');
-    callback(null, lock);
-  } else {
-    log.debug('Lock override denied for key %s.', key);
-    callback();
-  }
-}
-
 function SyncLock(key, id) {
   EventEmitter.call(this);
 
@@ -150,6 +117,39 @@ SyncLock.prototype.release = function(callback) {
     callback(null, reply === 'OK');
   });
 };
+
+function handleLockResponse(message, key, client, waitTimer, callback) {
+  var id = client.id;
+
+  try {
+    message = JSON.parse(message);
+  } catch(err) {
+    log.error(err, 'Could not parse lock response message from redis: `%s`', message);
+    return callback(err);
+  }
+
+  // Not meant for this lock, skip
+  if(key !== message.key) {
+    return;
+  }
+
+  // Stop the timer from expiring, since we got a response in time.
+  clearTimeout(waitTimer);
+
+  redis.removeListener('lock-response', client._handleLockResponseFn);
+  client._handleLockResponseFn = null;
+
+  // The result of the request is defined in the `unlocked` param,
+  // which is true if we now hold the lock, false if not.
+  if(message.unlocked) {
+    var lock = new SyncLock(key, id);
+    log.debug({syncLock: lock}, 'Lock override acquired.');
+    callback(null, lock);
+  } else {
+    log.debug('Lock override denied for key %s.', key);
+    callback();
+  }
+}
 
 /**
  * Request a lock for the current client.

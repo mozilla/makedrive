@@ -189,7 +189,7 @@ describe('MakeDrive Client API', function(){
         socket = ws;
 
         // Stub WS auth
-        ws.once('message', function(msg, flags) {
+        ws.once('message', function(msg) {
           msg = msg.data || msg;
 
           try {
@@ -198,11 +198,11 @@ describe('MakeDrive Client API', function(){
             expect(e, "[Error parsing fake token]").to.not.exist;
           }
 
-          ws.once('message', function(msg, flags){
+          ws.once('message', function(msg){
             msg = parseMessage(msg);
             expect(msg).to.deep.equal(SyncMessage.response.authz);
 
-            ws.once('message', function(msg, flags) {
+            ws.once('message', function(msg) {
               // The next message from the client should be a RESPONSE RESET
               msg = parseMessage(msg);
 
@@ -240,15 +240,15 @@ describe('MakeDrive Client API', function(){
         socket = ws;
 
         // Stub WS auth
-        ws.once('message', function(msg, flags) {
+        ws.once('message', function(msg) {
           msg = msg.data || msg;
           msg = parseMessage(msg);
 
-          ws.once('message', function(msg, flags){
+          ws.once('message', function(msg){
             msg = parseMessage(msg);
             expect(msg).to.deep.equal(SyncMessage.response.authz);
 
-            ws.once('message', function(msg, flags) {
+            ws.once('message', function(msg) {
               // The second message from the client should be a REQUEST DIFFS
               msg = parseMessage(msg);
               expect(msg.type).to.equal(SyncMessage.REQUEST);
@@ -305,16 +305,16 @@ describe('MakeDrive Client API', function(){
         socket = ws;
 
         // Stub WS auth
-        ws.once('message', function(msg, flags) {
+        ws.once('message', function(msg) {
           msg = msg.data || msg;
           msg = parseMessage(msg);
 
           // after auth
-          ws.once('message', function(msg, flags){
+          ws.once('message', function(msg){
             msg = parseMessage(msg);
             expect(msg).to.deep.equal(SyncMessage.response.authz);
 
-            ws.once('message', function(msg, flags) {
+            ws.once('message', function(msg) {
               // The second message from the client should be a REQUEST DIFFS
               msg = parseMessage(msg);
               expect(msg.type).to.equal(SyncMessage.REQUEST);
@@ -374,16 +374,16 @@ describe('MakeDrive Client API', function(){
         socket = ws;
 
         // Stub WS auth
-        ws.once('message', function(msg, flags) {
+        ws.once('message', function(msg) {
           msg = msg.data || msg;
           msg = parseMessage(msg);
 
           // after auth
-          ws.once('message', function(msg, flags){
+          ws.once('message', function(msg){
             msg = parseMessage(msg);
             expect(msg).to.deep.equal(SyncMessage.response.authz);
 
-            ws.once('message', function(msg, flags) {
+            ws.once('message', function(msg) {
               // The second message from the client should be a REQUEST DIFFS
               msg = parseMessage(msg);
               expect(msg.type).to.equal(SyncMessage.REQUEST);
@@ -506,7 +506,6 @@ describe('MakeDrive Client API', function(){
         expect(err).not.to.exist;
 
         var token = result.token;
-        var layout = {'/file': 'data'};
         var fs;
         var sync;
 
@@ -533,7 +532,6 @@ describe('MakeDrive Client API', function(){
         expect(err).not.to.exist;
 
         var token = result.token;
-        var layout = {'/file': 'data'};
         var fs;
         var sync;
 

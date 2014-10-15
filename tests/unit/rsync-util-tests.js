@@ -1,6 +1,7 @@
 var Filer = require('../../lib/filer.js');
 var expect = require('chai').expect;
 var fs;
+var fs2;
 var provider;
 var CHUNK_SIZE = 5;
 var rsyncUtils = require('../../lib/rsync').utils;
@@ -224,7 +225,7 @@ describe('[Rsync Util Tests]', function() {
           rsyncUtils.generateChecksums(fs, paths, CHUNK_SIZE, function (err, checksums) {
             expect(err).to.not.exist;
             expect(checksums).to.exist;
-            rsyncUtils.generateChecksums(fs2, paths, CHUNK_SIZE, function (err, checksums2) {
+            rsyncUtils.generateChecksums(fs2, paths, CHUNK_SIZE, function (err) {
               expect(err).to.not.exist;
               rsyncUtils.compareContents(fs2, checksums, CHUNK_SIZE, function (err, equal) {
                 expect(err).to.not.exist;

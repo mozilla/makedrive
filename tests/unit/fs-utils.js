@@ -1,6 +1,5 @@
 var expect = require('chai').expect;
 var util = require('../lib/util.js');
-var MakeDrive = require('../../client/src');
 var Filer = require('../../lib/filer.js');
 var FileSystem = Filer.FileSystem;
 var fsUtils = require('../../lib/fs-utils.js');
@@ -25,24 +24,6 @@ describe('MakeDrive fs-utils.js', function(){
   afterEach(function() {
     fs = null;
   });
-
-  function expectMakeDriveUnsyncedAttribForPath(path, callback) {
-    fs.getUnsynced(path, function(err, unsynced) {
-      expect(err).not.to.exist;
-      expect(unsynced).to.be.true;
-
-      callback();
-    });
-  }
-
-  function expectMakeDriveUnsyncedAttribForFD(fd, callback) {
-    fs.fgetUnsynced(fd, function(err, unsynced) {
-      expect(err).not.to.exist;
-      expect(unsynced).to.be.true;
-
-      callback();
-    });
-  }
 
   it('should have all the expected properties', function() {
     expect(fsUtils.forceCopy).to.be.a.function;

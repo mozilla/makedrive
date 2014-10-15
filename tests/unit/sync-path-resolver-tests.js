@@ -1,6 +1,5 @@
 var expect = require('chai').expect;
 var pathResolver = require('../../lib/sync-path-resolver.js');
-var resolvePath = pathResolver.resolve;
 
 describe('Resolution path tests', function () {
   it('should have resolve as a function', function (done) {

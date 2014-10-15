@@ -6,7 +6,6 @@ var semver = require('semver'),
 // Globals
 var PROMPT_CONFIRM_CONFIG = 'confirmation',
     GIT_BRANCH = env.get('MAKEDRIVE_UPSTREAM_BRANCH'),
-    GIT_REMOTE = env.get('MAKEDRIVE_UPSTREAM_REMOTE_NAME'),
     GIT_FULL_REMOTE = env.get('MAKEDRIVE_UPSTREAM_URI') + ' ' + GIT_BRANCH;
 
 
@@ -156,16 +155,44 @@ module.exports = function(grunt) {
      */
     exec: {
       run_mocha: {
-        command: '"./node_modules/.bin/mocha" --timeout 70000 --recursive --reporter spec ./tests | ./node_modules/.bin/bunyan -l error',
+        command: '"./node_modules/.bin/mocha" --timeout 70000 --recursive --reporter spec ./tests | ./node_modules/.bin/bunyan -l fatal',
         stdout: true,
         stderr: true
       }
     },
-
+    
     jshint: {
       options: {
+        eqeqeq: true,
+        forin: true,
+        immed: true,
+        indent: 2,
+        latedef: true,
+        noarg: true,
+        nonew: true,
+        plusplus: false,
+        undef: true,
+        unused: 'vars',
+        trailing: true,
         expr: true,
-        "-W004": true
+        "-W004": true,
+        node: true,
+        browser: true,
+        globals: {
+          /* MOCHA */
+          "describe"   : false,
+          "it"         : false,
+          "before"     : false,
+          "beforeEach" : false,
+          "after"      : false,
+          "afterEach"  : false
+        }
+// Other JSHint options that would be nice to do some day:
+// https://github.com/mozilla/makedrive/issues/429
+//      quotmark: 'single',
+//      strict: true,
+//      curly: true,
+//      maxdepth: 4,
       },
       all: [
         "Gruntfile.js",
@@ -232,7 +259,7 @@ module.exports = function(grunt) {
     patchLevel = (patchLevel || 'patch').toLowerCase();
 
     // Fail out if the patch level isn't recognized
-    if (allLevels.filter(function(el) { return el == patchLevel; }).length === 0) {
+    if (allLevels.filter(function(el) { return el === patchLevel; }).length === 0) {
       return grunt.fatal('Patch level not recognized! "Patch", "minor" or "major" only.');
     }
 

@@ -1,7 +1,6 @@
 var expect = require('chai').expect;
 var util = require('../lib/util.js');
 var request = require('request');
-var ws = require('ws');
 var SyncMessage = require('../../lib/syncmessage');
 var Filer = require('../../lib/filer.js');
 var FileSystem = Filer.FileSystem;
@@ -19,7 +18,7 @@ describe('Test util.js', function(){
         request.post({
           url: util.serverURL + '/mocklogin/' + username,
           jar: result.jar
-        }, function(err, res, body) {
+        }, function(err, res) {
           expect(err).not.to.exist;
           expect(res.statusCode).to.equal(401);
           done();
@@ -58,7 +57,7 @@ describe('Test util.js', function(){
         request.get({
           url: util.serverURL + '/',
           jar: result.jar
-        }, function(err, res, body) {
+        }, function(err, res) {
           expect(err).not.to.exist;
           expect(res.statusCode).to.equal(200);
           result.done();
@@ -318,7 +317,7 @@ describe('Test util.js', function(){
             expect(message.content.path).to.exist;
 
             cb();
-          }, function(msg) {
+          }, function() {
             util.cleanupSockets(result.done, socketPackage);
           });
         });

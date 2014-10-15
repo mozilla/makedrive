@@ -2,8 +2,6 @@
  * A JSON Handler, for web APIs vs. browsers to consume
  */
 var mime = require('mime');
-var Path = require('../../../lib/filer.js').Path;
-var version = require('../../../package.json').version;
 
 function write(content, res, status) {
   status = status || 200;
@@ -50,7 +48,6 @@ function handleFile(fs, path, res) {
  */
 function handleDir(fs, path, res) {
   var sh = fs.Shell();
-  var parent = Path.dirname(path);
 
   sh.ls(path, {recursive: true}, function(err, listing) {
     if(err) {

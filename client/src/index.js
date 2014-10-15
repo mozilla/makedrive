@@ -80,7 +80,6 @@
 var SyncManager = require('./sync-manager.js');
 var SyncFileSystem = require('./sync-filesystem.js');
 var Filer = require('../../lib/filer.js');
-var resolvePath = require('../../lib/sync-path-resolver').resolve;
 var EventEmitter = require('events').EventEmitter;
 
 var MakeDrive = {};

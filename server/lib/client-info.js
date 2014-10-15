@@ -41,6 +41,14 @@ ClientInfo.prototype.connectedInMS = function() {
  */
 var clients = {};
 
+function remove(id) {
+  delete clients[id];
+}
+
+function find(client) {
+  return clients[client.id];
+}
+
 /**
  * Step 1: create a partial ClientInfo object when the client requests a token
  */
@@ -66,14 +74,6 @@ function update(client) {
     return;
   }
   info.username = client.username;
-}
-
-function remove(id) {
-  delete clients[id];
-}
-
-function find(client) {
-  return clients[client.id];
 }
 
 module.exports = {

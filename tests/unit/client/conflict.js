@@ -1,6 +1,5 @@
 var expect = require('chai').expect;
 var util = require('../../lib/util.js');
-var MakeDrive = require('../../../client/src');
 var Filer = require('../../../lib/filer.js');
 var SyncFileSystem = require('../../../client/src/sync-filesystem.js');
 var conflict = require('../../../lib/conflict.js');
@@ -26,15 +25,6 @@ describe('MakeDrive Client Conflicts', function(){
   afterEach(function() {
     fs = null;
   });
-
-  function expectConflicted(path, callback) {
-    conflict.isConflictedCopy(fs, path, function(err, conflicted) {
-      expect(err).not.to.exist;
-      expect(conflicted).to.be.true;
-
-      callback();
-    });
-  }
 
   it('should have required functions', function() {
     expect(conflict.filenameContainsConflicted).to.be.a.function;
@@ -118,7 +108,7 @@ describe('MakeDrive Client Conflicts', function(){
   });
 
   it('should error when passing directory path to makeConflictedCopy()', function(done) {
-    conflict.makeConflictedCopy(fs, '/dir', function(err, conflictedPath) {
+    conflict.makeConflictedCopy(fs, '/dir', function(err) {
       expect(err).to.exist;
       expect(err.code).to.equal('EISDIR');
 

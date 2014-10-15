@@ -1,6 +1,5 @@
 var expect = require('chai').expect;
 var util = require('../lib/util.js');
-var MakeDrive = require('../../client/src');
 
 describe('Renaming a file', function(){
   it('should be able to rename and end up with single file after renamed', function(done) {
@@ -11,7 +10,6 @@ describe('Renaming a file', function(){
       expect(err).not.to.exist;
 
       var fs = client.fs;
-      var sync = client.sync;
 
       fs.rename('/dir/file.txt', '/dir/newFile.txt', function(err) {
         expect(err).not.to.exist;

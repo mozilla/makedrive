@@ -12,7 +12,7 @@ var unzip = require("../lib/unzip.js");
 describe('[HTTP route tests]', function() {
 
   it('should allow CORS access to /api/sync route', function(done) {
-    request.get(util.serverURL + '/api/sync', { headers: {origin: ALLOW_DOMAINS }}, function(req, res, body) {
+    request.get(util.serverURL + '/api/sync', { headers: {origin: ALLOW_DOMAINS }}, function(req, res) {
       expect(ALLOW_DOMAINS).to.contain(res.headers['access-control-allow-origin']);
       done();
     });
@@ -231,7 +231,7 @@ describe('[HTTP route tests]', function() {
             pass: 'testpassword'
           },
           json: true
-        }, function(err, res, body) {
+        }, function(err, res) {
           expect(err).not.to.exist;
           expect(res.statusCode).to.equal(404);
           done();
@@ -253,7 +253,7 @@ describe('[HTTP route tests]', function() {
             pass: 'wrong-testpassword'
           },
           json: true
-        }, function(err, res, body) {
+        }, function(err, res) {
           expect(err).not.to.exist;
           expect(res.statusCode).to.equal(401);
           done();

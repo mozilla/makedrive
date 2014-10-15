@@ -9,7 +9,6 @@ var Shell = require('../../lib/filer-shell.js');
 var Path = Filer.Path;
 var fsUtils = require('../../lib/fs-utils.js');
 var conflict = require('../../lib/conflict.js');
-var constants = require('../../lib/constants.js');
 var resolvePath = require('../../lib/sync-path-resolver.js').resolve;
 
 function SyncFileSystem(fs) {

@@ -1,4 +1,3 @@
-var Client = require('./client.js');
 var WebsocketAuth = require('./websocket-auth.js');
 var SyncMessage = require('../../lib/syncmessage.js');
 var filesystem = require('./filesystem');
@@ -6,6 +5,45 @@ var Constants = require('../../lib/constants.js');
 var States = Constants.server.states;
 var log = require('./logger.js');
 var ClientInfo = require('./client-info.js');
+
+/**
+ * Run the client normally through protocol steps.
+ */
+function runClient(client) {
+  var ws = client.ws;
+
+  function invalidMessage() {
+    var message = SyncMessage.error.format;
+    message.content = {error: 'Unable to parse/handle message, invalid message format.'};
+    client.sendMessage(message);
+  }
+
+  ws.onmessage = function(msg, flags) {
+    var data;
+    var message;
+
+    if(!flags || !flags.binary) {
+      try {
+        data = JSON.parse(msg.data);
+        message = SyncMessage.parse(data);
+
+        // Delegate ws messages to the sync protocol handler at this point
+        client.handler.handleMessage(message);
+      } catch(error) {
+        log.error({client: client, err: error}, 'Unable to parse/handle client message. Data was `%s`', msg.data);
+        invalidMessage();
+      }
+    } else {
+      log.warn({client: client}, 'Expected string but got binary data over web socket.');
+      invalidMessage();
+    }
+  };
+
+  // Send an AUTHZ response to let client know normal sync'ing can begin.
+  client.state = States.INIT;
+  client.sendMessage(SyncMessage.response.authz);
+  log.debug({client: client}, 'Starting authorized client session');
+}
 
 /**
  * Handle initial connection and authentication, bind user data
@@ -61,48 +99,20 @@ function initClient(client) {
 }
 
 /**
- * Run the client normally through protocol steps.
- */
-function runClient(client) {
-  var ws = client.ws;
-
-  function invalidMessage() {
-    var message = SyncMessage.error.format;
-    message.content = {error: 'Unable to parse/handle message, invalid message format.'};
-    client.sendMessage(message);
-  }
-
-  ws.onmessage = function(msg, flags) {
-    var data;
-    var message;
-
-    if(!flags || !flags.binary) {
-      try {
-        data = JSON.parse(msg.data);
-        message = SyncMessage.parse(data);
-
-        // Delegate ws messages to the sync protocol handler at this point
-        client.handler.handleMessage(message);
-      } catch(error) {
-        log.error({client: client, err: error}, 'Unable to parse/handle client message. Data was `%s`', msg.data);
-        invalidMessage();
-      }
-    } else {
-      log.warn({client: client}, 'Expected string but got binary data over web socket.');
-      invalidMessage();
-    }
-  };
-
-  // Send an AUTHZ response to let client know normal sync'ing can begin.
-  client.state = States.INIT;
-  client.sendMessage(SyncMessage.response.authz);
-  log.debug({client: client}, 'Starting authorized client session');
-}
-
-/**
  * Client list managment
  */
 var clients = [];
+
+/**
+ * Remove client from the list. Does not affect client state
+ * or life-cycle.
+ */
+function remove(client) {
+  var idx = clients.indexOf(client);
+  if(idx > -1) {
+    clients.splice(idx, 1);
+  }
+}
 
 /**
  * Add a client to the list, and manage its life-cycle.
@@ -118,23 +128,11 @@ function add(client) {
 }
 
 /**
- * Remove client from the list. Does not affect client state
- * or life-cycle.
- */
-function remove(client) {
-  var idx = clients.indexOf(client);
-  if(idx > -1) {
-    clients.splice(idx, 1);
-  }
-}
-
-/**
  * Safe shutdown, waiting on all clients to close.
  */
 function shutdown(callback) {
   var closed = 0;
   var connected = clients.length;
-  var client;
 
   function maybeFinished() {
     if(++closed >= connected) {

@@ -70,5 +70,6 @@ module.exports = {
     };
 
     res.status( error.status ).json( error );
+    next();
   }
 };
