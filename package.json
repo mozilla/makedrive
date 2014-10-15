@@ -1,6 +1,6 @@
 {
   "name": "makedrive",
-  "version": "0.0.51",
+  "version": "0.0.52",
   "description": "Webmaker Filesystem",
   "scripts": {
     "start": "node ./server/index.js | ./node_modules/.bin/bunyan",
