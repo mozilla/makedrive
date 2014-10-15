@@ -1100,6 +1100,7 @@ SyncManager.prototype.close = function() {
 
 SyncManager.prototype.send = function(syncMessage) {
   var manager = this;
+  var sync = manager.sync;
   var ws = manager.socket;
 
   if(!ws || ws.readyState !== ws.OPEN) {
