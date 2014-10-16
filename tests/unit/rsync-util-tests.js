@@ -2,7 +2,6 @@ var Filer = require('../../lib/filer.js');
 var expect = require('chai').expect;
 var fs;
 var provider;
-var CHUNK_SIZE = 5;
 var rsyncUtils = require('../../lib/rsync').utils;
 var testUtils = require('../lib/util.js');
 
@@ -36,7 +35,7 @@ describe('[Rsync Util Tests]', function() {
     it('should return an EINVAL error if a filesystem is not provided', function (done) {
       var filesystem;
 
-      rsyncUtils.generateChecksums(filesystem, [], CHUNK_SIZE, function (err, checksums) {
+      rsyncUtils.generateChecksums(filesystem, [], function (err, checksums) {
         expect(err).to.exist;
         expect(err.code).to.equal('EINVAL');
         expect(checksums).to.not.exist;
@@ -45,16 +44,7 @@ describe('[Rsync Util Tests]', function() {
     });
 
     it('should return an EINVAL error if no paths are provided', function (done) {
-      rsyncUtils.generateChecksums(fs, null, CHUNK_SIZE, function (err, checksums) {
-        expect(err).to.exist;
-        expect(err.code).to.equal('EINVAL');
-        expect(checksums).to.not.exist;
-        done();
-      });
-    });
-
-    it('should return an error if chunk size is not provided', function (done) {
-      rsyncUtils.generateChecksums(fs, [], null, function (err, checksums) {
+      rsyncUtils.generateChecksums(fs, null, function (err, checksums) {
         expect(err).to.exist;
         expect(err.code).to.equal('EINVAL');
         expect(checksums).to.not.exist;
@@ -63,7 +53,7 @@ describe('[Rsync Util Tests]', function() {
     });
 
     it('should return empty checksums if empty paths are provided', function (done) {
-      rsyncUtils.generateChecksums(fs, [], CHUNK_SIZE, function (err, checksums) {
+      rsyncUtils.generateChecksums(fs, [], function (err, checksums) {
         expect(err).to.not.exist;
         expect(checksums).to.exist;
         expect(checksums).to.have.length(0);
@@ -71,13 +61,13 @@ describe('[Rsync Util Tests]', function() {
       });
     });
 
-    it('should return an empty checksum if the path to the node provided does not exist', function (done) {
-      rsyncUtils.generateChecksums(fs, ['/myfile.txt'], CHUNK_SIZE, function (err, checksums) {
+    it('should return an empty hash checksum if the path to the node provided does not exist', function (done) {
+      rsyncUtils.generateChecksums(fs, ['/myfile.txt'], function (err, checksums) {
         expect(err).to.not.exist;
         expect(checksums).to.exist;
         expect(checksums).to.have.length(1);
         expect(checksums[0]).to.include.keys('checksum');
-        expect(checksums[0].checksum).to.have.length(0);
+        expect(checksums[0].checksum).to.equal('');
         done();
       });
     });
@@ -85,12 +75,12 @@ describe('[Rsync Util Tests]', function() {
     it('should return empty checksums for a directory path', function (done) {
       fs.mkdir('/dir', function (err) {
         if(err) throw err;
-        rsyncUtils.generateChecksums(fs, ['/dir'], CHUNK_SIZE, function (err, checksums) {
+        rsyncUtils.generateChecksums(fs, ['/dir'], function (err, checksums) {
           expect(err).to.not.exist;
           expect(checksums).to.exist;
           expect(checksums).to.have.length(1);
           expect(checksums[0]).to.include.keys('checksum');
-          expect(checksums[0].checksum).to.have.length(0);
+          expect(checksums[0].checksum).to.be.undefined;
           done();
         });
       });
@@ -108,20 +98,20 @@ describe('[Rsync Util Tests]', function() {
       testUtils.createFilesystemLayout(fs, layout, function (err) {
         if(err) throw err;
 
-        rsyncUtils.generateChecksums(fs, paths, CHUNK_SIZE, function (err, checksums) {
+        rsyncUtils.generateChecksums(fs, paths, function (err, checksums) {
           expect(err).to.not.exist;
           expect(checksums).to.exist;
           expect(checksums).to.have.length(paths.length);
           expect(checksums[0]).to.include.keys('checksum');
-          expect(checksums[0].checksum).to.have.length(0);
+          expect(checksums[0].checksum).to.be.undefined;
           expect(checksums[1]).to.include.keys('checksum');
           expect(checksums[1].checksum).to.have.length.above(0);
           expect(checksums[2]).to.include.keys('checksum');
-          expect(checksums[2].checksum).to.have.length(0);
+          expect(checksums[2].checksum).to.be.undefined;
           expect(checksums[3]).to.include.keys('checksum');
-          expect(checksums[3].checksum).to.have.length(0);
+          expect(checksums[3].checksum).to.be.undefined;
           expect(checksums[4]).to.include.keys('checksum');
-          expect(checksums[4].checksum).to.have.length(0);
+          expect(checksums[4].checksum).to.be.undefined;
           expect(checksums[5]).to.include.keys('checksum');
           expect(checksums[5].checksum).to.have.length.above(0);
           done();
@@ -142,7 +132,7 @@ describe('[Rsync Util Tests]', function() {
     it('should return an EINVAL error if a filesystem is not provided', function (done) {
       var filesystem;
 
-      rsyncUtils.compareContents(filesystem, [], CHUNK_SIZE, function (err, equal) {
+      rsyncUtils.compareContents(filesystem, [], function (err, equal) {
         expect(err).to.exist;
         expect(err.code).to.equal('EINVAL');
         expect(equal).to.not.exist;
@@ -151,16 +141,7 @@ describe('[Rsync Util Tests]', function() {
     });
 
     it('should return an EINVAL error if no checksums are provided', function (done) {
-      rsyncUtils.compareContents(fs, null, CHUNK_SIZE, function (err, equal) {
-        expect(err).to.exist;
-        expect(err.code).to.equal('EINVAL');
-        expect(equal).to.not.exist;
-        done();
-      });
-    });
-
-    it('should return an error if chunk size is not provided', function (done) {
-      rsyncUtils.compareContents(fs, [], null, function (err, equal) {
+      rsyncUtils.compareContents(fs, null, function (err, equal) {
         expect(err).to.exist;
         expect(err.code).to.equal('EINVAL');
         expect(equal).to.not.exist;
@@ -169,7 +150,7 @@ describe('[Rsync Util Tests]', function() {
     });
 
     it('should return true if a checksum is provided for a path that does not exist', function (done) {
-      rsyncUtils.compareContents(fs, [{path: '/non-existent-file.txt', checksum: []}], CHUNK_SIZE, function (err, equal) {
+      rsyncUtils.compareContents(fs, [{path: '/non-existent-file.txt', checksum: ''}], function (err, equal) {
         expect(err).to.not.exist;
         expect(equal).to.equal(true);
         done();
@@ -188,10 +169,10 @@ describe('[Rsync Util Tests]', function() {
       testUtils.createFilesystemLayout(fs, layout, function (err) {
         if(err) throw err;
 
-        rsyncUtils.generateChecksums(fs, paths, CHUNK_SIZE, function (err, checksums) {
+        rsyncUtils.generateChecksums(fs, paths, function (err, checksums) {
           expect(err).to.not.exist;
           expect(checksums).to.exist;
-          rsyncUtils.compareContents(fs, checksums, CHUNK_SIZE, function (err, equal) {
+          rsyncUtils.compareContents(fs, checksums, function (err, equal) {
             expect(err).to.not.exist;
             expect(equal).to.equal(true);
             done();
@@ -221,12 +202,12 @@ describe('[Rsync Util Tests]', function() {
         testUtils.createFilesystemLayout(fs2, layout2, function (err){
           if(err) throw err;
 
-          rsyncUtils.generateChecksums(fs, paths, CHUNK_SIZE, function (err, checksums) {
+          rsyncUtils.generateChecksums(fs, paths, function (err, checksums) {
             expect(err).to.not.exist;
             expect(checksums).to.exist;
-            rsyncUtils.generateChecksums(fs2, paths, CHUNK_SIZE, function (err, checksums2) {
+            rsyncUtils.generateChecksums(fs2, paths, function (err, checksums2) {
               expect(err).to.not.exist;
-              rsyncUtils.compareContents(fs2, checksums, CHUNK_SIZE, function (err, equal) {
+              rsyncUtils.compareContents(fs2, checksums, function (err, equal) {
                 expect(err).to.not.exist;
                 expect(equal).to.equal(false);
                 done();
