@@ -123,7 +123,6 @@ module.exports = global.WebSocket;
 var SyncManager = require('./sync-manager.js');
 var SyncFileSystem = require('./sync-filesystem.js');
 var Filer = require('../../lib/filer.js');
-var resolvePath = require('../../lib/sync-path-resolver').resolve;
 var EventEmitter = require('events').EventEmitter;
 
 var MakeDrive = {};
@@ -404,7 +403,7 @@ MakeDrive.Path = Filer.Path;
 MakeDrive.Errors = Filer.Errors;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../../lib/filer.js":14,"../../lib/sync-path-resolver":22,"./sync-filesystem.js":5,"./sync-manager.js":6,"events":28}],4:[function(require,module,exports){
+},{"../../lib/filer.js":14,"./sync-filesystem.js":5,"./sync-manager.js":6,"events":28}],4:[function(require,module,exports){
 var SyncMessage = require('../../lib/syncmessage');
 var rsync = require('../../lib/rsync');
 var rsyncUtils = rsync.utils;
@@ -675,7 +674,6 @@ var Shell = require('../../lib/filer-shell.js');
 var Path = Filer.Path;
 var fsUtils = require('../../lib/fs-utils.js');
 var conflict = require('../../lib/conflict.js');
-var constants = require('../../lib/constants.js');
 var resolvePath = require('../../lib/sync-path-resolver.js').resolve;
 
 function SyncFileSystem(fs) {
@@ -845,12 +843,12 @@ function SyncFileSystem(fs) {
 
 module.exports = SyncFileSystem;
 
-},{"../../lib/conflict.js":10,"../../lib/constants.js":11,"../../lib/filer-shell.js":13,"../../lib/filer.js":14,"../../lib/fs-utils.js":15,"../../lib/sync-path-resolver.js":22}],6:[function(require,module,exports){
+},{"../../lib/conflict.js":10,"../../lib/filer-shell.js":13,"../../lib/filer.js":14,"../../lib/fs-utils.js":15,"../../lib/sync-path-resolver.js":22}],6:[function(require,module,exports){
 var SyncMessage = require( '../../lib/syncmessage' ),
     messageHandler = require('./message-handler'),
     states = require('./sync-states'),
     steps = require('./sync-steps'),
-    WebSocket = require('ws'),
+    WS = require('ws'),
     fsUtils = require('../../lib/fs-utils'),
     async = require('../../lib/async-lite.js'),
     request = require('request'),
@@ -993,7 +991,7 @@ SyncManager.prototype.init = function(wsUrl, token, options, callback) {
 
   function connect(reconnecting) {
     clearTimeout(timeout);
-    socket = new WebSocket(wsUrl);
+    socket = new WS(wsUrl);
     socket.onmessage = handleAuth;
     socket.onopen = function() {
       manager.socket = socket;
@@ -2202,7 +2200,6 @@ function md5sum(data) {
 function calcWeak32(data, prev, start, end) {
   var a = 0;
   var b = 0;
-  var sum = 0;
   var M = 1 << 16;
   var N = 65521;
 
@@ -2223,8 +2220,6 @@ function calcWeak32(data, prev, start, end) {
     var prev_k = k - 1;
     var prev_l = l - 1;
     var prev_first = data[prev_k];
-    var prev_last = data[prev_l];
-    var curr_first = data[k];
     var curr_last = data[l];
 
     a = (prev.a - prev_first + curr_last) % N;
@@ -2738,10 +2733,10 @@ module.exports = pathResolver;
 },{"./filer":14}],23:[function(require,module,exports){
 // Constructor
 function SyncMessage(type, name, content) {
-  if(!isValidType(type)) {
+  if(!SyncMessage.isValidType(type)) {
     throw "Invalid type";
   }
-  if(!isValidName(name)) {
+  if(!SyncMessage.isValidName(name)) {
     throw "Invalid name";
   }
 
@@ -2806,6 +2801,30 @@ function SyncMessage(type, name, content) {
   };
 }
 
+SyncMessage.isValidName = function(name) {
+  return name === SyncMessage.SRCLIST      ||
+         name === SyncMessage.CHKSUM       ||
+         name === SyncMessage.DIFFS        ||
+         name === SyncMessage.LOCKED       ||
+         name === SyncMessage.PATCH        ||
+         name === SyncMessage.VERIFICATION ||
+         name === SyncMessage.SYNC         ||
+         name === SyncMessage.RESET        ||
+         name === SyncMessage.AUTHZ        ||
+         name === SyncMessage.IMPL         ||
+         name === SyncMessage.INFRMT       ||
+         name === SyncMessage.INCONT       ||
+         name === SyncMessage.SERVER_RESET ||
+         name === SyncMessage.DOWNSTREAM_LOCKED ||
+         name === SyncMessage.MAXSIZE;
+};
+
+SyncMessage.isValidType = function(type) {
+  return type === SyncMessage.REQUEST  ||
+         type === SyncMessage.RESPONSE ||
+         type === SyncMessage.ERROR;
+};
+
 SyncMessage.prototype.stringify = function() {
   return JSON.stringify({
     type: this.type,
@@ -2817,7 +2836,9 @@ SyncMessage.prototype.stringify = function() {
 // Try to parse data back into a SyncMessage object. If the
 // data is invalid, return a format error message instead.
 SyncMessage.parse = function(data) {
-  if(!data || !isValidType(data.type) || !isValidName(data.name)) {
+  if(!data                               ||
+     !SyncMessage.isValidType(data.type) ||
+     !SyncMessage.isValidName(data.name)) {
     return SyncMessage.error.format;
   }
 
@@ -2848,30 +2869,6 @@ SyncMessage.INTERRUPTED = "INTERRUPTED";
 // SyncMessage Error constants
 SyncMessage.INFRMT = "INVALID FORMAT";
 SyncMessage.INCONT = "INVALID CONTENT";
-
-function isValidName(name) {
-  return name === SyncMessage.SRCLIST      ||
-         name === SyncMessage.CHKSUM       ||
-         name === SyncMessage.DIFFS        ||
-         name === SyncMessage.LOCKED       ||
-         name === SyncMessage.PATCH        ||
-         name === SyncMessage.VERIFICATION ||
-         name === SyncMessage.SYNC         ||
-         name === SyncMessage.RESET        ||
-         name === SyncMessage.AUTHZ        ||
-         name === SyncMessage.IMPL         ||
-         name === SyncMessage.INFRMT       ||
-         name === SyncMessage.INCONT       ||
-         name === SyncMessage.SERVER_RESET ||
-         name === SyncMessage.DOWNSTREAM_LOCKED ||
-         name === SyncMessage.MAXSIZE;
-}
-
-function isValidType(type) {
-  return type === SyncMessage.REQUEST  ||
-         type === SyncMessage.RESPONSE ||
-         type === SyncMessage.ERROR;
-}
 
 // Sugar for getting message instances
 SyncMessage.request = {
