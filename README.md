@@ -132,7 +132,7 @@ Option | Value | Definition
 `reconnectionDelayMax` | `<Number>` | Default to 5000 (ms). Maximum amount of time to wait between reconnections. Each attempt increases the reconnection by the amount specified by reconnectionDelay.
 `provider` | `<Object>` | a Filer data provider to use instead of the default provider normally used. The provider given should already be instantiated (i.e., don't pass a constructor function).
 `forceCreate` | `<Boolean>` | by default we return the same fs instance with every call to `MakeDrive.fs()`. In some cases it is necessary to have multiple instances.  Using forceCreate=true does this.
-`interval` | `<Number>` | by default, the filesystem syncs every minute if auto syncing is turned on, otherwise the interval between syncs can be specified in ms.
+`interval` | `<Number>` | by default, the filesystem syncs every 15 seconds if auto syncing is turned on, otherwise the interval between syncs can be specified in ms.
 `windowCloseWarning` | `<Boolean>` | `false` by default. When toggled to `true`, prompts the user to confirm exiting the webpage when trying to close in the middle of a sync.
 
 Various bits of Filer are available on MakeDrive, including:

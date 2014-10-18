@@ -24,7 +24,7 @@
  * every call to MakeDrive.fs(). In some cases it is necessary to have
  * multiple instances.  Using forceCreate=true does this.
  *
- * - interval=<Number> - by default, the filesystem syncs every minute if
+ * - interval=<Number> - by default, the filesystem syncs every 15 seconds if
  * auto syncing is turned on otherwise the interval between syncs can be
  * specified in ms.
  *
@@ -153,7 +153,7 @@ function createFS(options) {
 
   // Turn on auto-syncing if its not already on
   sync.auto = function(interval) {
-    var syncInterval = interval|0 > 0 ? interval|0 : 60 * 1000;
+    var syncInterval = interval|0 > 0 ? interval|0 : 15 * 1000;
 
     if(autoSync) {
       clearInterval(autoSync);
