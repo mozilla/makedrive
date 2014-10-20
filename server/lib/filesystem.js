@@ -18,7 +18,8 @@ if ( providerType === "filer-s3" ) {
   defaults.db = {
     name: env.get( "DB_NAME" ),
     username: env.get( "DB_USERNAME" ),
-    password: env.get( "DB_PASSWORD" )
+    password: env.get( "DB_PASSWORD" ),
+    url: env.get( "DB_HOST" )
   };
 }
 
