@@ -1,7 +1,8 @@
 var Filer = require( "../../lib/filer.js" ),
     env = require( "./environment" ),
     providerType = env.get( "FILER_PROVIDER" ) || "filer-fs" ,
-    Provider = require( providerType );
+    Provider = require( providerType ),
+    log = require('./logger.js');
 
 var defaults = {};
 
@@ -15,11 +16,11 @@ if ( providerType === "filer-s3" ) {
   defaults.secret = env.get( "S3_SECRET");
 } else if ( providerType === "filer-sql" ) {
   defaults.type = Provider[env.get( "DB_TYPE" )];
+  defaults.url = env.get( "DB_CONNECTION_URL" );
   defaults.db = {
     name: env.get( "DB_NAME" ),
     username: env.get( "DB_USERNAME" ),
-    password: env.get( "DB_PASSWORD" ),
-    url: env.get( "DB_HOST" )
+    password: env.get( "DB_PASSWORD" )
   };
 }
 
@@ -40,7 +41,7 @@ module.exports = {
         provider: new Provider(options)
       }, function(err) {
         if(err) {
-          console.error('MakeDrive Filesystem Initialization Error: ', err);
+          log.error(err, 'MakeDrive Filesystem Initialization Error: ');
         }
       });
     }
