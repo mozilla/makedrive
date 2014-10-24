@@ -58,7 +58,7 @@
     "bunyan": "^1.1.3",
     "events": "^1.0.1",
     "express": "3.4.5",
-    "filer": "git://github.com/gideonthomas/filer.git#mozfest",
+    "filer": "git://github.com/alicoding/filer.git#mozfest",
     "filer-fs": "0.1.2",
     "filer-s3": "0.1.1",
     "filer-sql": "0.0.2",
