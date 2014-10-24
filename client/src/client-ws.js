@@ -7,6 +7,8 @@
  * This module gets used by browserify, see package.json
  */
 
+if (!global.WebSocket) return;
+
 global.WebSocket.prototype.on = global.WebSocket.prototype.on || function(event, listener) {
   this.addEventListener(event, listener);
 };
