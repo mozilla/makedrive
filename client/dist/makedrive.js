@@ -126,6 +126,7 @@ var SyncManager = require('./sync-manager.js');
 var SyncFileSystem = require('./sync-filesystem.js');
 var Filer = require('../../lib/filer.js');
 var EventEmitter = require('events').EventEmitter;
+var resolvePath = require('../../lib/sync-path-resolver.js').resolveFromArray;
 
 var MakeDrive = {};
 module.exports = MakeDrive;
@@ -162,6 +163,11 @@ function createFS(options) {
   var autoSync;
   var pathCache;
 
+  // Path that needs to be used for an upstream sync
+  // to sync files that were determined to be more 
+  // up-to-date on the client during a downstream sync
+  var upstreamPath;
+
   // State of the sync connection
   sync.SYNC_DISCONNECTED = "SYNC DISCONNECTED";
   sync.SYNC_CONNECTING = "SYNC CONNECTING";
@@ -196,6 +202,30 @@ function createFS(options) {
     manager = null;
   }
 
+  function requestSync(path) {
+    // If we're not connected (or are already syncing), ignore this request
+    if(sync.state === sync.SYNC_DISCONNECTED || sync.state === sync.SYNC_ERROR) {
+      sync.emit('error', new Error('Invalid state. Expected ' + sync.SYNC_CONNECTED + ', got ' + sync.state));
+      return;
+    }
+
+    // If there were no changes to the filesystem and
+    // no path was passed to sync, ignore this request
+    if(!fs.pathToSync && !path) {
+      return;
+    }
+
+    // If a path was passed sync using it
+    if(path) {
+      return manager.syncPath(path);
+    }
+
+    // Cache the path that needs to be synced for error recovery
+    pathCache = fs.pathToSync;
+    fs.pathToSync = null;
+    manager.syncPath(pathCache);
+  }
+
   // Turn on auto-syncing if its not already on
   sync.auto = function(interval) {
     var syncInterval = interval|0 > 0 ? interval|0 : 15 * 1000;
@@ -225,7 +255,7 @@ function createFS(options) {
   sync.onError = function(err) {
     // Regress to the path that needed to be synced but failed
     // (likely because of a sync LOCK)
-    fs.pathToSync = pathCache;
+    fs.pathToSync = upstreamPath || pathCache;
     sync.state = sync.SYNC_ERROR;
     sync.emit('error', err);
   };
@@ -245,21 +275,12 @@ function createFS(options) {
 
   // Request that a sync begin.
   sync.request = function() {
-    // If we're not connected (or are already syncing), ignore this request
-    if(sync.state === sync.SYNC_DISCONNECTED || sync.state === sync.SYNC_ERROR) {
-      sync.emit('error', new Error('Invalid state. Expected ' + sync.SYNC_CONNECTED + ', got ' + sync.state));
-      return;
-    }
-
-    // If there were no changes to the filesystem, ignore this request
-    if(!fs.pathToSync) {
-      return;
-    }
-
-    // Cache the path that needs to be synced for error recovery
-    pathCache = fs.pathToSync;
-    fs.pathToSync = null;
-    manager.syncPath(pathCache);
+    // sync.request does not take any parameters
+    // as the path to sync is determined internally
+    // requestSync on the other hand optionally takes
+    // a path to sync which can be specified for
+    // internal use
+    requestSync();
   };
 
   // Try to connect to the server.
@@ -279,7 +300,7 @@ function createFS(options) {
     // Upgrade connection state to `connecting`
     sync.state = sync.SYNC_CONNECTING;
 
-    function downstreamSyncCompleted() {
+    function downstreamSyncCompleted(paths, needUpstream) {
       // Re-wire message handler functions for regular syncing
       // now that initial downstream sync is completed.
       sync.onSyncing = function() {
@@ -287,26 +308,36 @@ function createFS(options) {
         sync.emit('syncing');
       };
 
-      sync.onCompleted = function(paths) {
+      sync.onCompleted = function(paths, needUpstream) {
         // If changes happened to the files that needed to be synced
         // during the sync itself, they will be overwritten
-        // https://github.com/mozilla/makedrive/issues/129 and
-        // https://github.com/mozilla/makedrive/issues/3
+        // https://github.com/mozilla/makedrive/issues/129
 
         function complete() {
           sync.state = sync.SYNC_CONNECTED;
           sync.emit('completed');
         }
 
-        if(!paths) {
+        if(!paths && !needUpstream) {
           return complete();
         }
 
+        // Changes in the client are newer (determined during
+        // the sync) and need to be upstreamed
+        if(needUpstream) {
+          upstreamPath = resolvePath(needUpstream);
+          complete();
+          return requestSync(upstreamPath);
+        }
+
+        // If changes happened during a downstream sync
+        // Change the path that needs to be synced
         manager.resetUnsynced(paths, function(err) {
           if(err) {
             return sync.onError(err);
           }
 
+          upstreamPath = null;
           complete();
         });
       };
@@ -330,6 +361,16 @@ function createFS(options) {
       }
 
       sync.emit('connected');
+
+      // If the downstream was completed and some
+      // versions of files were not synced as they were
+      // newer on the client, upstream them
+      if(needUpstream) {
+        upstreamPath = resolvePath(needUpstream);
+        requestSync(upstreamPath);
+      } else {
+        upstreamPath = null;
+      }
     }
 
     function connect(token) {
@@ -347,9 +388,9 @@ function createFS(options) {
         sync.onSyncing = function() {
           // do nothing, wait for onCompleted()
         };
-        sync.onCompleted = function() {
+        sync.onCompleted = function(paths, needUpstream) {
           // Downstream sync is done, finish connect() setup
-          downstreamSyncCompleted();
+          downstreamSyncCompleted(paths, needUpstream);
         };
       });
     }
@@ -405,7 +446,7 @@ MakeDrive.Path = Filer.Path;
 MakeDrive.Errors = Filer.Errors;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../../lib/filer.js":14,"./sync-filesystem.js":5,"./sync-manager.js":6,"events":28}],4:[function(require,module,exports){
+},{"../../lib/filer.js":14,"../../lib/sync-path-resolver.js":22,"./sync-filesystem.js":5,"./sync-manager.js":6,"events":28}],4:[function(require,module,exports){
 var SyncMessage = require('../../lib/syncmessage');
 var rsync = require('../../lib/rsync');
 var rsyncUtils = rsync.utils;
@@ -415,6 +456,8 @@ var deserializeDiff = require('../../lib/diff').deserialize;
 var states = require('./sync-states');
 var steps = require('./sync-steps');
 var dirname = require('../../lib/filer').Path.dirname;
+var async = require('../../lib/async-lite');
+var fsUtils = require('../../lib/fs-utils');
 
 function onError(syncManager, err) {
   syncManager.session.step = steps.FAILED;
@@ -532,9 +575,47 @@ function handleResponse(syncManager, data) {
   }
 
   function handlePatchAckResponse() {
+    var syncedPaths = data.content.syncedPaths;
     session.state = states.READY;
     session.step = steps.SYNCED;
-    sync.onCompleted(data.content.syncedPaths);
+
+    function stampChecksum(path, callback) {
+      fs.lstat(path, function(err, stats) {
+        if(err) {
+          if(err.code !== 'ENOENT') {
+            return callback(err);
+          }
+
+          // Non-existent paths (usually due to renames or
+          // deletes that are included in the syncedPaths)
+          // cannot be stamped with a checksum
+          return callback();
+        }
+
+        if(!stats.isFile()) {
+          return callback();
+        }
+
+        rsyncUtils.getChecksum(fs, path, function(err, checksum) {
+          if(err) {
+            return callback(err);
+          }
+
+          fsUtils.setChecksum(fs, path, checksum, callback);
+        });
+      });
+    }
+
+    // As soon as an upstream sync happens, the files synced
+    // become the last synced versions and must be stamped
+    // with their checksums to version them
+    async.eachSeries(syncedPaths, stampChecksum, function(err) {
+      if(err) {
+        return onError(syncManager, err);
+      }
+
+      sync.onCompleted(data.content.syncedPaths);
+    });
   }
 
   function handlePatchResponse() {
@@ -558,9 +639,11 @@ function handleResponse(syncManager, data) {
         return onError(syncManager, err);
       }
 
-      var size = rsyncOptions.size || 5;
+      if(paths.needsUpstream.length) {
+        session.needsUpstream = paths.needsUpstream;
+      }
 
-      rsyncUtils.generateChecksums(fs, paths.synced, size, function(err, checksums) {
+      rsyncUtils.generateChecksums(fs, paths.synced, true, function(err, checksums) {
         if(err) {
           var message = SyncMessage.response.reset;
           syncManager.send(message.stringify());
@@ -568,7 +651,7 @@ function handleResponse(syncManager, data) {
         }
 
         var message = SyncMessage.response.patch;
-        message.content = {checksums: checksums, size: size};
+        message.content = {checksums: checksums};
         syncManager.send(message.stringify());
       });
     });
@@ -577,7 +660,9 @@ function handleResponse(syncManager, data) {
   function handleVerificationResponse() {
     session.srcList = null;
     session.step = steps.SYNCED;
-    sync.onCompleted();
+    var needsUpstream = session.needsUpstream;
+    delete session.needsUpstream;
+    sync.onCompleted(null, needsUpstream);
   }
 
   function handleUpstreamResetResponse() {
@@ -664,7 +749,7 @@ function handleMessage(syncManager, data) {
 
 module.exports = handleMessage;
 
-},{"../../lib/constants":11,"../../lib/diff":12,"../../lib/filer":14,"../../lib/rsync":18,"../../lib/syncmessage":23,"./sync-states":7,"./sync-steps":8}],5:[function(require,module,exports){
+},{"../../lib/async-lite":9,"../../lib/constants":11,"../../lib/diff":12,"../../lib/filer":14,"../../lib/fs-utils":15,"../../lib/rsync":18,"../../lib/syncmessage":23,"./sync-states":7,"./sync-steps":8}],5:[function(require,module,exports){
 /**
  * An extended Filer FileSystem with wrapped methods
  * for writing that manage file metadata (xattribs)
@@ -1244,7 +1329,8 @@ module.exports = {
 
   attributes: {
     unsynced: 'makedrive-unsynced',
-    conflict: 'makedrive-conflict'
+    conflict: 'makedrive-conflict',
+    checksum: 'makedrive-checksum'
   },
 
   server: {
@@ -1402,22 +1488,10 @@ function fremoveUnsynced(fs, fd, callback) {
 
 // Set the unsynced metadata for a path
 function setUnsynced(fs, path, callback) {
-  fs.setxattr(path, constants.attributes.unsynced, Date.now(), function(err) {
-    if(err) {
-      return callback(err);
-    }
-
-    callback();
-  });
+  fs.setxattr(path, constants.attributes.unsynced, Date.now(), callback);
 }
 function fsetUnsynced(fs, fd, callback) {
-  fs.fsetxattr(fd, constants.attributes.unsynced, Date.now(), function(err) {
-    if(err) {
-      return callback(err);
-    }
-
-    callback();
-  });
+  fs.fsetxattr(fd, constants.attributes.unsynced, Date.now(), callback);
 }
 
 // Get the unsynced metadata for a path
@@ -1440,15 +1514,73 @@ function fgetUnsynced(fs, fd, callback) {
   });
 }
 
+// Remove the Checksum metadata from a path
+function removeChecksum(fs, path, callback) {
+  fs.removexattr(path, constants.attributes.checksum, function(err) {
+    if(err && err.code !== 'ENOATTR') {
+      return callback(err);
+    }
+
+    callback();
+  });
+}
+function fremoveChecksum(fs, fd, callback) {
+  fs.fremovexattr(fd, constants.attributes.checksum, function(err) {
+    if(err && err.code !== 'ENOATTR') {
+      return callback(err);
+    }
+
+    callback();
+  });
+}
+
+// Set the Checksum metadata for a path
+function setChecksum(fs, path, checksum, callback) {
+  fs.setxattr(path, constants.attributes.checksum, checksum, callback);
+}
+function fsetChecksum(fs, fd, checksum, callback) {
+  fs.fsetxattr(fd, constants.attributes.checksum, checksum, callback);
+}
+
+// Get the Checksum metadata for a path
+function getChecksum(fs, path, callback) {
+  fs.getxattr(path, constants.attributes.checksum, function(err, value) {
+    if(err && err.code !== 'ENOATTR') {
+      return callback(err);
+    }
+
+    callback(null, value);
+  });
+}
+function fgetChecksum(fs, fd, callback) {
+  fs.fgetxattr(fd, constants.attributes.checksum, function(err, value) {
+    if(err && err.code !== 'ENOATTR') {
+      return callback(err);
+    }
+
+    callback(null, value);
+  });
+}
+
 module.exports = {
   forceCopy: forceCopy,
+
+  // Unsynced attr utils
   isPathUnsynced: isPathUnsynced,
   removeUnsynced: removeUnsynced,
   fremoveUnsynced: fremoveUnsynced,
   setUnsynced: setUnsynced,
   fsetUnsynced: fsetUnsynced,
   getUnsynced: getUnsynced,
-  fgetUnsynced: fgetUnsynced
+  fgetUnsynced: fgetUnsynced,
+
+  // Checksum attr utils
+  removeChecksum: removeChecksum,
+  fremoveChecksum: fremoveChecksum,
+  setChecksum: setChecksum,
+  fsetChecksum: fsetChecksum,
+  getChecksum: getChecksum,
+  fgetChecksum: fgetChecksum
 };
 
 },{"./constants.js":11}],16:[function(require,module,exports){
@@ -1476,7 +1608,7 @@ module.exports = function checksums(fs, path, srcList, options, callback) {
   function checksumsForFile(checksumNode, sourceNode, callback) {
 
     function generateChecksumsForFile() {
-      rsyncUtils.checksum(fs, sourceNode.path, options.size, function(err, checksums) {
+      rsyncUtils.blockChecksums(fs, sourceNode.path, options.size, function(err, checksums) {
         if(err) {
           return callback(err);
         }
@@ -1526,7 +1658,7 @@ module.exports = function checksums(fs, path, srcList, options, callback) {
           return callback(err);
         }
 
-        rsyncUtils.checksum(fs, linkContents, options.size, function(err, checksums) {
+        rsyncUtils.blockChecksums(fs, linkContents, options.size, function(err, checksums) {
           if(err) {
             return callback(err);
           }
@@ -1592,7 +1724,7 @@ module.exports = function checksums(fs, path, srcList, options, callback) {
     }
 
     // Link
-    if(sourceNodeType === 'SYMLINK' && options.link){
+    if(sourceNodeType === 'SYMLINK' && options.links){
       checksumNode.link = true;
       
       return checksumsForLink(checksumNode, sourceNode, callback);
@@ -1639,6 +1771,21 @@ module.exports = function diff(fs, path, checksumList, options, callback) {
     this.modified = modifiedTime;
   }
 
+  // Compute the checksum for the file/link and
+  // append it to the diffNode.
+  function appendChecksum(diffNode, diffPath, callback) {
+    rsyncUtils.getChecksum(fs, diffPath, function(err, checksum) {
+      if(err) {
+        return callback(err);
+      }
+
+      diffNode.checksum = checksum;
+      diffList.push(diffNode);
+
+      callback(null, diffList);
+    });
+  }
+
   function diffsForLink(checksumNode, callback) {
     var checksumNodePath = checksumNode.path;
     var diffNode = new DiffNode(checksumNodePath, checksumNode.type, checksumNode.modified);
@@ -1666,6 +1813,13 @@ module.exports = function diff(fs, path, checksumList, options, callback) {
         }
 
         diffNode.diffs = rsyncUtils.rollData(data, checksumNode.checksums, options.size);
+
+        // If versions are enabled, add the checksum
+        // field to the diffNode for version comparison
+        if(options.versions) {
+          return appendChecksum(diffNode, linkContents, callback);
+        }
+
         diffList.push(diffNode);
 
         callback(null, diffList);
@@ -1691,6 +1845,13 @@ module.exports = function diff(fs, path, checksumList, options, callback) {
       }
 
       diffNode.diffs = rsyncUtils.rollData(data, checksumNode.checksums, options.size);
+
+      // If versions are enabled, add the checksum
+      // field to the diffNode for version comparison
+      if(options.versions) {
+        return appendChecksum(diffNode, checksumNodePath, callback);
+      }
+
       diffList.push(diffNode);
 
       callback(null, diffList);
@@ -1809,7 +1970,8 @@ module.exports = function patch(fs, path, diffList, options, callback) {
 
   var paths = {
     synced: [],
-    failed: []
+    failed: [],
+    needsUpstream: []
   };
   var pathsToSync = extractPathsFromDiffs(diffList);
 
@@ -1855,8 +2017,21 @@ module.exports = function patch(fs, path, diffList, options, callback) {
           return callback();
         }
 
-        paths.synced.push(pathToDelete);
-        fs.unlink(pathToDelete, callback);
+        // Make sure this file isn't conflicted before deleting.
+        // Conflicted copies will not be touched by rsync
+        conflict.isConflictedCopy(fs, pathToDelete, function(err, conflicted) {
+          if(err) {
+            return handleError(err, callback);
+          }
+
+          if(conflicted) {
+            // Don't delete
+            return callback();
+          }
+
+          paths.synced.push(pathToDelete);
+          fs.unlink(pathToDelete, callback);
+        });
       });
     }
 
@@ -1914,12 +2089,14 @@ module.exports = function patch(fs, path, diffList, options, callback) {
   }
 
   function maybeGenerateConflicted(nodePath, callback) {
+    // If the file has not been synced upstream
+    // and needs to be patched, create a conflicted copy
     fsUtils.isPathUnsynced(fs, nodePath, function(err, unsynced) {
       if(err) {
         return handleError(err, callback);
       }
 
-      // Do not generate a conflicted copy for an unsynced file
+      // Generate a conflicted copy only for an unsynced file
       if(!unsynced) {
         return callback();
       }
@@ -1946,6 +2123,43 @@ module.exports = function patch(fs, path, diffList, options, callback) {
   function patchFile(diffNode, callback) {
     var diffLength = diffNode.diffs ? diffNode.diffs.length : 0;
     var filePath = diffNode.path;
+
+    // Compare the version of the file when it was last
+    // synced with the version of the diffNode by comparing
+    // checksums and modified times.
+    // If they match, the file is not patched and needs to
+    // be upstreamed
+    function compareVersions(data) {
+      fs.lstat(filePath, function(err, stats) {
+        if(err) {
+          return handleError(err, callback);
+        }
+
+        // If the file was modified before the
+        // diffNode's modified time, the file is outdated
+        // and needs to be patched
+        if(stats.mtime <= diffNode.modified) {
+          return applyPatch(getPatchedData(data));
+        }
+
+        fsUtils.getChecksum(fs, filePath, function(err, checksum) {
+          if(err) {
+            return handleError(err, callback);
+          }
+
+          // If the last synced checksum matches the
+          // diffNode's checksum, ignore the patch
+          // because it is a newer version than whats on
+          // the server
+          if(checksum === diffNode.checksum) {
+            paths.needsUpstream.push(filePath);
+            return callback(null, paths);
+          }
+
+          applyPatch(getPatchedData(data));
+        });
+      });
+    }
 
     function updateModifiedTime() {
       fs.utimes(filePath, diffNode.modified, diffNode.modified, function(err) {
@@ -2018,11 +2232,25 @@ module.exports = function patch(fs, path, diffList, options, callback) {
     }
 
     fs.readFile(filePath, function(err, data) {
-      if(err && err.code !== 'ENOENT') {
-        return handleError(err, callback);
+      if(err) {
+        if(err.code !== 'ENOENT') {
+          return handleError(err, callback);
+        }
+
+        // Patch a non-existent file i.e. create it
+        return applyPatch(getPatchedData(new Buffer(0)));
       }
 
-      applyPatch(getPatchedData(data || new Buffer(0)));
+      // If version comparing is not enabled, apply
+      // the patch directly
+      if(!options.versions) {
+        return applyPatch(getPatchedData(data));
+      }
+
+      // Check the last synced checksum with
+      // the given checksum and don't patch if they
+      // match
+      compareVersions(data);
     });
   }
 
@@ -2146,6 +2374,8 @@ var fsUtils = require('../fs-utils');
 //                false: do not change modified times of destination files [default]
 // links      -   true: sync symbolic links as links in destination
 //                false: sync symbolic links as the files they link to in destination [default]
+// versions   -   true: do not sync a node if the last synced version matches the version it needs to be synced to [default]
+//                false: sync nodes irrespective of the last synced version
 function configureOptions(options) {
   if(!options || typeof options === 'function') {
     options = {};
@@ -2156,6 +2386,7 @@ function configureOptions(options) {
   options.recursive = options.recursive || false;
   options.time = options.time || false;
   options.links = options.links || false;
+  options.versions = options.versions !== false;
 
   return options;
 }
@@ -2180,17 +2411,6 @@ function validateParams(fs, param2) {
   }
 
   return err;
-}
-
-// This function has been taken from lodash
-// Licensed under the MIT license
-// https://github.com/lodash/lodash
-function sortObjects(list, prop) {
-  return list.sort(function(a,b) {
-    a = a[prop];
-    b = b[prop];
-    return (a === b) ? 0 : (a < b) ? -1 : 1;
-  });
 }
 
 // MD5 hashing for RSync
@@ -2330,8 +2550,11 @@ function roll(data, checksums, blockSize) {
   return results;
 }
 
-// RSync function to calculate checksums
-function checksum (fs, path, size, callback) {
+// Rsync function to calculate checksums for 
+// a file by dividing it into blocks of data
+// whose size is passed in and checksuming each
+// block of data
+function blockChecksums(fs, path, size, callback) {
   var cache = {};
 
   fs.readFile(path, function (err, data) {
@@ -2375,10 +2598,29 @@ function checksum (fs, path, size, callback) {
   });
 }
 
+// Generate the MD5 hash for the data of a file
+// in its entirety
+function getChecksum(fs, path, callback) {
+  fs.readFile(path, function(err, data) {
+    if(!err) {
+      callback(null, md5sum(data));
+    } else if(err.code === 'ENOENT') {
+      // File does not exist so the checksum is an empty string
+      callback(null, "");
+    } else {
+      callback(err);
+    }
+  });
+}
+
 // Generate checksums for an array of paths to be used for comparison
-function generateChecksums(fs, paths, blockSize, callback) {
-  if(!blockSize || typeof callback !== 'function') {
-    return callback(new Errors.EINVAL('Insufficient data provided'));
+// It also takes an optional parameter called stampNode, a boolean which
+// indicates whether the checksum should be stamped as an xattr on the node.
+function generateChecksums(fs, paths, stampNode, callback) {
+  // Maybe stampNode was not passed in
+  if(typeof callback !== 'function') {
+    callback = findCallback(callback, stampNode);
+    stampNode = false;
   }
 
   var paramError = validateParams(fs, paths);
@@ -2386,56 +2628,81 @@ function generateChecksums(fs, paths, blockSize, callback) {
     return callback(paramError);
   }
 
-  var checksums = [];
+  var checksumList = [];
 
-  function ChecksumNode(path, checksum) {
+  function ChecksumNode(path, type, checksum) {
     this.path = path;
-    this.checksum = checksum || [];
+    this.type = type;
+    this.checksum = checksum;
+  }
+
+  function addChecksumNode(path, nodeType, checksum, callback) {
+    var checksumNode;
+
+    // If no checksum was passed in
+    if(typeof checksum === 'function') {
+      callback = checksum;
+      checksumNode = new ChecksumNode(path, nodeType);
+    } else {
+      checksumNode = new ChecksumNode(path, nodeType, checksum);
+    }
+
+    checksumList.push(checksumNode);
+    callback();
+  }
+
+  // Only calculate the checksums for synced paths
+  function maybeAddChecksumNode(path, nodeType, callback) {
+    fsUtils.isPathUnsynced(fs, path, function(err, unsynced) {
+      if(err) {
+        return callback(err);
+      }
+
+      if(unsynced) {
+        return callback();
+      }
+
+      getChecksum(fs, path, function(err, checksum) {
+        if(err) {
+          return callback(err);
+        }
+        // If we shouldn't add the checksum stamp or
+        // the node does not exist (cannot add a stamp)
+        // immediately add the checksum
+        if(!stampNode || checksum === "") {
+          return addChecksumNode(path, nodeType, checksum, callback);
+        }
+
+        // Stamp the node with the checksum
+        fsUtils.setChecksum(fs, path, checksum, function(err) {
+          if(err) {
+            return callback(err);
+          }
+
+          addChecksumNode(path, nodeType, checksum, callback);
+        });
+      });
+    });
   }
 
   function calcChecksum(path, callback) {
-    var checksumNode;
-
     fs.lstat(path, function(err, stat) {
+      var nodeType = stat && stat.type;
+
       if(err) {
         if(err.code !== 'ENOENT') {
           return callback(err);
         }
 
-        checksumNode = new ChecksumNode(path);
-        checksums.push(checksumNode);
-
-        return callback();
+        // Checksums for non-existent files
+        maybeAddChecksumNode(path, nodeType, callback);
+      } else if(stat.isDirectory()) {
+        // Directory checksums are not calculated i.e. are undefined
+        addChecksumNode(path, nodeType, callback);
+      } else {
+        // Checksums for synced files/links
+        maybeAddChecksumNode(path, nodeType, callback);
       }
-
-      // Use contents of directory instead of checksums
-      if(stat.isDirectory()) {
-        checksumNode = new ChecksumNode(path);
-        checksums.push(checksumNode);
-        return callback();
-      }
-
-      fsUtils.isPathUnsynced(fs, path, function(err, unsynced) {
-        if(err) {
-          return callback(err);
-        }
-
-        if(unsynced) {
-          return callback();
-        }
-
-        // Calculate checksums for file or symbolic links
-        checksum(fs, path, blockSize, function(err, chksum) {
-          if(err) {
-            return callback(err);
-          }
-
-          checksumNode = new ChecksumNode(path, chksum);
-          checksums.push(checksumNode);
-
-          callback();
-        });
-      });
     });
   }
 
@@ -2444,7 +2711,7 @@ function generateChecksums(fs, paths, blockSize, callback) {
       return callback(err);
     }
 
-    callback(null, checksums);
+    callback(null, checksumList);
   });
 }
 
@@ -2452,79 +2719,45 @@ function generateChecksums(fs, paths, blockSize, callback) {
 // checksums for a collection of paths in one file system 
 // against the checksums for the same those paths in 
 // another file system
-function compareContents(fs, checksums, blockSize, callback) {
-  var EDIFF = 'DIFF';
+function compareContents(fs, checksumList, callback) {
+  var ECHKSUM = "Checksums do not match";
 
-  if(!blockSize || typeof callback !== 'function') {
-    return callback(new Errors.EINVAL('Insufficient data provided'));
-  }
-
-  var paramError = validateParams(fs, checksums);
+  var paramError = validateParams(fs, checksumList);
   if(paramError) {
     return callback(paramError);
-  }
-
-  // Check if two checksum arrays are equal
-  function isEqual(checksumNode1, checksumNode2) {
-    var comparisonLength = checksumNode2.length;
-    var checksum1, checksum2;
-
-    if(checksumNode1.length !== comparisonLength) {
-      return false;
-    }
-
-    // Sort the checksum objects in each array by the 'index' property
-    checksumNode1 = sortObjects(checksumNode1, 'index');
-    checksumNode2 = sortObjects(checksumNode2, 'index');
-
-    // Compare each object's checksums
-    for(var i = 0; i < comparisonLength; i++) {
-      checksum1 = checksumNode1[i];
-      checksum2 = checksumNode2[i];
-
-      if(checksum1.weak !== checksum2.weak ||
-        checksum1.strong !== checksum2.strong) {
-        return false;
-      }
-    }
-
-    return true;
   }
 
   function compare(checksumNode, callback) {
     var path = checksumNode.path;
 
     fs.lstat(path, function(err, stat) {
-      if(err) {
-        if(err.code !== 'ENOENT') {
-          return callback(err);
-        }
+      if(err && err.code !== 'ENOENT') {
+        return callback(err);
+      }
 
-        // Checksums for a non-existent path are empty
-        if(checksumNode.checksum && !checksumNode.checksum.length) {
+      // If the types of the nodes on each fs do not match
+      // i.e. /a is a file on fs1 and /a is a directory on fs2
+      if(!err && checksumNode.type !== stat.type) {
+        return callback(ECHKSUM);
+      }
+
+      // If the node type is a directory, checksum should not exist
+      if(!err && stat.isDirectory()) {
+        if(!checksumNode.checksum) {
           return callback();
         }
 
-        return callback(EDIFF);
+        callback(ECHKSUM);
       }
 
-      // Directory comparison of contents
-      if(stat.isDirectory()) {
-        return callback();
-      }
-
-      if(!checksumNode.checksum) {
-        return callback(EDIFF);
-      }
-
-      // Compare checksums for two files/symbolic links
-      checksum(fs, path, blockSize, function(err, checksum) {
+      // Checksum comparison for a non-existent path or file/link
+      getChecksum(fs, path, function(err, checksum) {
         if(err) {
           return callback(err);
         }
 
-        if(!isEqual(checksum, checksumNode.checksum)) {
-          return callback(EDIFF);
+        if(checksum !== checksumNode.checksum) {
+          return callback(ECHKSUM);
         }
 
         callback();
@@ -2532,21 +2765,18 @@ function compareContents(fs, checksums, blockSize, callback) {
     });
   }
 
-  async.eachSeries(checksums, compare, function(err) {
-    if(err && err !== EDIFF) {
-      return callback(err, false);
+  async.eachSeries(checksumList, compare, function(err) {
+    if(err && err !== ECHKSUM) {
+      return callback(err);
     }
 
-    if(err === EDIFF) {
-      return callback(null, false);
-    }
-
-    callback(null, true);
+    callback(null, err !== ECHKSUM);
   });
 }
 
 module.exports = {
-  checksum: checksum,
+  blockChecksums: blockChecksums,
+  getChecksum: getChecksum,
   rollData: roll,
   generateChecksums: generateChecksums,
   compareContents: compareContents,
@@ -2672,14 +2902,15 @@ module.exports = function sourceList(fs, path, options, callback) {
 /**
  * Sync path resolver is a library that provides
  * functionality to determine 'syncable' paths
- * It exposes the following method:
+ * It exposes the following methods:
  *
- * resolve      - This method takes two paths as arguments.
- *                The goal is to find the most common ancestor
- *                between them. For e.g. the most common ancestor
- *                between '/dir' and '/dir/file.txt' is '/dir' while
- *                between '/dir' and '/file.txt' would be '/'.
+ * resolve          - This method takes two paths as arguments.
+ *                    The goal is to find the most common ancestor
+ *                    between them. For e.g. the most common ancestor
+ *                    between '/dir' and '/dir/file.txt' is '/dir' while
+ *                    between '/dir' and '/file.txt' would be '/'.
  *
+ * resolveFromArray - This method works exactly like resolve but works for arrays of paths instead
 */
 
 var pathResolver = {};
@@ -2728,6 +2959,20 @@ pathResolver.resolve = function(path1, path2) {
   var path2Depth = getDepth(path2);
 
   return commonAncestor(path1, path1Depth, path2, path2Depth);
+};
+
+pathResolver.resolveFromArray = function(paths) {
+  if(!paths) {
+    return '/';
+  }
+
+  var resolvedPath, i;
+
+  for(i = 1, resolvedPath = paths[0]; i < paths.length; i++) {
+    resolvedPath = pathResolver.resolve(resolvedPath, paths[i]);
+  }
+
+  return resolvedPath;
 };
 
 module.exports = pathResolver;
@@ -5923,15 +6168,15 @@ function unlink_node(context, path, callback) {
     }
   }
 
-  function check_if_node_is_directory(error, result) {
-    if(error) {
-      callback(error);
-    } else if(result.mode === 'DIRECTORY') {
-      callback(new Errors.EPERM('unlink not permitted on directories', name));
-    } else {
-      update_file_node(null, result);
-    }
-  }
+  // function check_if_node_is_directory(error, result) {
+  //   if(error) {
+  //     callback(error);
+  //   } else if(result.mode === 'DIRECTORY') {
+  //     callback(new Errors.EPERM('unlink not permitted on directories', name));
+  //   } else {
+  //     update_file_node(null, result);
+  //   }
+  // }
 
   function check_if_file_exists(error, result) {
     if(error) {
@@ -5941,6 +6186,7 @@ function unlink_node(context, path, callback) {
       if(!_(directoryData).has(name)) {
         callback(new Errors.ENOENT('a component of the path does not name an existing file', name));
       } else {
+        // context.getObject(directoryData[name].id, check_if_node_is_directory);
         context.getObject(directoryData[name].id, update_file_node);
       }
     }
@@ -7757,7 +8003,7 @@ module.exports = {
 };
 
 },{"./indexeddb.js":47,"./memory.js":48,"./websql.js":49}],47:[function(require,module,exports){
-(function (global,Buffer){
+(function (global){
 var FILE_SYSTEM_NAME = require('../constants.js').FILE_SYSTEM_NAME;
 var FILE_STORE_NAME = require('../constants.js').FILE_STORE_NAME;
 var IDB_RW = require('../constants.js').IDB_RW;
@@ -7833,13 +8079,7 @@ IndexedDBContext.prototype.putObject = function(key, value, callback) {
   _put(this.objectStore, key, value, callback);
 };
 IndexedDBContext.prototype.putBuffer = function(key, uint8BackedBuffer, callback) {
-  var buf;
-  if(!Buffer._useTypedArrays) { // workaround for fxos 1.3
-    buf = uint8BackedBuffer.toArrayBuffer();
-  } else {
-    buf = uint8BackedBuffer.buffer;
-  }
-  _put(this.objectStore, key, buf, callback);
+  _put(this.objectStore, key, uint8BackedBuffer.buffer, callback);
 };
 
 IndexedDBContext.prototype.delete = function(key, callback) {
@@ -7907,8 +8147,8 @@ IndexedDB.prototype.getReadWriteContext = function() {
 
 module.exports = IndexedDB;
 
-}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer)
-},{"../buffer.js":34,"../constants.js":35,"../errors.js":38,"buffer":55}],48:[function(require,module,exports){
+}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
+},{"../buffer.js":34,"../constants.js":35,"../errors.js":38}],48:[function(require,module,exports){
 var FILE_SYSTEM_NAME = require('../constants.js').FILE_SYSTEM_NAME;
 // NOTE: prefer setImmediate to nextTick for proper recursion yielding.
 // see https://github.com/js-platform/filer/pull/24
