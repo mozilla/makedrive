@@ -11,10 +11,7 @@ var ZIPHandler = require('./zip-handler.js');
 function FilerWebServer(username, res, options) {
   options = options || {};
 
-  var fs = this.fs = filesystem.create({
-    keyPrefix: username,
-    name: username
-  });
+  var fs = this.fs = filesystem.create(username);
 
   // Pick the appropriate handler type to create
   if(options.json) {

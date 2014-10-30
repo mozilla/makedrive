@@ -17,10 +17,7 @@ function getContent(data, currentPath) {
 }
 
 function ImageFinder(username) {
-  this.fs = filesystem.create({
-    keyPrefix: username,
-    name: username
-  });
+  this.fs = filesystem.create(username);
 }
 
 ImageFinder.prototype.find = function(callback) {

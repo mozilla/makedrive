@@ -294,8 +294,6 @@ describe('Test util.js', function(){
         util.prepareDownstreamSync(username, result.token, function(err, syncData, fs, socketPackage) {
           expect(err).to.not.exist;
           expect(fs).to.exist;
-          expect(fs.name).to.exist;
-          expect(fs.watch).to.exist;
           expect(fs.provider).to.exist;
           util.cleanupSockets(result.done, socketPackage);
         });
@@ -375,8 +373,6 @@ describe('Test util.js', function(){
 
         util.prepareUpstreamSync(username, result.token, function(err, syncData, fs, socketPackage) {
           expect(fs).to.exist;
-          expect(fs.name).to.exist;
-          expect(fs.watch).to.exist;
           expect(fs.provider).to.exist;
           util.upstreamSyncSteps.requestSync(socketPackage, syncData, function(message, cb) {
             message = util.toSyncMessage(message);
@@ -400,8 +396,6 @@ describe('Test util.js', function(){
         util.prepareUpstreamSync(username, result.token, function(err, syncData, fs, socketPackage) {
           expect(err).to.not.exist;
           expect(fs).to.exist;
-          expect(fs.name).to.exist;
-          expect(fs.watch).to.exist;
           expect(fs.provider).to.exist;
           expect(syncData).to.exist;
           expect(syncData.path).to.exist;

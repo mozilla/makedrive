@@ -86,10 +86,7 @@ function initClient(client) {
     // Update client details now that he/she is authenticated
     client.id = token;
     client.username = username;
-    client.fs = filesystem.create({
-      keyPrefix: username,
-      name: username
-    });
+    client.fs = filesystem.create(username);
     ClientInfo.update(client);
 
     log.info({client: client}, 'Client connected');

@@ -60,11 +60,7 @@ app.post('/upload/*', function(req, res) {
   req.on('end', function() {
     fileData = Buffer.concat(fileData);
 
-    var fs = filesystem.create({
-      keyPrefix: username,
-      name: username
-    });
-
+    var fs = filesystem.create(username);
     fs.writeFile(path, fileData, function(err) {
       if(err) {
         res.send(500, {error: err});
@@ -570,10 +566,7 @@ function prepareDownstreamSync(finalStep, username, token, cb){
   // Set up server filesystem
   upload(username, '/' + testFile.name, testFile.content, function() {
     // Set up client filesystem
-    var fs = filesystem.create({
-      keyPrefix: username + "client",
-      name: username + "client"
-    });
+    var fs = filesystem.create(username + 'client');
 
     var socketPackage = openSocket({
       onMessage: function(message) {
