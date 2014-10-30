@@ -1,4 +1,5 @@
 var env = require('./lib/environment');
+var log = require('./lib/logger.js');
 
 // Get list of basic auth usernames:passwords from .env (if any)
 // Username/password pairs should be listed like "username1:password1,username2:password2"
@@ -20,6 +21,7 @@ module.exports = {
         }
       }
     }
+    log.debug('BasicAuth authentication failed for username=%s', user);
     return false;
   }),
 
@@ -51,8 +53,8 @@ module.exports = {
   },
 
   errorHandler: function( err, req, res, next ) {
-    if ( typeof err === "string" ) {
-      console.error( "String passed to next(), expected an Error object, got: %s", err );
+    if (typeof err === "string") {
+      err = new Error(err);
     }
 
     var error = {

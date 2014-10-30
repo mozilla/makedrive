@@ -2,6 +2,7 @@
  * A JSON Handler, for web APIs vs. browsers to consume
  */
 var mime = require('mime');
+var log = require('../logger.js');
 
 function write(content, res, status) {
   status = status || 200;
@@ -30,6 +31,7 @@ function handleFile(fs, path, res) {
 
   fs.readFile(path, {encoding: encoding}, function(err, data) {
     if(err) {
+      log.error(err, 'Unable to read file at path `%s`', path);
       handle404(path, res);
       return;
     }
@@ -51,6 +53,7 @@ function handleDir(fs, path, res) {
 
   sh.ls(path, {recursive: true}, function(err, listing) {
     if(err) {
+      log.error(err, 'Unable to get listing for path `%s`', path);
       handle404(path, res);
       return;
     }

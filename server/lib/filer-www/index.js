@@ -3,6 +3,7 @@
  */
 
 var filesystem = require('../filesystem.js');
+var log = require('../logger.js');
 var DefaultHandler = require('./default-handler.js');
 var JSONHandler = require('./json-handler.js');
 var RawHandler = require('./raw-handler.js');
@@ -36,6 +37,7 @@ FilerWebServer.prototype.handle = function(path, res) {
 
   fs.stat(path, function(err, stats) {
     if(err) {
+      log.error(err, 'Unable to stat path `%s`', path);
       handler.handle404(path, res);
       return;
     }
