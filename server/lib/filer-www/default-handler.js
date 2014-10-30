@@ -6,6 +6,7 @@ var mime = require('mime');
 var Path = require('../../../lib/filer.js').Path;
 var version = require('../../../package.json').version;
 var util = require('./util.js');
+var log = require('../logger.js');
 
 function write(content, contentType, res, status) {
   status = status || 200;
@@ -29,6 +30,7 @@ function handleFile(fs, path, res) {
 
   fs.readFile(path, {encoding: encoding}, function(err, data) {
     if(err) {
+      log.error(err, 'Unable to read file path `%s`', path);
       handle404(path, res);
       return;
     }
@@ -104,6 +106,7 @@ function handleDir(fs, path, res) {
 
   sh.ls(path, function(err, list) {
     if(err) {
+      log.error(err, 'Unable to get listing for path `%s`', path);
       handle404(path, res);
       return;
     }

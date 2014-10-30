@@ -15,6 +15,8 @@ module.exports = function createRoutes(app) {
   });
 
   function setupWWWRoutes(route, options) {
+    log.info('Enabling %s route', route);
+
     app.get(route, middleware.authenticationHandler, function( req, res ) {
       var username = req.params.username;
       var path = '/' + req.params[0];
@@ -60,6 +62,8 @@ module.exports = function createRoutes(app) {
    * Server-to-Server Basic AUTH route for getting paths for a user
    */
   if(env.get('BASIC_AUTH_USERS')) {
+    log.info('Enabling /s/:username/* route');
+
     app.get('/s/:username/*', middleware.basicAuthHandler, function(req, res) {
       var username = req.params.username;
       var path = '/' + req.params[0];
@@ -80,6 +84,8 @@ module.exports = function createRoutes(app) {
    * Image gallery from a user's Filer filesystem
    */
   if(env.get('IMAGES_ROUTE')) {
+    log.info('Enabling /images route');
+
     app.get('/images', middleware.authenticationHandler, function(req, res) {
       var username = req.params.username;
       var images = new ImageFinder(username);

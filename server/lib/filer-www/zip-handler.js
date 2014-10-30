@@ -7,6 +7,7 @@ var archiver = require('archiver');
 var Path = require('../../../lib/filer.js').Path;
 var async = require('../../../lib/async-lite.js');
 var util = require('./util.js');
+var log = require('../logger.js');
 
 function archivePath(fs, path, res) {
   function fixPath(path) {
@@ -16,7 +17,10 @@ function archivePath(fs, path, res) {
 
   function addFile(path, callback) {
     fs.readFile(path, function(err, data) {
-      if(err) return callback(err);
+      if(err) {
+        log.error(err, 'Unable to read file at path `%s`', path);
+        return callback(err);
+      }
 
       archive.append(data, {name: fixPath(path)});
       callback();
@@ -25,7 +29,10 @@ function archivePath(fs, path, res) {
 
   function addDir(path, callback) {
     fs.readdir(path, function(err, list) {
-      if(err) return callback(err);
+      if(err) {
+        log.error(err, 'Unable to read dir at path `%s`', path);
+        return callback(err);
+      }
 
       // Add the directory itself
       archive.append(null, {name: fixPath(path) + '/'});
@@ -39,7 +46,10 @@ function archivePath(fs, path, res) {
 
   function add(path, callback) {
     fs.stat(path, function(err, stats) {
-      if(err) return callback(err);
+      if(err) {
+        log.error(err, 'Unable to stat path `%s`', path);
+        return callback(err);
+      }
 
       if(stats.isDirectory()) {
         addDir(path, callback);
@@ -49,7 +59,9 @@ function archivePath(fs, path, res) {
     });
   }
 
-  function error() {
+  function error(err) {
+    log.error(err);
+
     // Signal to the client that things are broken by hanging up.
     // There may be a better way to handle the error case here.
     if(res.socket) {
@@ -66,7 +78,7 @@ function archivePath(fs, path, res) {
 
   add(path, function(err) {
     if(err) {
-      error();
+      error(err);
     } else {
       archive.finalize();
     }
