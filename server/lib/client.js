@@ -6,14 +6,15 @@
  * protocol as normal.
  */
 var SyncProtocolHandler = require('./sync-protocol-handler.js');
-var SyncMessage = require('../../lib/syncmessage.js');
 var EventEmitter = require('events').EventEmitter;
 var ClientInfo = require('./client-info.js');
 var Constants = require('../../lib/constants.js');
 var States = Constants.server.states;
+var syncTypes = Constants.syncTypes;
 var redis = require('../redis-clients.js');
 var util = require('util');
 var log = require('./logger.js');
+var findPathIndexInArray = require('../../lib/util.js').findPathIndexInArray;
 
 var noop = function(){};
 
@@ -42,18 +43,15 @@ function handleBroadcastMessage(msg, client) {
     return;
   }
 
-  // Re-hydrate a full SyncMessage object from partial data sent via msg
-  var response = new SyncMessage.parse(msg.syncMessage);
-
-  // If this client was in the process of a downstream sync, we
-  // want to reactivate it with a path that is the common ancestor
-  // of the path originally being synced, and the path that was just
-  // updated in this upstream sync.
-  if(client.downstreamInterrupted) {
-    client.handler.restartDownstream(response.content.path);
-  } else {
-    client.handler.sendOutOfDate(response);
+  client.outOfDate = client.outOfDate || [];
+  client.currentDownstream = client.currentDownstream || [];
+  var outOfDateSync = {path: msg.path, type: msg.type};
+  if(msg.type === syncTypes.RENAME) {
+    outOfDateSync.oldPath = msg.oldPath;
   }
+  client.outOfDate.push(outOfDateSync);
+
+  client.handler.syncDownstream();
 }
 
 function Client(ws) {
@@ -79,9 +77,9 @@ function Client(ws) {
   // whether or not we are in a sync step (e.g., patching) that will leave the
   // server's filesystem corrupt if not completed.
   self.closable = true;
-  self.path = '/';
   // We start using this in client-manager.js when a client is fully authenticated.
   self.handler = new SyncProtocolHandler(self);
+  self.outOfDate = [];
 
   ws.onerror = function(err) {
     log.error({err: err, client: self}, 'Web Socket error');
@@ -160,10 +158,11 @@ Client.prototype.close = function(error) {
     // If we're passed error info, try to close with that first
     if(self.ws) {
       error = error || {};
+      self.ws.onclose = noop;
+
       if(error.code && error.message) {
         // Ignore onerror, oncall with this call
         self.ws.onerror = noop;
-        self.ws.onclose = noop;
         self.ws.close(error.code, error.message);
       }
 
@@ -204,7 +203,7 @@ Client.prototype.sendMessage = function(syncMessage) {
     if(info) {
       info.bytesSent += Buffer.byteLength(data, 'utf8');
     }
-    
+
     ws.send(syncMessage.stringify());
     log.debug({syncMessage: syncMessage, client: self}, 'Sending Sync Protocol Message');
   } catch(err) {
@@ -213,6 +212,44 @@ Client.prototype.sendMessage = function(syncMessage) {
     self.state = States.ERROR;
     self.close();
   }
+};
+
+Client.prototype.delaySync = function(path) {
+  var self = this;
+  var indexInCurrent = findPathIndexInArray(self.currentDownstream, path);
+  var delayedSync = indexInCurrent === -1 ? null : self.currentDownstream.splice(indexInCurrent, 1);
+  var syncTime;
+
+  if(delayedSync) {
+    syncTime = Date.now() - (delayedSync._syncStarted || 0);
+    log.info({client: self}, 'Downstream sync delayed for ' + path + ' after ' + syncTime + ' ms');
+  } else {
+    log.warn({client: self}, 'Sync entry not found in current downstreams when attempting to delay sync for ' + path);
+  }
+};
+
+Client.prototype.endDownstream = function(path) {
+  var self = this;
+  var indexInCurrent = findPathIndexInArray(self.currentDownstream, path);
+  var indexInOutOfDate = findPathIndexInArray(self.outOfDate, path);
+  var syncEnded;
+  var syncTime;
+
+  if(indexInCurrent === -1) {
+    log.warn({client: self}, 'Sync entry not found in current downstreams when attempting to end sync for ' + path);
+  } else {
+    syncEnded = self.currentDownstream.splice(indexInCurrent, 1);
+  }
+
+  syncTime = syncEnded ? Date.now() - syncEnded._syncStarted : 0;
+
+  if(indexInOutOfDate === -1) {
+    log.warn({client: self}, 'Sync entry not found in out of date list when attempting to end sync for ' + path);
+    return;
+  }
+
+  self.outOfDate.splice(indexInOutOfDate, 1);
+  log.info({client: self}, 'Downstream sync completed for ' + path + ' in ' + syncTime + ' ms');
 };
 
 module.exports = Client;

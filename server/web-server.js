@@ -15,6 +15,7 @@ var middleware = require('./middleware');
 var routes = require('./routes');
 var log = require('./lib/logger.js');
 var nunjucks = require('nunjucks');
+var enableDestroy = require('server-destroy');
 
 var app = express();
 
@@ -77,6 +78,7 @@ module.exports.start = function(callback) {
       return callback(err);
     }
     log.info('Started web server on port %s', port);
+    enableDestroy(server);
     callback(null, server);
   });
 };
@@ -85,5 +87,8 @@ module.exports.close = function(callback) {
     return callback();
   }
 
-  server.close(callback);
+  server.destroy(function() {
+    server = null;
+    callback.apply(null, arguments);
+  });
 };

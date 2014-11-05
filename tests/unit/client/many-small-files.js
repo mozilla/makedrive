@@ -1,19 +1,32 @@
 var expect = require('chai').expect;
 var util = require('../../lib/util.js');
+var server = require('../../lib/server-utils.js');
 var MakeDrive = require('../../../client/src');
 var Filer = require('../../../lib/filer.js');
 
 describe('MakeDrive Client - sync many small files', function(){
-  var provider;
+  var fs;
+  var sync;
 
-  beforeEach(function(done) {
-    util.ready(function() {
-      provider = new Filer.FileSystem.providers.Memory(util.username());
+  before(function(done) {
+    server.start(done);
+  });
+  after(function(done) {
+    server.shutdown(done);
+  });
+
+  beforeEach(function() {
+    fs = MakeDrive.fs({provider: new Filer.FileSystem.providers.Memory(util.username()), manual: true, forceCreate: true});
+    sync = fs.sync;
+  });
+  afterEach(function(done) {
+    util.disconnectClient(sync, function(err) {
+      if(err) throw err;
+
+      sync = null;
+      fs = null;
       done();
     });
-  });
-  afterEach(function() {
-    provider = null;
   });
 
   function smallFile(number) {
@@ -34,11 +47,8 @@ describe('MakeDrive Client - sync many small files', function(){
    * downstream sync brings them back.
    */
   it('should sync many small files', function(done) {
-    util.authenticatedConnection(function( err, result ) {
+    server.authenticatedConnection(function(err, result) {
       expect(err).not.to.exist;
-
-      var fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
-      var sync = fs.sync;
 
       // Make a layout with /project and 100 small html files inside
       var layout = {};
@@ -46,7 +56,14 @@ describe('MakeDrive Client - sync many small files', function(){
         layout['/project/small-file' + i + '.html'] = smallFile(i);
       }
 
-      sync.once('connected', function onConnected() {
+      sync.once('synced', function onDownstreamCompleted() {
+        sync.once('synced', function onUpstreamCompleted() {
+          server.ensureRemoteFilesystem(layout, result.jar, function(err) {
+            expect(err).not.to.exist;
+            sync.disconnect();
+          });
+        });
+
         util.createFilesystemLayout(fs, layout, function(err) {
           expect(err).not.to.exist;
           expect(sync.state).to.equal(sync.SYNC_CONNECTED);
@@ -58,19 +75,12 @@ describe('MakeDrive Client - sync many small files', function(){
         expect(err).not.to.exist;
       });
 
-      sync.once('completed', function onUpstreamCompleted() {
-        util.ensureRemoteFilesystem(layout, result.jar, function(err) {
-          expect(err).not.to.exist;
-          sync.disconnect();
-        });
-      });
-
       sync.once('disconnected', function onDisconnected() {
         util.deleteFilesystemLayout(fs, null, function(err) {
           expect(err).not.to.exist;
 
           // Re-sync with server and make sure we get our deep dir back
-          sync.once('connected', function onSecondDownstreamSync() {
+          sync.once('synced', function onSecondDownstreamSync() {
 
             sync.once('disconnected', function onSecondDisconnected() {
               util.ensureFilesystem(fs, layout, function(err) {
@@ -84,15 +94,15 @@ describe('MakeDrive Client - sync many small files', function(){
           });
 
           // Get a new token for this second connection
-          util.getWebsocketToken(result, function(err, result) {
+          server.getWebsocketToken(result, function(err, result) {
             expect(err).not.to.exist;
 
-            sync.connect(util.socketURL, result.token);
+            sync.connect(server.socketURL, result.token);
           });
         });
       });
 
-      sync.connect(util.socketURL, result.token);
+      sync.connect(server.socketURL, result.token);
     });
   });
 

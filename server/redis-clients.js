@@ -142,6 +142,8 @@ module.exports.start = function(callback) {
 };
 
 module.exports.close = function(callback) {
+  var channelCount = 0;
+
   // While we're closing, don't worry about hang-ups, errors from server
   closing = true;
 
@@ -153,23 +155,43 @@ module.exports.close = function(callback) {
 
   // XXX: due to https://github.com/mranney/node_redis/issues/439 we
   // can't (currently) rely on our client.quit(callback) callback to
-  // fire. As such, we fire and forget.
-  store.quit();
-  store = null;
-  log.info('Redis connection 1/3 closed.');
+  // fire. However, for now we will use it until a better solution
+  // comes up.
+  store.quit(function(err) {
+    if(err) {
+      log.error(err, 'Could not shutdown redis store client');
+      return callback(err);
+    }
 
-  pub.quit();
-  pub = null;
-  log.info('Redis connection 2/3 closed.');
+    store = null;
+    log.info('Redis connection 1/3 closed.');
 
-  sub.unsubscribe(ChannelConstants.syncChannel,
-                  ChannelConstants.lockRequestChannel,
-                  ChannelConstants.lockResponseChannel);
-  sub.quit();
-  sub = null;
-  log.info('Redis connection 3/3 closed.');
+    pub.quit(function(err) {
+      if(err) {
+        log.error(err, 'Could not shutdown redis publish client');
+        return callback(err);
+      }
 
-  callback();
+      pub = null;
+      log.info('Redis connection 2/3 closed.');
+
+      sub.on('unsubscribe', function unsubscribe() {
+        if(++channelCount !== 3) {
+          return;
+        }
+
+        sub.removeListener('unsubscribe', unsubscribe);
+        sub.end();
+        sub = null;
+        log.info('Redis connection 3/3 closed.');
+        closing = false;
+
+        callback();
+      });
+
+      sub.unsubscribe();
+    });
+  });
 };
 
 // NOTE: start() must be called before the following methods will be available.
@@ -182,38 +204,38 @@ module.exports.publish = function(channel, message) {
   pub.publish(channel, message);
 };
 
-module.exports.del = function(key, callback) {
+module.exports.hdel = function(key, field, callback) {
   if(!store) {
     log.error('Called redis.del() before start()');
     return callback(new Error('Not connected to Redis.'));
   }
 
-  store.del(key, callback);
+  store.hdel(key, field, callback);
 };
 
-module.exports.set = function(key, value, callback) {
+module.exports.hset = function(key, field, value, callback) {
   if(!store) {
     log.error('Called redis.set() before start()');
     return callback(new Error('Not connected to Redis.'));
   }
 
-  store.set(key, value, callback);
+  store.hset(key, field, value, callback);
 };
 
-module.exports.setnx = function(key, value, callback) {
+module.exports.hsetnx = function(key, field, value, callback) {
   if(!store) {
     log.error('Called redis.setnx() before start()');
     return callback(new Error('Not connected to Redis.'));
   }
 
-  store.setnx(key, value, callback);
+  store.hsetnx(key, field, value, callback);
 };
 
-module.exports.get = function(key, callback) {
+module.exports.hget = function(key, field, callback) {
   if(!store) {
     log.error('Called redis.get() before start()');
     return callback(new Error('Not connected to Redis.'));
   }
 
-  store.get(key, callback);
+  store.hget(key, field, callback);
 };

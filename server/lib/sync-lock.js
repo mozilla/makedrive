@@ -27,20 +27,20 @@ function handleLockRequest(message, lock) {
   }
 
   // Not meant for this lock, skip
-  if(lock.key !== message.key) {
+  if(lock.key !== message.key || lock.path !== message.path) {
     return;
   }
 
   // If the owner thinks this lock is not yet unlockable, respond as such
   if(!lock.allowLockRequest) {
     log.debug({syncLock: lock}, 'Denying lock override request for client id=%s.', message.id);
-    redis.publish(Constants.server.lockResponseChannel, JSON.stringify({key: lock.key, unlocked: false}));
+    redis.publish(Constants.server.lockResponseChannel, JSON.stringify({key: lock.key, path: lock.path, unlocked: false}));
     return;
   }
 
   // Otherwise, give up the lock by overwriting the value with the
   // requesting client's ID (replacing ours), and respond that we've released it.
-  redis.set(lock.key, message.id, function(err, reply) {
+  redis.hset(lock.key, lock.path, message.id, function(err, reply) {
     if(err) {
       log.error({err: err, syncLock: lock}, 'Error setting redis lock key.');
       return;
@@ -54,15 +54,16 @@ function handleLockRequest(message, lock) {
     log.debug({syncLock: lock}, 'Allowing lock override request for id=%s.', message.id);
     lock.unlocked = true;
     lock.emit('unlocked');
-    redis.publish(Constants.server.lockResponseChannel, JSON.stringify({key: lock.key, unlocked: true}));
+    redis.publish(Constants.server.lockResponseChannel, JSON.stringify({key: lock.key, path: lock.path, unlocked: true}));
   });
 }
 
-function SyncLock(key, id) {
+function SyncLock(key, id, path) {
   EventEmitter.call(this);
 
   this.key = key;
   this.value = id;
+  this.path = path;
 
   // Listen for requests to release this lock early.
   var lock = this;
@@ -97,13 +98,14 @@ SyncLock.generateKey = function(username) {
 SyncLock.prototype.release = function(callback) {
   var lock = this;
   var key = lock.key;
+  var path = lock.path;
 
   // Stop listening for requests to release this lock
   redis.removeListener('lock-request', lock._handleLockRequestFn);
   lock._handleLockRequestFn = null;
 
   // Try to delete the lock in redis
-  redis.del(key, function(err, reply) {
+  redis.hdel(key, path, function(err, reply) {
     // NOTE: we don't emit the unlocked event here, but use the callback instead.
     // The unlocked event indicates that the lock was released without calling release().
     lock.unlocked = true;
@@ -118,7 +120,7 @@ SyncLock.prototype.release = function(callback) {
   });
 };
 
-function handleLockResponse(message, key, client, waitTimer, callback) {
+function handleLockResponse(message, key, path, client, waitTimer, callback) {
   var id = client.id;
 
   try {
@@ -129,7 +131,7 @@ function handleLockResponse(message, key, client, waitTimer, callback) {
   }
 
   // Not meant for this lock, skip
-  if(key !== message.key) {
+  if(key !== message.key || path !== message.path) {
     return;
   }
 
@@ -142,11 +144,11 @@ function handleLockResponse(message, key, client, waitTimer, callback) {
   // The result of the request is defined in the `unlocked` param,
   // which is true if we now hold the lock, false if not.
   if(message.unlocked) {
-    var lock = new SyncLock(key, id);
+    var lock = new SyncLock(key, id, path);
     log.debug({syncLock: lock}, 'Lock override acquired.');
     callback(null, lock);
   } else {
-    log.debug('Lock override denied for key %s.', key);
+    log.debug('Lock override denied for %s in key %s.', path, key);
     callback();
   }
 }
@@ -154,25 +156,25 @@ function handleLockResponse(message, key, client, waitTimer, callback) {
 /**
  * Request a lock for the current client.
  */
-function request(client, callback) {
+function request(client, path, callback) {
   var key = SyncLock.generateKey(client.username);
   var id = client.id;
 
-  // Try to set this key/value pair, but fail if the key already exists.
-  redis.setnx(key, id, function(err, reply) {
+  // Try to set this key/value pair, but fail if the path for the key already exists.
+  redis.hsetnx(key, path, id, function(err, reply) {
     if(err) {
-      log.error({err: err, client: client}, 'Error trying to set redis key with setnx');
+      log.error({err: err, client: client}, 'Error trying to set redis key with hsetnx');
       return callback(err);
     }
 
     if(reply === 1) {
-      // Success, we have the lock (key was set). Return a new SyncLock instance
-      var lock = new SyncLock(key, id);
+      // Success, we have the lock (path for the key was set). Return a new SyncLock instance
+      var lock = new SyncLock(key, id, path);
       log.debug({client: client, syncLock: lock}, 'Lock acquired.');
       return callback(null, lock);
     }
 
-    // Key was not set (held by another client). See if the lock owner would be
+    // Path for key was not set (held by another client). See if the lock owner would be
     // willing to let us take it. We'll wait a bit for a reply, and if
     // we don't get one, assume the client holding the lock, or its server,
     // has crashed, and the lock is OK to take.
@@ -183,18 +185,13 @@ function request(client, callback) {
       redis.removeListener('lock-response', client._handleLockResponseFn);
       client._handleLockResponseFn = null;
 
-      redis.set(key, id, function(err, reply) {
+      redis.hset(key, path, id, function(err) {
         if(err) {
           log.error({err: err, client: client}, 'Error setting redis lock key.');
           return callback(err);
         }
 
-        if(reply !== 'OK') {
-          log.error({err: err, client: client}, 'Error setting redis lock key, expected OK reply, got %s.', reply);
-          return callback(new Error('Unexepcted redis response: ' + reply));
-        }
-
-        var lock = new SyncLock(key, id);
+        var lock = new SyncLock(key, id, path);
         log.debug({client: client, syncLock: lock}, 'Lock request timeout, setting lock manually.');
         callback(null, lock);
       });
@@ -203,22 +200,22 @@ function request(client, callback) {
 
     // Listen for a response from the client holding the lock
     client._handleLockResponseFn = function(message) {
-      handleLockResponse(message, key, client, waitTimer, callback);
+      handleLockResponse(message, key, path, client, waitTimer, callback);
     };
     redis.on('lock-response', client._handleLockResponseFn);
 
     // Ask the client holding the lock to give it to us
-    log.debug({client: client}, 'Requesting lock override.');
-    redis.publish(Constants.server.lockRequestChannel, JSON.stringify({key: key, id: id}));
+    log.debug({client: client}, 'Requesting lock override for ' + path);
+    redis.publish(Constants.server.lockRequestChannel, JSON.stringify({key: key, id: id, path: path}));
   });
 }
 
 /**
  * Check to see if a lock is held for the given username.
  */
-function isUserLocked(username, callback) {
+function isUserLocked(username, path, callback) {
   var key = SyncLock.generateKey(username);
-  redis.get(key, function(err, value) {
+  redis.hget(key, path, function(err, value) {
     if(err) {
       log.error(err, 'Error getting redis lock key %s.', key);
       return callback(err);

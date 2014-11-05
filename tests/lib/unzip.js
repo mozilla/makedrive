@@ -3,7 +3,7 @@ module.exports = function(fs, zipfile, options, callback) {
   var Path = Filer.Path;
   var JSZip = require('jszip');
   var async = require('async');
-  var sh = fs.Shell();
+  var sh = new fs.Shell();
   if(typeof options === 'function') {
     callback = options;
     options = {};

@@ -1,50 +1,23 @@
 var expect = require('chai').expect;
 var util = require('../lib/util.js');
-var SyncMessage = require('../../lib/syncmessage');
+var server = require('../lib/server-utils.js');
 var MakeDrive = require('../../client/src');
 var Filer = require('../../lib/filer.js');
 var fsUtils = require('../../lib/fs-utils.js');
 
 describe("Server bugs", function() {
-  describe("[Issue 169]", function() {
-    it("The server shouldn't crash when two clients connect on the same session.", function(done){
-      util.authenticatedConnection(function( err, connectionData ) {
-        expect(err).not.to.exist;
-        var socketData = {
-          token: connectionData.token
-        };
-
-        var socketPackage = util.openSocket(socketData, {
-          onMessage: function(message) {
-            message = util.toSyncMessage(message);
-            expect(message).to.exist;
-            expect(message.type).to.equal(SyncMessage.REQUEST);
-            expect(message.name).to.equal(SyncMessage.CHKSUM);
-            expect(message.content).to.be.an('object');
-
-            util.getWebsocketToken(connectionData, function(err, socketData2) {
-              expect(err).to.not.exist;
-
-              var socketPackage2 = util.openSocket(socketData2, {
-                onMessage: function(message) {
-                  util.cleanupSockets(function() {
-                    connectionData.done();
-                    done();
-                  }, socketPackage, socketPackage2);
-                },
-              });
-            });
-          }
-        });
-      });
-    });
+  before(function(done) {
+    server.start(done);
+  });
+  after(function(done) {
+    server.shutdown(done);
   });
 
   describe('[Issue 287]', function(){
     it('should fix timing issue with server holding onto active sync for user after completed', function(done) {
       var layout = {'/dir/file.txt': 'This is file 1'};
 
-      util.setupSyncClient({manual: true, layout: layout}, function(err, client) {
+      server.setupSyncClient({manual: true, layout: layout}, function(err, client) {
         expect(err).not.to.exist;
 
         var fs = client.fs;
@@ -66,13 +39,28 @@ describe("Server bugs", function() {
 });
 
 describe('Client bugs', function() {
-  var provider;
+  var fs;
+  var sync;
+
+  before(function(done) {
+    server.start(done);
+  });
+  after(function(done) {
+    server.shutdown(done);
+  });
 
   beforeEach(function() {
-    provider = new Filer.FileSystem.providers.Memory(util.username());
+    fs = MakeDrive.fs({provider: new Filer.FileSystem.providers.Memory(util.username()), manual: true, forceCreate: true});
+    sync = fs.sync;
   });
-  afterEach(function() {
-    provider = null;
+  afterEach(function(done) {
+    util.disconnectClient(sync, function(err) {
+      if(err) throw err;
+
+      sync = null;
+      fs = null;
+      done();
+    });
   });
 
   describe('[Issue 372]', function(){
@@ -81,11 +69,9 @@ describe('Client bugs', function() {
      * and change the file's content then try to connect and sync again.
      */
     it('should upstream newer changes made when disconnected and not create a conflicted copy', function(done) {
-      var fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
-      var sync = fs.sync;
       var jar;
 
-      util.authenticatedConnection(function(err, result) {
+      server.authenticatedConnection(function(err, result) {
         if(err) throw err;
 
         var layout = {'/hello': 'hello',
@@ -93,39 +79,50 @@ describe('Client bugs', function() {
                      };
         jar = result.jar;
 
-        sync.once('connected', function onConnected() {
+        sync.once('synced', function onConnected() {
           util.createFilesystemLayout(fs, layout, function(err) {
             if(err) throw err;
+
+            sync.once('synced', function onUpstreamCompleted() {
+              sync.disconnect();
+            });
 
             sync.request();
           });
         });
 
-        sync.once('completed', function onUpstreamCompleted() {
-          sync.disconnect();
-        });
-
         sync.once('disconnected', function onDisconnected() {
-          // Re-sync with server and make sure we get our empty dir back
-          sync.once('connected', function onSecondDownstreamSync() {
+          var syncsCompleted = [];
+
+          sync.on('completed', function reconnectedDownstream(path) {
+            syncsCompleted.push(path);
+
+            if(syncsCompleted.length !== 3)  {
+              return;
+            }
+
+            sync.removeListener('completed', reconnectedDownstream);
             layout['/hello'] = 'hello world';
 
             util.ensureFilesystem(fs, layout, function(err) {
               expect(err).not.to.exist;
+
+              sync.once('synced', function reconnectedUpstream() {
+                server.ensureRemoteFilesystem(layout, jar, function(err) {
+                  expect(err).not.to.exist;
+
+                  done();
+                });
+              });
+
+              sync.request();
             });
           });
 
-          sync.once('completed', function reconnectedUpstream() {
-            util.ensureRemoteFilesystem(layout, jar, function(err) {
-              expect(err).not.to.exist;
-              done();
-            });
-          });
-
-          util.ensureRemoteFilesystem(layout, jar, function(err) {
+          server.ensureRemoteFilesystem(layout, jar, function(err) {
             if(err) throw err;
 
-            fs.writeFile('/hello', 'hello world', function (err) {
+            fs.writeFile('/hello', 'hello world', function(err) {
               if(err) throw err;
 
               fsUtils.isPathUnsynced(fs, '/hello', function(err, unsynced) {
@@ -134,18 +131,19 @@ describe('Client bugs', function() {
                 expect(unsynced).to.be.true;
 
                 // Get a new token for this second connection
-                util.getWebsocketToken(result, function(err, result) {
+                server.getWebsocketToken(result, function(err, result) {
                   if(err) throw err;
 
                   jar = result.jar;
-                  sync.connect(util.socketURL, result.token);
+
+                  sync.connect(server.socketURL, result.token);
                 });
               });
             });
           });
         });
 
-        sync.connect(util.socketURL, result.token);
+        sync.connect(server.socketURL, result.token);
       });
     });
   });

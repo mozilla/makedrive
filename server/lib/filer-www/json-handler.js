@@ -49,7 +49,7 @@ function handleFile(fs, path, res) {
  * Send recursive dir listing
  */
 function handleDir(fs, path, res) {
-  var sh = fs.Shell();
+  var sh = new fs.Shell();
 
   sh.ls(path, {recursive: true}, function(err, listing) {
     if(err) {

@@ -1,31 +1,40 @@
 var expect = require('chai').expect;
 var request = require('request');
 var util = require('../lib/util');
+var server = require('../lib/server-utils.js');
 var Filer = require('../../lib/filer.js');
 var FileSystem = Filer.FileSystem;
 var Path = Filer.Path;
 var env = require('../../server/lib/environment');
-env.set('ALLOWED_CORS_DOMAINS', util.serverURL);
+env.set('ALLOWED_CORS_DOMAINS', server.serverURL);
 var ALLOW_DOMAINS = process.env.ALLOWED_CORS_DOMAINS;
 var unzip = require("../lib/unzip.js");
 
 describe('[HTTP route tests]', function() {
+  before(function(done) {
+    server.start(done);
+  });
+  after(function(done) {
+    server.shutdown(done);
+  });
 
   it('should allow CORS access to /api/sync route', function(done) {
-    request.get(util.serverURL + '/api/sync', { headers: {origin: ALLOW_DOMAINS }}, function(req, res) {
-      expect(ALLOW_DOMAINS).to.contain(res.headers['access-control-allow-origin']);
-      done();
+    server.run(function() {
+      request.get(server.serverURL + '/api/sync', { headers: {origin: ALLOW_DOMAINS }}, function(req, res) {
+        expect(ALLOW_DOMAINS).to.contain(res.headers['access-control-allow-origin']);
+        done();
+      });
     });
   });
 
   describe('/p/ route tests', function() {
     it('should return a 404 error page if the path is not recognized', function(done) {
-      util.authenticate(function(err, result) {
+      server.authenticate(function(err, result) {
         expect(err).not.to.exist;
         expect(result.jar).to.exist;
 
         request.get({
-          url: util.serverURL + '/p/no/file/here.html',
+          url: server.serverURL + '/p/no/file/here.html',
           jar: result.jar
         }, function(err, res, body) {
           expect(err).not.to.exist;
@@ -41,15 +50,15 @@ describe('[HTTP route tests]', function() {
       var username = util.username();
       var content = "This is the content of the file.";
 
-      util.upload(username, '/index.html', content, function(err) {
+      server.upload(username, '/index.html', content, function(err) {
         if(err) throw err;
 
-        util.authenticate({username: username}, function(err, result) {
+        server.authenticate({username: username}, function(err, result) {
           if(err) throw err;
 
           // /p/index.html should come back as uploaded
           request.get({
-            url: util.serverURL + '/p/index.html',
+            url: server.serverURL + '/p/index.html',
             jar: result.jar
           }, function(err, res, body) {
             expect(err).not.to.exist;
@@ -58,7 +67,7 @@ describe('[HTTP route tests]', function() {
 
             // /p/ should come back with dir listing
             request.get({
-              url: util.serverURL + '/p/',
+              url: server.serverURL + '/p/',
               jar: result.jar
             }, function(err, res, body) {
               expect(err).not.to.exist;
@@ -77,12 +86,12 @@ describe('[HTTP route tests]', function() {
 
   describe('/j/ route tests', function() {
     it('should return a 404 error page if the path is not recognized', function(done) {
-      util.authenticate(function(err, result) {
+      server.authenticate(function(err, result) {
         expect(err).not.to.exist;
         expect(result.jar).to.exist;
 
         request.get({
-          url: util.serverURL + '/j/no/file/here.html',
+          url: server.serverURL + '/j/no/file/here.html',
           jar: result.jar,
           json: true
         }, function(err, res, body) {
@@ -99,15 +108,15 @@ describe('[HTTP route tests]', function() {
       var username = util.username();
       var content = "This is the content of the file.";
 
-      util.upload(username, '/index.html', content, function(err) {
+      server.upload(username, '/index.html', content, function(err) {
         if(err) throw err;
 
-        util.authenticate({username: username}, function(err, result) {
+        server.authenticate({username: username}, function(err, result) {
           if(err) throw err;
 
           // /j/index.html should come back as JSON
           request.get({
-            url: util.serverURL + '/j/index.html',
+            url: server.serverURL + '/j/index.html',
             jar: result.jar,
             json: true
           }, function(err, res, body) {
@@ -117,7 +126,7 @@ describe('[HTTP route tests]', function() {
 
             // /j/ should come back with dir listing
             request.get({
-              url: util.serverURL + '/j/',
+              url: server.serverURL + '/j/',
               jar: result.jar,
               json: true
             }, function(err, res, body) {
@@ -149,12 +158,12 @@ describe('[HTTP route tests]', function() {
 
   describe('/z/ route tests', function() {
     it('should return a 404 error page if the path is not recognized', function(done) {
-      util.authenticate(function(err, result) {
+      server.authenticate(function(err, result) {
         expect(err).not.to.exist;
         expect(result.jar).to.exist;
 
         request.get({
-          url: util.serverURL + '/z/no/file/here.html',
+          url: server.serverURL + '/z/no/file/here.html',
           jar: result.jar
         }, function(err, res, body) {
           expect(err).not.to.exist;
@@ -170,16 +179,16 @@ describe('[HTTP route tests]', function() {
       var username = util.username();
       var content = "This is the content of the file.";
 
-      util.upload(username, '/index.html', content, function(err) {
+      server.upload(username, '/index.html', content, function(err) {
         if(err) throw err;
 
-        util.authenticate({username: username}, function(err, result) {
+        server.authenticate({username: username}, function(err, result) {
           if(err) throw err;
 
           // /z/ should come back as export.zip with one dir and file
           // in the archive.
           request.get({
-            url: util.serverURL + '/z/',
+            url: server.serverURL + '/z/',
             jar: result.jar,
             encoding: null
           }, function(err, res, body) {
@@ -190,7 +199,7 @@ describe('[HTTP route tests]', function() {
 
             // Write the zip file to filer, unzip, and compare file to original
             var fs = new FileSystem({provider: new FileSystem.providers.Memory(username)});
-            var sh = fs.Shell();
+            var sh = new fs.Shell();
 
             sh.tempDir(function(err, tmp) {
               if(err) throw err;
@@ -221,11 +230,11 @@ describe('[HTTP route tests]', function() {
       var username = util.username();
       var content = "This is the content of the file.";
 
-      util.upload(username, '/index.html', content, function(err) {
+      server.upload(username, '/index.html', content, function(err) {
         if(err) throw err;
 
         request.get({
-          url: util.serverURL + '/s/' + username + '/no/file/here.html',
+          url: server.serverURL + '/s/' + username + '/no/file/here.html',
           auth: {
             user: 'testusername',
             pass: 'testpassword'
@@ -243,11 +252,11 @@ describe('[HTTP route tests]', function() {
       var username = util.username();
       var content = "This is the content of the file.";
 
-      util.upload(username, '/index.html', content, function(err) {
+      server.upload(username, '/index.html', content, function(err) {
         if(err) throw err;
 
         request.get({
-          url: util.serverURL + '/s/' + username + '/no/file/here.html',
+          url: server.serverURL + '/s/' + username + '/no/file/here.html',
           auth: {
             user: 'wrong-testusername',
             pass: 'wrong-testpassword'
@@ -265,11 +274,11 @@ describe('[HTTP route tests]', function() {
       var username = util.username();
       var content = "This is the content of the file.";
 
-      util.upload(username, '/index.html', content, function(err) {
+      server.upload(username, '/index.html', content, function(err) {
         if(err) throw err;
 
         request.get({
-          url: util.serverURL + '/s/' + username + '/index.html',
+          url: server.serverURL + '/s/' + username + '/index.html',
           auth: {
             user: 'testusername',
             pass: 'testpassword'
@@ -287,11 +296,11 @@ describe('[HTTP route tests]', function() {
       var username = util.username();
       var content = new Buffer([1, 2, 3, 4]);
 
-      util.upload(username, '/binary', content, function(err) {
+      server.upload(username, '/binary', content, function(err) {
         if(err) throw err;
 
         request.get({
-          url: util.serverURL + '/s/' + username + '/binary',
+          url: server.serverURL + '/s/' + username + '/binary',
           auth: {
             user: 'testusername',
             pass: 'testpassword'
@@ -310,11 +319,11 @@ describe('[HTTP route tests]', function() {
       var username = util.username();
       var content = "This is the content of the file.";
 
-      util.upload(username, '/index.html', content, function(err) {
+      server.upload(username, '/index.html', content, function(err) {
         if(err) throw err;
 
         request.get({
-          url: util.serverURL + '/s/' + username + '/',
+          url: server.serverURL + '/s/' + username + '/',
           auth: {
             user: 'testusername',
             pass: 'testpassword'

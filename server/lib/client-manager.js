@@ -33,13 +33,13 @@ function runClient(client) {
 
         data = JSON.parse(msg.data);
         message = SyncMessage.parse(data);
-
-        // Delegate ws messages to the sync protocol handler at this point
-        client.handler.handleMessage(message);
       } catch(error) {
         log.error({client: client, err: error}, 'Unable to parse/handle client message. Data was `%s`', msg.data);
-        invalidMessage();
+        return invalidMessage();
       }
+
+      // Delegate ws messages to the sync protocol handler at this point
+      client.handler.handleMessage(message);
     } else {
       log.warn({client: client}, 'Expected string but got binary data over web socket.');
       invalidMessage();
@@ -47,7 +47,7 @@ function runClient(client) {
   };
 
   // Send an AUTHZ response to let client know normal sync'ing can begin.
-  client.state = States.INIT;
+  client.state = States.LISTENING;
   client.sendMessage(SyncMessage.response.authz);
   log.debug({client: client}, 'Starting authorized client session');
 }
@@ -120,6 +120,10 @@ var clients = [];
  * or life-cycle.
  */
 function remove(client) {
+  if(!clients) {
+    return;
+  }
+
   var idx = clients.indexOf(client);
   if(idx > -1) {
     clients.splice(idx, 1);
@@ -135,6 +139,7 @@ function add(client) {
     remove(client);
   });
 
+  clients = clients || [];
   clients.push(client);
   initClient(client);
 }
@@ -144,25 +149,37 @@ function add(client) {
  */
 function shutdown(callback) {
   var closed = 0;
-  var connected = clients.length;
+  var connected = clients ? clients.length : 0;
 
   function maybeFinished() {
     if(++closed >= connected) {
       clients = null;
       log.info('[Shutdown] All client connections safely closed.');
-      callback();
+      return callback();
     }
+
     log.info('[Shutdown] Closed client %s of %s.', closed, connected);
   }
 
-  if(connected === 0) {
+  if(!connected) {
     return maybeFinished();
   }
 
-  clients.forEach(function(client) {
-    client.once('closed', maybeFinished);
-    client.close();
-  });
+  var client;
+
+  for(var i = 0; i < connected; i++) {
+    client = clients[i] || null;
+
+    if(!client) {
+      maybeFinished();
+    } else {
+      client.once('closed', maybeFinished);
+
+      if(client.state !== States.CLOSING && client.state !== States.CLOSED) {
+        client.close();
+      }
+    }
+  }
 }
 
 module.exports = {

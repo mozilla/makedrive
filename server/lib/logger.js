@@ -1,5 +1,5 @@
 var env = require('./environment.js');
-var messina = require('messina'); 
+var messina = require('messina');
 var PrettyStream = require('bunyan-prettystream');
 var NODE_ENV = env.get('NODE_ENV') || 'development';
 
@@ -21,7 +21,8 @@ var logger = messina({
     syncMessage: function syncMessageSerializer(msg) {
       return {
         type: msg.type,
-        name: msg.name
+        name: msg.name,
+        path: msg.content && msg.content.path
       };
     },
     // See server/lib/client.js
@@ -64,6 +65,7 @@ var logger = messina({
         // "synclock:<username>"
         username: lock.key.split(':')[1],
         id: lock.value,
+        path: lock.path,
         allowLockRequest: lock.allowLockRequest,
         isUnlocked: !!lock.unlocked,
         ageInMS: lock.age

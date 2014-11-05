@@ -454,7 +454,7 @@ describe('[Rsync Functional tests]', function() {
     var layout = {'/test/folder/1.txt': 'This is my 1st file. It does not have any typos.',
               '/test/folder/2.txt': 'This is my 2nd file. It is longer than the destination file.'};
     var patchedPaths = {synced: ['/test', '/test/folder', '/test/folder/1.txt', '/test/folder/2.txt']};
-    
+
     testUtils.createFilesystemLayout(fs, layout, function (err) {
       if(err) throw err;
       rsyncAssertions('/test', OPTION_REC_SIZE, patchedPaths, function () {
@@ -476,7 +476,7 @@ describe('[Rsync Functional tests]', function() {
 
     testUtils.createFilesystemLayout(fs, layout, function (err) {
       if(err) throw err;
-      fs2.Shell().mkdirp('/test/sync', function (err) {
+      (new fs2.Shell()).mkdirp('/test/sync', function (err) {
         if(err) throw err;
         fs2.writeFile('/test/sync/3.txt', 'This shouldn\'t sync.', function (err) {
           if(err) throw err;

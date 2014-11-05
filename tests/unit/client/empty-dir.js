@@ -1,19 +1,32 @@
 var expect = require('chai').expect;
 var util = require('../../lib/util.js');
+var server = require('../../lib/server-utils.js');
 var MakeDrive = require('../../../client/src');
 var Filer = require('../../../lib/filer.js');
 
 describe('MakeDrive Client - sync empty dir', function(){
-  var provider;
+  var fs;
+  var sync;
 
-  beforeEach(function(done) {
-    util.ready(function() {
-      provider = new Filer.FileSystem.providers.Memory(util.username());
+  before(function(done) {
+    server.start(done);
+  });
+  after(function(done) {
+    server.shutdown(done);
+  });
+
+  beforeEach(function() {
+    fs = MakeDrive.fs({provider: new Filer.FileSystem.providers.Memory(util.username()), manual: true, forceCreate: true});
+    sync = fs.sync;
+  });
+  afterEach(function(done) {
+    util.disconnectClient(sync, function(err) {
+      if(err) throw err;
+
+      sync = null;
+      fs = null;
       done();
     });
-  });
-  afterEach(function() {
-    provider = null;
   });
 
   /**
@@ -22,15 +35,12 @@ describe('MakeDrive Client - sync empty dir', function(){
    * brings it back.
    */
   it('should sync an empty dir', function(done) {
-    util.authenticatedConnection(function( err, result ) {
+    server.authenticatedConnection(function(err, result) {
       expect(err).not.to.exist;
-
-      var fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
-      var sync = fs.sync;
 
       var layout = {'/empty': null};
 
-      sync.once('connected', function onConnected() {
+      sync.once('synced', function onDownstreamCompleted() {
         util.createFilesystemLayout(fs, layout, function(err) {
           expect(err).not.to.exist;
 
@@ -39,7 +49,7 @@ describe('MakeDrive Client - sync empty dir', function(){
       });
 
       sync.once('completed', function onUpstreamCompleted() {
-        util.ensureRemoteFilesystem(layout, result.jar, function() {
+        server.ensureRemoteFilesystem(layout, result.jar, function() {
           sync.disconnect();
         });
       });
@@ -49,7 +59,7 @@ describe('MakeDrive Client - sync empty dir', function(){
           expect(err).not.to.exist;
 
           // Re-sync with server and make sure we get our empty dir back
-          sync.once('connected', function onSecondDownstreamSync() {
+          sync.once('synced', function onSecondDownstreamSync() {
 
             sync.once('disconnected', function onSecondDisconnected() {
               util.ensureFilesystem(fs, layout, function(err) {
@@ -63,15 +73,15 @@ describe('MakeDrive Client - sync empty dir', function(){
           });
 
           // Get a new token for this second connection
-          util.getWebsocketToken(result, function(err, result) {
+          server.getWebsocketToken(result, function(err, result) {
             expect(err).not.to.exist;
 
-            sync.connect(util.socketURL, result.token);
+            sync.connect(server.socketURL, result.token);
           });
         });
       });
 
-      sync.connect(util.socketURL, result.token);
+      sync.connect(server.socketURL, result.token);
     });
   });
 

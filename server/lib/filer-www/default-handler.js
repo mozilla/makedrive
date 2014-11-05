@@ -43,7 +43,7 @@ function handleFile(fs, path, res) {
  * Send an Apache-style directory listing
  */
 function handleDir(fs, path, res) {
-  var sh = fs.Shell();
+  var sh = new fs.Shell();
   var parent = Path.dirname(path);
 
   var header = '<!DOCTYPE html>' +

@@ -1,16 +1,32 @@
 var expect = require('chai').expect;
 var util = require('../../lib/util.js');
+var server = require('../../lib/server-utils.js');
 var MakeDrive = require('../../../client/src');
 var Filer = require('../../../lib/filer.js');
 
 describe('MakeDrive Client - sync symlink', function() {
-  var provider;
+  var fs;
+  var sync;
+
+  before(function(done) {
+    server.start(done);
+  });
+  after(function(done) {
+    server.shutdown(done);
+  });
 
   beforeEach(function() {
-    provider = new Filer.FileSystem.providers.Memory(util.username());
+    fs = MakeDrive.fs({provider: new Filer.FileSystem.providers.Memory(util.username()), manual: true, forceCreate: true});
+    sync = fs.sync;
   });
-  afterEach(function() {
-    provider = null;
+  afterEach(function(done) {
+    util.disconnectClient(sync, function(err) {
+      if(err) throw err;
+
+      sync = null;
+      fs = null;
+      done();
+    });
   });
 
   /**
@@ -18,15 +34,8 @@ describe('MakeDrive Client - sync symlink', function() {
    * and check that they both exists.
    */
   it('should sync symlink', function(done) {
-    util.authenticatedConnection(function(err, result) {
+    server.authenticatedConnection(function(err, result) {
       expect(err).not.to.exist;
-
-      var fs = MakeDrive.fs({
-        provider: provider,
-        manual: true,
-        forceCreate: true
-      });
-      var sync = fs.sync;
 
       var layout = {
         '/file1': 'contents of file1'
@@ -36,7 +45,20 @@ describe('MakeDrive Client - sync symlink', function() {
         '/file2': 'contents of file1'
       };
 
-      sync.once('connected', function onConnected() {
+      sync.once('synced', function onDownstreamCompleted() {
+        sync.once('synced', function onUpstreamCompleted() {
+          server.ensureRemoteFilesystem(layout, result.jar, function() {
+            fs.symlink('/file1', '/file2', function(err) {
+              if (err) throw err;
+              sync.once('completed', function onWriteSymlink() {
+                server.ensureRemoteFilesystem(finalLayout, result.jar, done);
+              });
+
+              sync.request();
+            });
+          });
+        });
+
         util.createFilesystemLayout(fs, layout, function(err) {
           expect(err).not.to.exist;
 
@@ -44,23 +66,7 @@ describe('MakeDrive Client - sync symlink', function() {
         });
       });
 
-      sync.once('completed', function onUpstreamCompleted() {
-        util.ensureRemoteFilesystem(layout, result.jar, function() {
-          fs.symlink('/file1', '/file2', function(err) {
-            if (err) throw err;
-            sync.once('completed', function onWriteSymlink() {
-              util.ensureRemoteFilesystem(finalLayout, result.jar, function() {
-                done();
-              });
-            });
-
-            sync.request();
-          });
-        });
-      });
-
-      sync.connect(util.socketURL, result.token);
+      sync.connect(server.socketURL, result.token);
     });
   });
-
 });

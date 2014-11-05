@@ -27,20 +27,27 @@ describe('MakeDrive fs-utils.js', function(){
   });
 
   it('should have all the expected properties', function() {
-    expect(fsUtils.forceCopy).to.be.a.function;
-    expect(fsUtils.isPathUnsynced).to.be.a.function;
-    expect(fsUtils.removeUnsynced).to.be.a.function;
-    expect(fsUtils.fremoveUnsynced).to.be.a.function;
-    expect(fsUtils.setUnsynced).to.be.a.function;
-    expect(fsUtils.fsetUnsynced).to.be.a.function;
-    expect(fsUtils.getUnsynced).to.be.a.function;
-    expect(fsUtils.fgetUnsynced).to.be.a.function;
-    expect(fsUtils.removeChecksum).to.be.a.function;
-    expect(fsUtils.fremoveChecksum).to.be.a.function;
-    expect(fsUtils.setChecksum).to.be.a.function;
-    expect(fsUtils.fsetChecksum).to.be.a.function;
-    expect(fsUtils.getChecksum).to.be.a.function;
-    expect(fsUtils.fgetChecksum).to.be.a.function;
+    expect(fsUtils.forceCopy).to.be.a('function');
+    expect(fsUtils.isPathUnsynced).to.be.a('function');
+    expect(fsUtils.removeUnsynced).to.be.a('function');
+    expect(fsUtils.fremoveUnsynced).to.be.a('function');
+    expect(fsUtils.setUnsynced).to.be.a('function');
+    expect(fsUtils.fsetUnsynced).to.be.a('function');
+    expect(fsUtils.getUnsynced).to.be.a('function');
+    expect(fsUtils.fgetUnsynced).to.be.a('function');
+    expect(fsUtils.removeChecksum).to.be.a('function');
+    expect(fsUtils.fremoveChecksum).to.be.a('function');
+    expect(fsUtils.setChecksum).to.be.a('function');
+    expect(fsUtils.fsetChecksum).to.be.a('function');
+    expect(fsUtils.getChecksum).to.be.a('function');
+    expect(fsUtils.fgetChecksum).to.be.a('function');
+    expect(fsUtils.isPathPartial).to.be.a('function');
+    expect(fsUtils.removePartial).to.be.a('function');
+    expect(fsUtils.fremovePartial).to.be.a('function');
+    expect(fsUtils.setPartial).to.be.a('function');
+    expect(fsUtils.fsetPartial).to.be.a('function');
+    expect(fsUtils.getPartial).to.be.a('function');
+    expect(fsUtils.fgetPartial).to.be.a('function');
   });
 
   it('should copy an existing file on forceCopy()', function(done) {
@@ -211,6 +218,94 @@ describe('MakeDrive fs-utils.js', function(){
             fsUtils.fgetChecksum(fs, fd, function(err, checksum) {
               expect(err).not.to.exist;
               expect(checksum).not.to.exist;
+
+              fs.close(fd);
+              done();
+            });
+          });
+        });
+      });
+    });
+  });
+
+  it('should report false for isPathPartial() if path does not exist', function(done) {
+    fsUtils.isPathPartial(fs, '/no/such/file', function(err, partial) {
+      expect(err).not.to.exist;
+      expect(partial).to.be.false;
+      done();
+    });
+  });
+
+  it('should report false for isPathPartial() if path has no metadata', function(done) {
+    fsUtils.isPathPartial(fs, '/dir/file', function(err, partial) {
+      expect(err).not.to.exist;
+      expect(partial).to.be.false;
+      done();
+    });
+  });
+
+  it('should report true for isPathPartial() if path has partial metadata', function(done) {
+    fsUtils.setPartial(fs, '/dir/file', 15, function(err) {
+      expect(err).not.to.exist;
+
+      fsUtils.isPathPartial(fs, '/dir/file', function(err, partial) {
+        expect(err).not.to.exist;
+        expect(partial).to.be.true;
+        done();
+      });
+    });
+  });
+
+  it('should give node count for getPartial() if path has partial metadata', function(done) {
+    fsUtils.setPartial(fs, '/dir/file', 10, function(err) {
+      expect(err).not.to.exist;
+
+      fsUtils.getPartial(fs, '/dir/file', function(err, partial) {
+        expect(err).not.to.exist;
+        expect(partial).to.equal(10);
+        done();
+      });
+    });
+  });
+
+  it('should remove metadata when calling removePartial()', function(done) {
+    fsUtils.setPartial(fs, '/dir/file', 10, function(err) {
+      expect(err).not.to.exist;
+
+      fsUtils.getPartial(fs, '/dir/file', function(err, partial) {
+        expect(err).not.to.exist;
+        expect(partial).to.equal(10);
+
+        fsUtils.removePartial(fs, '/dir/file', function(err) {
+          expect(err).not.to.exist;
+
+          fsUtils.getPartial(fs, '/dir/file', function(err, partial) {
+            expect(err).not.to.exist;
+            expect(partial).not.to.exist;
+            done();
+          });
+        });
+      });
+    });
+  });
+
+  it('should work with fd vs. path for partial metadata', function(done) {
+    fs.open('/dir/file', 'w', function(err, fd) {
+      if(err) throw err;
+
+      fsUtils.fsetPartial(fs, fd, 10, function(err) {
+        expect(err).not.to.exist;
+
+        fsUtils.fgetPartial(fs, fd, function(err, partial) {
+          expect(err).not.to.exist;
+          expect(partial).to.equal(10);
+
+          fsUtils.fremovePartial(fs, fd, function(err) {
+            expect(err).not.to.exist;
+
+            fsUtils.fgetPartial(fs, fd, function(err, unsynced) {
+              expect(err).not.to.exist;
+              expect(unsynced).not.to.exist;
 
               fs.close(fd);
               done();

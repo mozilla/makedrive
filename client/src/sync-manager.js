@@ -1,64 +1,22 @@
 var SyncMessage = require( '../../lib/syncmessage' ),
     messageHandler = require('./message-handler'),
-    states = require('./sync-states'),
-    steps = require('./sync-steps'),
     WS = require('ws'),
-    fsUtils = require('../../lib/fs-utils'),
-    async = require('../../lib/async-lite.js'),
     request = require('request'),
-    url = require('url');
+    url = require('url'),
+    log = require('./logger.js');
 
-function SyncManager(sync, fs) {
+function SyncManager(sync, fs, _fs) {
   var manager = this;
 
   manager.sync = sync;
   manager.fs = fs;
-  manager.session = {
-    state: states.CLOSED,
-    step: steps.SYNCED,
-    path: '/',
-
-    is: Object.create(Object.prototype, {
-      // States
-      syncing: {
-        get: function() { return manager.session.state === states.SYNCING; }
-      },
-      ready: {
-        get: function() { return manager.session.state === states.READY; }
-      },
-      error: {
-        get: function() { return manager.session.state === states.ERROR; }
-      },
-      closed: {
-        get: function() { return manager.session.state === states.CLOSED; }
-      },
-
-      // Steps
-      init: {
-        get: function() { return manager.session.step === steps.INIT; }
-      },
-      chksum: {
-        get: function() { return manager.session.step === steps.CHKSUM; }
-      },
-      diffs: {
-        get: function() { return manager.session.step === steps.DIFFS; }
-      },
-      patch: {
-        get: function() { return manager.session.step === steps.PATCH; }
-      },
-      synced: {
-        get: function() { return manager.session.step === steps.SYNCED; }
-      },
-      failed: {
-        get: function() { return manager.session.step === steps.FAILED; }
-      }
-    })
-  };
+  manager.rawFs = _fs;
+  manager.downstreams = [];
+  manager.needsUpstream = [];
 }
 
 SyncManager.prototype.init = function(wsUrl, token, options, callback) {
   var manager = this;
-  var session = manager.session;
   var sync = manager.sync;
   var reconnectCounter = 0;
   var socket;
@@ -74,9 +32,6 @@ SyncManager.prototype.init = function(wsUrl, token, options, callback) {
     }
 
     if(data.is.response && data.is.authz) {
-      session.state = states.READY;
-      session.step = steps.SYNCED;
-
       socket.onmessage = function(event) {
         var data = event.data || event;
         messageHandler(manager, data);
@@ -195,39 +150,66 @@ SyncManager.prototype.init = function(wsUrl, token, options, callback) {
   connect();
 };
 
-SyncManager.prototype.syncPath = function(path) {
+SyncManager.prototype.syncUpstream = function() {
   var manager = this;
+  var fs = manager.fs;
+  var sync = manager.sync;
   var syncRequest;
+  var syncInfo;
 
   if(!manager.socket) {
     throw new Error('sync called before init');
   }
 
-  syncRequest = SyncMessage.request.sync;
-  syncRequest.content = {path: path};
-  manager.send(syncRequest.stringify());
-};
-
-// Remove the unsynced attribute for a list of paths
-SyncManager.prototype.resetUnsynced = function(paths, callback) {
-  var fs = this.fs;
-
-  function removeUnsyncedAttr(path, callback) {
-    fsUtils.removeUnsynced(fs, path, function(err) {
-      if(err && err.code !== 'ENOENT') {
-        return callback(err);
-      }
-
-      callback();
-    });
+  if(manager.currentSync) {
+    sync.onError(new Error('Sync currently underway'));
+    return;
   }
 
-  async.eachSeries(paths, removeUnsyncedAttr, function(err) {
+  fs.getPathsToSync(function(err, pathsToSync) {
     if(err) {
-      return callback(err);
+      sync.onError(err);
+      return;
     }
 
-    callback();
+    if(!pathsToSync || !pathsToSync.length) {
+      log.warn('Nothing to sync');
+      sync.onIdle('No changes made to the filesystem');
+      return;
+    }
+
+    syncInfo = pathsToSync[0];
+
+    fs.setSyncing(function(err) {
+      if(err) {
+        sync.onError(err);
+        return;
+      }
+
+      manager.currentSync = syncInfo;
+      syncRequest = SyncMessage.request.sync;
+      syncRequest.content = {path: syncInfo.path, type: syncInfo.type};
+      if(syncInfo.oldPath) {
+        syncRequest.content.oldPath = syncInfo.oldPath;
+      }
+      manager.send(syncRequest.stringify());
+    });
+  });
+};
+
+SyncManager.prototype.syncNext = function(syncedPath) {
+  var manager = this;
+  var fs = manager.fs;
+  var sync = manager.sync;
+
+  fs.dequeueSync(function(err, syncsLeft, dequeuedSync) {
+    if(err) {
+      log.error('Failed to dequeue sync for ' + syncedPath + ' in SyncManager.syncNext()');
+    }
+
+    sync.onCompleted(dequeuedSync || syncedPath);
+    manager.currentSync = false;
+    manager.syncUpstream();
   });
 };
 

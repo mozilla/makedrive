@@ -30,7 +30,7 @@ describe('MakeDrive Client SyncFileSystem', function(){
   function expectMakeDriveUnsyncedAttribForPath(path, callback) {
     fs.getUnsynced(path, function(err, unsynced) {
       expect(err).not.to.exist;
-      expect(unsynced).to.be.a.number;
+      expect(unsynced).to.be.a('number');
 
       callback();
     });
@@ -39,48 +39,48 @@ describe('MakeDrive Client SyncFileSystem', function(){
   function expectMakeDriveUnsyncedAttribForFD(fd, callback) {
     fs.fgetUnsynced(fd, function(err, unsynced) {
       expect(err).not.to.exist;
-      expect(unsynced).to.be.a.number;
+      expect(unsynced).to.be.a('number');
 
       callback();
     });
   }
 
   it('should have all the usual properties of a regular fs', function() {
-    expect(fs.rename).to.be.a.function;
-    expect(fs.ftruncate).to.be.a.function;
-    expect(fs.truncate).to.be.a.function;
-    expect(fs.stat).to.be.a.function;
-    expect(fs.fstat).to.be.a.function;
-    expect(fs.exists).to.be.a.function;
-    expect(fs.link).to.be.a.function;
-    expect(fs.symlink).to.be.a.function;
-    expect(fs.readlink).to.be.a.function;
-    expect(fs.realpath).to.be.a.function;
-    expect(fs.unlink).to.be.a.function;
-    expect(fs.mknod).to.be.a.function;
-    expect(fs.mkdir).to.be.a.function;
-    expect(fs.readdir).to.be.a.function;
-    expect(fs.close).to.be.a.function;
-    expect(fs.open).to.be.a.function;
-    expect(fs.utimes).to.be.a.function;
-    expect(fs.futimes).to.be.a.function;
-    expect(fs.fsync).to.be.a.function;
-    expect(fs.write).to.be.a.function;
-    expect(fs.read).to.be.a.function;
-    expect(fs.readFile).to.be.a.function;
-    expect(fs.writeFile).to.be.a.function;
-    expect(fs.appendFile).to.be.a.function;
-    expect(fs.setxattr).to.be.a.function;
-    expect(fs.fsetxattr).to.be.a.function;
-    expect(fs.getxattr).to.be.a.function;
-    expect(fs.removexattr).to.be.a.function;
-    expect(fs.fremovexattr).to.be.a.function;
-    expect(fs.watch).to.be.a.function;
-    expect(fs.Shell).to.be.a.function;
+    expect(fs.rename).to.be.a('function');
+    expect(fs.ftruncate).to.be.a('function');
+    expect(fs.truncate).to.be.a('function');
+    expect(fs.stat).to.be.a('function');
+    expect(fs.fstat).to.be.a('function');
+    expect(fs.exists).to.be.a('function');
+    expect(fs.link).to.be.a('function');
+    expect(fs.symlink).to.be.a('function');
+    expect(fs.readlink).to.be.a('function');
+    expect(fs.realpath).to.be.a('function');
+    expect(fs.unlink).to.be.a('function');
+    expect(fs.mknod).to.be.a('function');
+    expect(fs.mkdir).to.be.a('function');
+    expect(fs.readdir).to.be.a('function');
+    expect(fs.close).to.be.a('function');
+    expect(fs.open).to.be.a('function');
+    expect(fs.utimes).to.be.a('function');
+    expect(fs.futimes).to.be.a('function');
+    expect(fs.fsync).to.be.a('function');
+    expect(fs.write).to.be.a('function');
+    expect(fs.read).to.be.a('function');
+    expect(fs.readFile).to.be.a('function');
+    expect(fs.writeFile).to.be.a('function');
+    expect(fs.appendFile).to.be.a('function');
+    expect(fs.setxattr).to.be.a('function');
+    expect(fs.fsetxattr).to.be.a('function');
+    expect(fs.getxattr).to.be.a('function');
+    expect(fs.removexattr).to.be.a('function');
+    expect(fs.fremovexattr).to.be.a('function');
+    expect(fs.watch).to.be.a('function');
+    expect(fs.Shell).to.be.a('function');
 
     // Extra SyncFileSystem specific things
-    expect(fs.getUnsynced).to.be.a.function;
-    expect(fs.fgetUnsynced).to.be.a.function;
+    expect(fs.getUnsynced).to.be.a('function');
+    expect(fs.fgetUnsynced).to.be.a('function');
   });
 
   it('should allow fs.rename and mark unsynced', function(done) {
@@ -155,26 +155,26 @@ describe('MakeDrive Client SyncFileSystem', function(){
     });
   });
 
-  it('should allow fs.rmdir and mark parent dir unsynced', function(done) {
+  it('should allow fs.rmdir', function(done) {
     fs.mkdir('/newdir', function(err) {
       if(err) throw err;
 
       fs.rmdir('/newdir', function(err) {
         if(err) throw err;
 
-        expectMakeDriveUnsyncedAttribForPath('/', done);
+        done();
       });
     });
   });
 
-  it('should allow fs.unlink and mark parent dir unsynced', function(done) {
+  it('should allow fs.unlink', function(done) {
     fs.writeFile('/file', 'data', function(err) {
       if(err) throw err;
 
       fs.unlink('/file', function(err) {
         if(err) throw err;
 
-        expectMakeDriveUnsyncedAttribForPath('/', done);
+        done();
       });
     });
   });
@@ -244,7 +244,7 @@ describe('MakeDrive Client SyncFileSystem', function(){
   });
 
   it('should allow fs.Shell()', function(done) {
-    var sh = fs.Shell();
+    var sh = new fs.Shell();
 
     // Run a shell command to make sure it's working.
     sh.rm('/dir', {recursive: true}, function(err) {

@@ -1,23 +1,35 @@
 var expect = require('chai').expect;
 var util = require('../../lib/util.js');
+var server = require('../../lib/server-utils.js');
 var MakeDrive = require('../../../client/src');
 var Filer = require('../../../lib/filer.js');
 var fsUtils = require('../../../lib/fs-utils.js');
 var FILE_CONTENT = 'This is a file';
-var syncManager = require('../../../client/src/sync-manager.js');
 var async = require('async');
 
 describe('MakeDrive Client FileSystem Unsynced Attribute', function() {
-  var provider;
+  var fs;
+  var sync;
 
-  beforeEach(function(done) {
-    util.ready(function() {
-      provider = new Filer.FileSystem.providers.Memory(util.username());
+  before(function(done) {
+    server.start(done);
+  });
+  after(function(done) {
+    server.shutdown(done);
+  });
+
+  beforeEach(function() {
+    fs = MakeDrive.fs({provider: new Filer.FileSystem.providers.Memory(util.username()), manual: true, forceCreate: true});
+    sync = fs.sync;
+  });
+  afterEach(function(done) {
+    util.disconnectClient(sync, function(err) {
+      if(err) throw err;
+
+      sync = null;
+      fs = null;
       done();
     });
-  });
-  afterEach(function() {
-    provider = null;
   });
 
   // Check whether a list of paths have the unsynced attribute attached
@@ -48,18 +60,29 @@ describe('MakeDrive Client FileSystem Unsynced Attribute', function() {
   }
 
   it('should remove unsynced attribute from all nodes after an upstream sync', function(done) {
-    util.authenticatedConnection(function(err, result) {
+    server.authenticatedConnection(function(err, result) {
       expect(err).not.to.exist;
-
-      var fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
-      var sync = fs.sync;
 
       var layout = { '/dir/myfile1.txt': FILE_CONTENT,
                      '/myfile2.txt': FILE_CONTENT,
                      '/dir/subdir/myfile3.txt': FILE_CONTENT
                    };
 
-      sync.once('connected', function onConnected() {
+      sync.once('synced', function onDownstreamCompleted() {
+        sync.once('synced', function onUpstreamCompleted() {
+          server.ensureRemoteFilesystem(layout, result.jar, function(err) {
+            expect(err).not.to.exist;
+
+            // Check that the unsynced attribute is absent in the synced nodes
+            checkUnsyncedAttr(fs, layout, false, function(err, synced) {
+              expect(err).to.not.exist;
+              expect(synced).to.be.true;
+
+              done();
+            });
+          });
+        });
+
         util.createFilesystemLayout(fs, layout, function(err) {
           expect(err).not.to.exist;
 
@@ -73,30 +96,13 @@ describe('MakeDrive Client FileSystem Unsynced Attribute', function() {
         });
       });
 
-      sync.once('completed', function onUpstreamCompleted() {
-        util.ensureRemoteFilesystem(layout, result.jar, function(err) {
-          expect(err).not.to.exist;
-
-          // Check that the unsynced attribute is absent in the synced nodes
-          checkUnsyncedAttr(fs, layout, false, function(err, synced) {
-            expect(err).to.not.exist;
-            expect(synced).to.be.true;
-
-            done();
-          });
-        });
-      });
-
-      sync.connect(util.socketURL, result.token);
+      sync.connect(server.socketURL, result.token);
     });
   });
 
   it('should remove unsynced attributes for unsynced nodes only after an upstream sync', function (done) {
-    util.authenticatedConnection(function(err, result) {
+    server.authenticatedConnection(function(err, result) {
       expect(err).not.to.exist;
-
-      var fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
-      var sync = fs.sync;
 
       var layout = { '/dir/myfile1.txt': FILE_CONTENT,
                      '/myfile2.txt': FILE_CONTENT,
@@ -104,7 +110,59 @@ describe('MakeDrive Client FileSystem Unsynced Attribute', function() {
                    };
       var newLayout = { '/dir/subdir/myfile3.txt': 'New content' };
 
-      sync.once('connected', function onConnected() {
+      sync.once('synced', function onDownstreamCompleted() {
+        sync.once('synced', function onUpstreamCompleted() {
+          server.ensureRemoteFilesystem(layout, result.jar, function(err) {
+            expect(err).not.to.exist;
+
+            sync.once('completed', function onSecondUpstreamCompleted() {
+              // Add the synced path back to the 'synced' layout
+              for(var k in newLayout) {
+                if(newLayout.hasOwnProperty(k)) {
+                  layout[k] = newLayout[k];
+                }
+              }
+
+              server.ensureRemoteFilesystem(layout, result.jar, function(err) {
+                expect(err).not.to.exist;
+
+                // Check that no file has the unsynced attribute
+                checkUnsyncedAttr(fs, layout, false, function(err, synced) {
+                  expect(err).not.to.exist;
+                  expect(synced).to.be.true;
+
+                  done();
+                });
+              });
+            });
+
+            fs.writeFile('/dir/subdir/myfile3.txt', 'New content', function(err) {
+              if(err) throw err;
+
+              // Check that the changed unsynced file has the unsynced attribute
+              checkUnsyncedAttr(fs, newLayout, true, function(err, unsynced) {
+                expect(err).not.to.exist;
+                expect(unsynced).to.be.true;
+
+                // Remove the unsynced path from the 'synced' layout
+                for(var k in newLayout) {
+                  if(newLayout.hasOwnProperty(k)) {
+                    delete layout[k];
+                  }
+                }
+
+                // Check that the synced files do not have the unsynced attribute
+                checkUnsyncedAttr(fs, layout, false, function(err, synced) {
+                  expect(err).not.to.exist;
+                  expect(synced).to.be.true;
+
+                  sync.request();
+                });
+              });
+            });
+          });
+        });
+
         util.createFilesystemLayout(fs, layout, function(err) {
           expect(err).not.to.exist;
 
@@ -112,72 +170,7 @@ describe('MakeDrive Client FileSystem Unsynced Attribute', function() {
         });
       });
 
-      sync.once('completed', function onUpstreamCompleted() {
-        util.ensureRemoteFilesystem(layout, result.jar, function(err) {
-          expect(err).not.to.exist;
-
-          sync.once('completed', function onSecondUpstreamCompleted() {
-            // Add the synced path back to the 'synced' layout
-            for(var k in newLayout) {
-              if(newLayout.hasOwnProperty(k)) {
-                layout[k] = newLayout[k];
-              }
-            }
-
-            util.ensureRemoteFilesystem(layout, result.jar, function(err) {
-              expect(err).not.to.exist;
-
-              // Check that no file has the unsynced attribute
-              checkUnsyncedAttr(fs, layout, false, function(err, synced) {
-                expect(err).not.to.exist;
-                expect(synced).to.be.true;
-
-                done();
-              });
-            });
-          });
-
-          fs.writeFile('/dir/subdir/myfile3.txt', 'New content', function(err) {
-            if(err) throw err;
-
-            // Check that the changed unsynced file has the unsynced attribute
-            checkUnsyncedAttr(fs, newLayout, true, function(err, unsynced) {
-              expect(err).not.to.exist;
-              expect(unsynced).to.be.true;
-
-              // Remove the unsynced path from the 'synced' layout
-              for(var k in newLayout) {
-                if(newLayout.hasOwnProperty(k)) {
-                  delete layout[k];
-                }
-              }
-
-              // Check that the synced files do not have the unsynced attribute
-              checkUnsyncedAttr(fs, layout, false, function(err, synced) {
-                expect(err).not.to.exist;
-                expect(synced).to.be.true;
-
-                sync.request();
-              });
-            });
-          });
-        });
-      });
-
-      sync.connect(util.socketURL, result.token);
-    });
-  });
-
-  it('should remove the \'unsynced\' attribute on non-existent files', function (done) {
-    var fs = MakeDrive.fs({provider: provider, manual: true, forceCreate: true});
-    var sync = fs.sync;
-    var manager = new syncManager(sync, fs);
-
-    var paths = ['/random/garbage/', '/woah/daddy/'];
-
-    manager.resetUnsynced(paths, function(err){
-      expect(err).not.to.exist;
-      done();
+      sync.connect(server.socketURL, result.token);
     });
   });
 });
