@@ -71,11 +71,23 @@ function shutdown(err) {
   }
 }
 
+function shutdownAndLog(source) {
+  return function(err) {
+    log.fatal('Shutdown initiated by %s', source);
+    shutdown(err);
+  };
+}
+
 // If any of these three major server components blow up,
 // we need to shutdown this process, since things aren't stable.
-WebServer.on('error', shutdown);
-SocketServer.on('error', shutdown);
-RedisClients.on('error', shutdown);
+WebServer.on('error', shutdownAndLog('Web Server'));
+SocketServer.on('error', shutdownAndLog('WebSocket Server'));
+RedisClients.on('error', shutdownAndLog('Redis Clients'));
+
+// We also want to guard against the process blowing up in other ways
+// or being killed via user/system intervention.
+process.on('SIGINT', shutdownAndLog('SIGINT'));
+process.on('error', shutdownAndLog('process.error'));
 
 RedisClients.start(function(err) {
   if(err) {
