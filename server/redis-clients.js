@@ -115,8 +115,6 @@ module.exports.start = function(callback) {
     return callback();
   }
 
-  closing = true;
-
   createClient(function(err, storeClient) {
     if(err) return callback(err);
 
