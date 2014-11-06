@@ -24,8 +24,8 @@ var store;
 // and call publish() on the module.
 var pub;
 var sub;
-
-var ignoreEndEvents;
+// When we are shutting down, ignore events on redis clients
+var closing;
 
 module.exports = new EventEmitter();
 
@@ -35,14 +35,18 @@ module.exports = new EventEmitter();
 module.exports.setMaxListeners(0);
 
 function onerror(err) {
+  if(closing) {
+    return;
+  }
+
   // Let top-level server deal with this error
   log.error(err, 'Redis error');
   module.exports.emit('error', err);
 }
 
+// Redis server connection lost.
 function onend() {
-  // Redis server connection lost.
-  if(ignoreEndEvents) {
+  if(closing) {
     return;
   }
 
@@ -54,6 +58,10 @@ function onend() {
 
 // redis subscription messages. Split the different types out based on channel
 function onmessage(channel, message) {
+  if(closing) {
+    return;
+  }
+
   switch(channel) {
     case ChannelConstants.syncChannel:
       module.exports.emit('sync', message);
@@ -90,8 +98,7 @@ function createClient(callback) {
     // Caller needs to figure out what to do with errors, hang-ups.
     client.on('error', onerror);
     client.on('end', onend);
-    client.on('ready', function() {
-
+    client.once('ready', function() {
       log.info('Connected to redis hostname=%s port=%s', redisUrl.hostname, redisUrl.port);
       callback(null, client);
     });
@@ -108,7 +115,7 @@ module.exports.start = function(callback) {
     return callback();
   }
 
-  ignoreEndEvents = false;
+  closing = true;
 
   createClient(function(err, storeClient) {
     if(err) return callback(err);
@@ -127,39 +134,44 @@ module.exports.start = function(callback) {
 
         // Subscribe to the channels we care about
         sub.on('message', onmessage);
-        sub.subscribe(ChannelConstants.syncChannel);
-        sub.subscribe(ChannelConstants.lockRequestChannel);
-        sub.subscribe(ChannelConstants.lockResponseChannel);
-
-        callback();
+        sub.subscribe(ChannelConstants.syncChannel,
+                      ChannelConstants.lockRequestChannel,
+                      ChannelConstants.lockResponseChannel,
+                      callback);
       });
     });
   });
 };
 
 module.exports.close = function(callback) {
+  // While we're closing, don't worry about hang-ups, errors from server
+  closing = true;
+
   if(!(store && sub && pub)) {
     // Already closed
     log.warn('RedisClients.close() called while already closed.');
     return callback();
   }
 
-  // While we're closing, don't worry about hang-ups from server
-  ignoreEndEvents = true;
+  // XXX: due to https://github.com/mranney/node_redis/issues/439 we
+  // can't (currently) rely on our client.quit(callback) callback to
+  // fire. As such, we fire and forget.
+  store.quit();
+  store = null;
+  log.info('Redis connection 1/3 closed.');
 
-  store.quit(function() {
-    store = null;
+  pub.quit();
+  pub = null;
+  log.info('Redis connection 2/3 closed.');
 
-    pub.quit(function() {
-      pub = null;
+  sub.unsubscribe(ChannelConstants.syncChannel,
+                  ChannelConstants.lockRequestChannel,
+                  ChannelConstants.lockResponseChannel);
+  sub.quit();
+  sub = null;
+  log.info('Redis connection 3/3 closed.');
 
-      sub.quit(function() {
-        sub = null;
-
-        callback();
-      });
-    });
-  });
+  callback();
 };
 
 // NOTE: start() must be called before the following methods will be available.
