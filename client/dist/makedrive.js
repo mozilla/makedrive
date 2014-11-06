@@ -136,20 +136,18 @@ function createFS(options) {
   options.memory = options.memory === true;
   options.autoReconnect = options.autoReconnect !== false;
 
-  // Use a supplied provider, in memory RAM disk, or Fallback provider (default).
-  var provider;
-  if(options.provider) {
-    provider = options.provider;
-  } else if(options.memory) {
-    provider = new Filer.FileSystem.providers.Memory('makedrive');
-  } else {
-    provider = new Filer.FileSystem.providers.Fallback('makedrive');
+  // Use a supplied provider, in-memory RAM disk, or Fallback provider (default).
+  if(options.memory) {
+    options.provider = new Filer.FileSystem.providers.Memory('makedrive');
+  }
+  if(!options.provider) {
+    options.provider = new Filer.FileSystem.providers.Fallback('makedrive');
   }
 
   // Our fs instance is a modified Filer fs, with extra sync awareness
   // for conflict mediation, etc.  We keep an internal reference to the
   // raw Filer fs, and use the SyncFileSystem instance externally.
-  var _fs = new Filer.FileSystem({provider: provider}, function(err) {
+  var _fs = new Filer.FileSystem(options, function(err) {
     // FS creation errors will be logged for now for debugging purposes
     if(err) {
       console.error('MakeDrive Filesystem Initialization Error: ', err);
