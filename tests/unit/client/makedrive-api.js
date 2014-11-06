@@ -51,6 +51,37 @@ describe('MakeDrive Client API', function(){
       expect(fs.sync.state).to.equal(fs.sync.SYNC_DISCONNECTED);
     });
 
+    it('should allow passing options to Filer from MakeDrive.fs(options)', function(done) {
+      var fs = MakeDrive.fs({
+        forceCreate: true,
+        provider: provider,
+        flags: ['FORMAT', 'NOATIME', 'NOCTIME', 'NOMTIME'],
+      });
+
+      // Since we set custom flags to disable time stamps,
+      // any fs access should leave the times unchanged.
+      fs.stat('/', function(err, stats) {
+        if(err) throw err;
+
+        // Remember the original mtime on the root dir
+        var rootMTIME = stats.mtime;
+
+        // Write a file within /, which will update the root dir
+        fs.writeFile('/file', 'data', function(err) {
+          if(err) throw err;
+
+          // Make sure the mtime on / is the same as before
+          fs.stat('/', function(err, stats) {
+            if(err) throw err;
+
+            expect(stats.mtime).to.equal(rootMTIME);
+            done();
+          });
+        });
+      });
+
+    });
+
     /**
      * This test goes through the complete process of syncing with the server.
      * It starts by connecting, then writes a file and tries to sync. The
