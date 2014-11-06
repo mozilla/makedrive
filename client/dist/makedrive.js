@@ -6168,15 +6168,15 @@ function unlink_node(context, path, callback) {
     }
   }
 
-  // function check_if_node_is_directory(error, result) {
-  //   if(error) {
-  //     callback(error);
-  //   } else if(result.mode === 'DIRECTORY') {
-  //     callback(new Errors.EPERM('unlink not permitted on directories', name));
-  //   } else {
-  //     update_file_node(null, result);
-  //   }
-  // }
+  function check_if_node_is_directory(error, result) {
+    if(error) {
+      callback(error);
+    } else if(result.mode === 'DIRECTORY') {
+      callback(new Errors.EPERM('unlink not permitted on directories', name));
+    } else {
+      update_file_node(null, result);
+    }
+  }
 
   function check_if_file_exists(error, result) {
     if(error) {
@@ -6186,7 +6186,6 @@ function unlink_node(context, path, callback) {
       if(!_(directoryData).has(name)) {
         callback(new Errors.ENOENT('a component of the path does not name an existing file', name));
       } else {
-        // context.getObject(directoryData[name].id, check_if_node_is_directory);
         context.getObject(directoryData[name].id, update_file_node);
       }
     }
@@ -8003,7 +8002,7 @@ module.exports = {
 };
 
 },{"./indexeddb.js":47,"./memory.js":48,"./websql.js":49}],47:[function(require,module,exports){
-(function (global){
+(function (global,Buffer){
 var FILE_SYSTEM_NAME = require('../constants.js').FILE_SYSTEM_NAME;
 var FILE_STORE_NAME = require('../constants.js').FILE_STORE_NAME;
 var IDB_RW = require('../constants.js').IDB_RW;
@@ -8079,7 +8078,13 @@ IndexedDBContext.prototype.putObject = function(key, value, callback) {
   _put(this.objectStore, key, value, callback);
 };
 IndexedDBContext.prototype.putBuffer = function(key, uint8BackedBuffer, callback) {
-  _put(this.objectStore, key, uint8BackedBuffer.buffer, callback);
+  var buf;
+  if(!Buffer._useTypedArrays) { // workaround for fxos 1.3
+    buf = uint8BackedBuffer.toArrayBuffer();
+  } else {
+    buf = uint8BackedBuffer.buffer;
+  }
+  _put(this.objectStore, key, buf, callback);
 };
 
 IndexedDBContext.prototype.delete = function(key, callback) {
@@ -8147,8 +8152,8 @@ IndexedDB.prototype.getReadWriteContext = function() {
 
 module.exports = IndexedDB;
 
-}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../buffer.js":34,"../constants.js":35,"../errors.js":38}],48:[function(require,module,exports){
+}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer)
+},{"../buffer.js":34,"../constants.js":35,"../errors.js":38,"buffer":55}],48:[function(require,module,exports){
 var FILE_SYSTEM_NAME = require('../constants.js').FILE_SYSTEM_NAME;
 // NOTE: prefer setImmediate to nextTick for proper recursion yielding.
 // see https://github.com/js-platform/filer/pull/24
