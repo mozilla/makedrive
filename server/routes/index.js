@@ -8,7 +8,7 @@ var ClientInfo = require('../lib/client-info.js');
 var ImageFinder = require('../lib/image-finder.js');
 var log = require('../lib/logger.js');
 
-module.exports = function createRoutes(app) {
+module.exports = function createRoutes(app, authHandler) {
 
   app.get( "/", function( req, res ) {
     res.send( "MakeDrive: https://wiki.mozilla.org/Webmaker/MakeDrive" );
@@ -17,7 +17,7 @@ module.exports = function createRoutes(app) {
   function setupWWWRoutes(route, options) {
     log.info('Enabling %s route', route);
 
-    app.get(route, middleware.authenticationHandler, function( req, res ) {
+    app.get(route, authHandler, function( req, res ) {
       var username = req.params.username;
       var path = '/' + req.params[0];
 
@@ -47,7 +47,7 @@ module.exports = function createRoutes(app) {
     setupWWWRoutes('/z/*', {zip: true});
   }
 
-  app.get( "/api/sync", middleware.crossOriginHandler, middleware.authenticationHandler, function( req, res ) {
+  app.get( "/api/sync", middleware.crossOriginHandler, authHandler, function( req, res ) {
     var username = req.params.username;
     var token = WebsocketAuth.generateTokenForClient(username);
 
@@ -86,7 +86,7 @@ module.exports = function createRoutes(app) {
   if(env.get('IMAGES_ROUTE')) {
     log.info('Enabling /images route');
 
-    app.get('/images', middleware.authenticationHandler, function(req, res) {
+    app.get('/images', authHandler, function(req, res) {
       var username = req.params.username;
       var images = new ImageFinder(username);
       images.find(function(err, paths) {

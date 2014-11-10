@@ -6,9 +6,9 @@ var domain = require('domain');
 
 var express = require('express');
 var helmet = require('helmet');
-var WebmakerAuth = require('webmaker-auth');
 var Path = require('path');
 var http = require('http');
+var auth = require('./authentication/index.js');
 
 var env = require('./lib/environment');
 var middleware = require('./middleware');
@@ -17,12 +17,7 @@ var log = require('./lib/logger.js');
 var nunjucks = require('nunjucks');
 
 var app = express();
-var webmakerAuth = new WebmakerAuth({
-  loginURL: env.get('LOGIN'),
-  secretKey: env.get('SESSION_SECRET'),
-  forceSSL: env.get('FORCE_SSL'),
-  domain: env.get('COOKIE_DOMAIN')
-});
+
 var port = process.env.PORT || env.get('PORT') || 9090;
 var server;
 
@@ -56,8 +51,8 @@ if(env.get('NODE_ENV') === 'development') {
 
 app.use(express.json());
 app.use(express.urlencoded());
-app.use(webmakerAuth.cookieParser());
-app.use(webmakerAuth.cookieSession());
+
+auth.init(app);
 
 app.use(app.router);
 
@@ -65,7 +60,7 @@ app.use(middleware.errorHandler);
 app.use(middleware.fourOhFourHandler);
 
 // Declare routes
-routes(app);
+routes(app, auth.handler);
 
 module.exports = new EventEmitter();
 module.exports.app = app;

@@ -6,12 +6,6 @@ var log = require('./lib/logger.js');
 var basicAuthUsers = require('querystring').parse(env.get('BASIC_AUTH_USERS'), ',', ':');
 var basicAuth = require('express').basicAuth;
 
-function generateError( code, msg ) {
-  var err = new Error( msg );
-  err.status = code;
-  return err;
-}
-
 module.exports = {
   basicAuthHandler: basicAuth(function(user, pass) {
     for (var username in basicAuthUsers) {
@@ -24,23 +18,6 @@ module.exports = {
     log.debug('BasicAuth authentication failed for username=%s', user);
     return false;
   }),
-
-  authenticationHandler: function( req, res, next ) {
-    var username = req.session && req.session.user && req.session.user.username;
-
-    // If cookie session doesn't exist, check to see if data got passed in via query string
-    if ( !username && !!env.get( "ALLOW_QUERY_STRING_API_SYNC" ) && req.query.username ) {
-      username = req.query.username;
-    }
-
-    if( !username ) {
-      return next( generateError( 401, "Webmaker Authentication Required." ) );
-    }
-
-    req.params.username = username;
-
-    next();
-  },
 
   crossOriginHandler: function( req, res, next ) {
     var allowedCorsDomains = env.get("ALLOWED_CORS_DOMAINS");

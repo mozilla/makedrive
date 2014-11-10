@@ -23,6 +23,7 @@ env.set('MAX_SYNC_SIZE_BYTES', 2000000);
 
 // Enable a username:password for BASIC_AUTH_USERS to enable /api/get route
 env.set('BASIC_AUTH_USERS', 'testusername:testpassword');
+env.set('AUTHENTICATION_PROVIDER', 'passport-webmaker');
 
 var server = require('../../server/server.js');
 var app = server.app;
@@ -115,22 +116,6 @@ function comparePaths(a, b) {
   return 0;
 }
 
-// Ensure that the file is downloadable via /p/ route
-// and has the proper contents
-function ensureFile(path, contents, jar, callback) {
-  ready(function() {
-    request.get({
-      url: serverURL + '/p' + path,
-      jar: jar
-    }, function(err, res, body) {
-      expect(err).not.to.exist;
-      expect(res.statusCode).to.equal(200);
-      expect(body).to.equal(contents);
-
-      callback();
-    });
-  });
-}
 
 function toSyncMessage(string) {
   try {
@@ -1020,7 +1005,6 @@ module.exports = {
   cleanupSockets: cleanupSockets,
 
   // Filesystem helpers
-  ensureFile: ensureFile,
   createFilesystemLayout: createFilesystemLayout,
   deleteFilesystemLayout: deleteFilesystemLayout,
   ensureFilesystemContents: ensureFilesystemContents,

@@ -56,7 +56,6 @@ module.exports = function(grunt) {
             'client/vendors/ace-builds/src-min/theme-monokai.js',
             'client/vendors/ace-builds/src-min/mode-javascript.js',
             'client/vendors/jstree/dist/jstree.min.js',
-            'client/vendors/webmaker-auth-client/dist/webmaker-auth-client.min.js',
             'client/vendors/filer-dialogs/filer-dialogs.js',
             // angular dependencies
             'client/vendors/angular/angular.js',

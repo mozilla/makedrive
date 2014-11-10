@@ -107,6 +107,32 @@ requires HTTP Basic AUTH, and is disabled by default. It is designed for servers
 to get file and folder data for a user. It is not meant for user access. It can be enabled by adding a
 `username:password` pair to the `.env` file for the `BASIC_AUTH_USERS` variable.
 
+## Authentication
+MakeDrive uses [Passport.js](http://passportjs.org/) for authentication middleware. Currently MakeDrive supports 4 providers:
+
+provider  | description
+--------  | --------------
+`passport-github`   | Passport strategy for authenticating with GitHub using the OAuth 2.0 API.
+`passport-env`     | Passport strategy for authenticating using environment configuration.
+`passport-zeroconfig` (default)    | Passport strategy for always authenticated root user.
+`passport-query-string`    | Passport strategy for authenticating with a username and password provided on the query string.
+`passport-webmaker` | Passport strategy for authenticating with [Webmaker](https://github.com/mozilla/login.webmaker.org) session.
+
+To use one of the above provider you can set the environment configuration `AUTHENTICATION_PROVIDER`.
+
+Example using `passport-github`:
+
+Set the environment configurations in your `.env` file.
+
+```
+export AUTHENTICATION_PROVIDER="passport-github"
+export GITHUB_CLIENTID="clientId"
+export GITHUB_CLIENTSECRET="clientSecret"
+export GITHUB_CALLBACKURL="http://callbackurl"
+```
+
+You can also check other providers listed in the [providers directory](./server/authentication/providers) for more information.
+
 ## API Reference
 
 ###Constructor
@@ -167,7 +193,7 @@ Event | Description
 
 Method | Purpose
 ------ | -------------------------------------------
- `connect(url, [token])` | Try to connect to the specified sync server URL. An 'error' or 'connected' event will follow, depending on success. If the token parameter is provided, that authentication token will be used. Otherwise the client will try to obtain one from the server's /api/sync route. This requires the user to be authenticated previously with Webmaker.
+ `connect(url, [token])` | Try to connect to the specified sync server URL. An 'error' or 'connected' event will follow, depending on success. If the token parameter is provided, that authentication token will be used. Otherwise the client will try to obtain one from the server's /api/sync route. This requires the user to be authenticated.
  `disconnect()` | Disconnect from the sync server.
  `request()` | Request a sync with the server. The path is automatically tracked by any changes that occur within the filesystem. Such requests may or may not be processed.
 
