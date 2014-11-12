@@ -32,7 +32,7 @@ function ClientInfo(id, userAgentString) {
 
   // Web Socket data usage for this client
   this.bytesSent = 0;
-  this.bytesRecevied = 0;
+  this.bytesReceived = 0;
 }
 
 // How long this client has been connected in MS
