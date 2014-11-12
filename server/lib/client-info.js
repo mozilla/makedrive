@@ -29,6 +29,10 @@ function ClientInfo(id, userAgentString) {
   // How many times this client has sync'ed during this connection.
   this.downstreamSyncs = 0;
   this.upstreamSyncs = 0;
+
+  // Web Socket data usage for this client
+  this.bytesSent = 0;
+  this.bytesRecevied = 0;
 }
 
 // How long this client has been connected in MS

@@ -7,8 +7,6 @@ var getCommonPath = require('../../lib/sync-path-resolver').resolve;
 var SyncLock = require('./sync-lock.js');
 var redis = require('../redis-clients.js');
 var log = require('./logger.js');
-var ClientInfo = require('./client-info.js');
-
 var Constants = require('../../lib/constants.js');
 var ServerStates = Constants.server.states;
 var rsyncOptions = Constants.rsyncDefaults;
@@ -426,7 +424,7 @@ SyncProtocolHandler.prototype.end = function(patchResponse) {
       }
 
       var duration = releaseLock(client);
-      var info = ClientInfo.find(client);
+      var info = client.info();
       if(info) {
         info.upstreamSyncs++;
       }
@@ -647,7 +645,7 @@ SyncProtocolHandler.prototype.handlePatchResponse = function(message) {
 
     var duration = Date.now() - client._syncStarted;
     delete client._syncStarted;
-    var info = ClientInfo.find(client);
+    var info = client.info();
     if(info) {
       info.downstreamSyncs++;
     }

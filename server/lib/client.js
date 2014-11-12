@@ -8,6 +8,7 @@
 var SyncProtocolHandler = require('./sync-protocol-handler.js');
 var SyncMessage = require('../../lib/syncmessage.js');
 var EventEmitter = require('events').EventEmitter;
+var ClientInfo = require('./client-info.js');
 var Constants = require('../../lib/constants.js');
 var States = Constants.server.states;
 var redis = require('../redis-clients.js');
@@ -181,9 +182,15 @@ Client.prototype.close = function(error) {
   });
 };
 
+// Helper for getting the ClientInfo object for this client
+Client.prototype.info = function() {
+  return ClientInfo.find(this);
+};
+
 Client.prototype.sendMessage = function(syncMessage) {
   var self = this;
   var ws = self.ws;
+  var info = self.info();
 
   if(!ws || ws.readyState !== ws.OPEN) {
     log.error({client: self, syncMessage: syncMessage, err: new Error('invalid state')},
@@ -192,6 +199,12 @@ Client.prototype.sendMessage = function(syncMessage) {
   }
 
   try {
+    // Keep track of how much data we send
+    var data = syncMessage.stringify();
+    if(info) {
+      info.bytesSent += Buffer.byteLength(data, 'utf8');
+    }
+    
     ws.send(syncMessage.stringify());
     log.debug({syncMessage: syncMessage, client: self}, 'Sending Sync Protocol Message');
   } catch(err) {

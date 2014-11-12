@@ -1,5 +1,4 @@
 var env = require('./environment.js');
-var ClientInfo = require('./client-info.js');
 var messina = require('messina'); 
 
 var logger = messina({
@@ -21,13 +20,15 @@ var logger = messina({
         path: client.path
       };
 
-      var info = ClientInfo.find(client);
+      var info = client.info();
       if(info) {
         o.agent = info.agent;
         o.device = info.device !== 'Other 0.0.0' ? info.device : 'Unknown';
         o.connectedInMS = info.connectedInMS;
         o.downstreamSyncs = info.downstreamSyncs;
         o.upstreamSyncs = info.upstreamSyncs;
+        o.bytesSent = info.bytesSent;
+        o.bytesReceived = info.bytesReceived;
       }
 
       // If we are holding a lock
