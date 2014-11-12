@@ -21,9 +21,16 @@ function runClient(client) {
   ws.onmessage = function(msg, flags) {
     var data;
     var message;
+    var info;
 
     if(!flags || !flags.binary) {
       try {
+        // Keep track of how much data we receive
+        info = client.info();
+        if(info) {
+          info.bytesReceived += Buffer.byteLength(msg.data, 'utf8');
+        }
+
         data = JSON.parse(msg.data);
         message = SyncMessage.parse(data);
 
@@ -58,7 +65,15 @@ function initClient(client) {
   // Wait until we get the user's token so we can finish authorizing
   ws.onmessage = function(msg) {
     var data;
+    var info;
+
     try {
+      // Keep track of how much data we receive
+      info = client.info();
+      if(info) {
+        info.bytesReceived += Buffer.byteLength(msg.data, 'utf8');
+      }
+
       data = JSON.parse(msg.data);
     } catch(err) {
       log.error({client: client, err: err}, 'Error parsing client token. Data was `%s`', msg.data);
