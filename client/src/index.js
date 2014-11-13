@@ -82,8 +82,18 @@ var SyncFileSystem = require('./sync-filesystem.js');
 var Filer = require('../../lib/filer.js');
 var EventEmitter = require('events').EventEmitter;
 var resolvePath = require('../../lib/sync-path-resolver.js').resolveFromArray;
+var log = require('./logger.js');
 
 var MakeDrive = {};
+
+// Expose the logging api, so users can set log level
+MakeDrive.log = log;
+
+// Expose bits of Filer that clients will need on MakeDrive
+MakeDrive.Buffer = Filer.Buffer;
+MakeDrive.Path = Filer.Path;
+MakeDrive.Errors = Filer.Errors;
+
 module.exports = MakeDrive;
 
 function createFS(options) {
@@ -93,10 +103,14 @@ function createFS(options) {
 
   // Use a supplied provider, in-memory RAM disk, or Fallback provider (default).
   if(options.memory) {
+    log.debug('Using Filer Memory provider for fs');
     options.provider = new Filer.FileSystem.providers.Memory('makedrive');
   }
   if(!options.provider) {
+    log.debug('Using Fallback provider for fs');
     options.provider = new Filer.FileSystem.providers.Fallback('makedrive');
+  } else {
+    log.debug('Using user-provided provider for fs', options.provider);
   }
 
   // Our fs instance is a modified Filer fs, with extra sync awareness
@@ -105,7 +119,7 @@ function createFS(options) {
   var _fs = new Filer.FileSystem(options, function(err) {
     // FS creation errors will be logged for now for debugging purposes
     if(err) {
-      console.error('MakeDrive Filesystem Initialization Error: ', err);
+      log.error('Filesystem initialization error', err);
     }
   });
   var fs = new SyncFileSystem(_fs);
@@ -151,6 +165,7 @@ function createFS(options) {
     if(!manager) {
       return;
     }
+    log.debug('Closing manager');
     manager.close();
     manager = null;
   }
@@ -159,29 +174,34 @@ function createFS(options) {
     // If we're not connected (or are already syncing), ignore this request
     if(sync.state === sync.SYNC_DISCONNECTED || sync.state === sync.SYNC_ERROR) {
       sync.emit('error', new Error('Invalid state. Expected ' + sync.SYNC_CONNECTED + ', got ' + sync.state));
+      log.warn('Tried to sync in invalid state: ' + sync.state);
       return;
     }
 
     // If there were no changes to the filesystem and
     // no path was passed to sync, ignore this request
     if(!fs.pathToSync && !path) {
+      log.debug('Skipping sync request, no changes to sync');
       return;
     }
 
     // If a path was passed sync using it
     if(path) {
+      log.info('Requesting sync for ' + path);
       return manager.syncPath(path);
     }
 
     // Cache the path that needs to be synced for error recovery
     pathCache = fs.pathToSync;
     fs.pathToSync = null;
+    log.info('Requesting sync for ' + pathCache);
     manager.syncPath(pathCache);
   }
 
   // Turn on auto-syncing if its not already on
   sync.auto = function(interval) {
     var syncInterval = interval|0 > 0 ? interval|0 : 15 * 1000;
+    log.debug('Starting automatic syncing mode every ' + syncInterval + 'ms');
 
     if(autoSync) {
       clearInterval(autoSync);
@@ -192,6 +212,7 @@ function createFS(options) {
 
   // Turn off auto-syncing and turn on manual syncing
   sync.manual = function() {
+    log.debug('Starting manual syncing mode');
     if(autoSync) {
       clearInterval(autoSync);
       autoSync = null;
@@ -203,6 +224,7 @@ function createFS(options) {
     fs.pathToSync = pathCache;
     sync.state = sync.SYNC_CONNECTED;
     sync.emit('error', new Error('Sync interrupted by server.'));
+    log.warn('Sync interrupted by server, caching current path: ' + pathCache);
   };
 
   sync.onError = function(err) {
@@ -211,19 +233,23 @@ function createFS(options) {
     fs.pathToSync = upstreamPath || pathCache;
     sync.state = sync.SYNC_ERROR;
     sync.emit('error', err);
+    log.error('Sync error', err);
   };
 
   sync.onDisconnected = function() {
     // Remove listeners so we don't leak instance variables
     if("onbeforeunload" in global) {
+      log.debug('Removing window.beforeunload handler');
       global.removeEventListener('beforeunload', windowCloseHandler);
     }
     if("onunload" in global){
+      log.debug('Removing window.unload handler');
       global.removeEventListener('unload', cleanupManager);
     }
 
     sync.state = sync.SYNC_DISCONNECTED;
     sync.emit('disconnected');
+    log.info('Disconnected');
   };
 
   // Request that a sync begin.
@@ -241,6 +267,7 @@ function createFS(options) {
     // Bail if we're already connected
     if(sync.state !== sync.SYNC_DISCONNECTED &&
        sync.state !== sync.ERROR) {
+      log.warn('Tried to connect, but already connected');
       sync.emit('error', new Error("MakeDrive: Attempted to connect to \"" + url + "\", but a connection already exists!"));
       return;
     }
@@ -251,14 +278,19 @@ function createFS(options) {
     }
 
     // Upgrade connection state to `connecting`
+    log.info('Connecting to MakeDrive server');
     sync.state = sync.SYNC_CONNECTING;
 
     function downstreamSyncCompleted(paths, needUpstream) {
+      var startTime;
+
       // Re-wire message handler functions for regular syncing
       // now that initial downstream sync is completed.
       sync.onSyncing = function() {
         sync.state = sync.SYNC_SYNCING;
         sync.emit('syncing');
+        log.info('Started syncing');
+        startTime = Date.now();
       };
 
       sync.onCompleted = function(paths, needUpstream) {
@@ -269,6 +301,8 @@ function createFS(options) {
         function complete() {
           sync.state = sync.SYNC_CONNECTED;
           sync.emit('completed');
+          var duration = (Date.now() - startTime) + 'ms';
+          log.info('Completed syncing in ' + duration);
         }
 
         if(!paths && !needUpstream) {
@@ -280,6 +314,7 @@ function createFS(options) {
         if(needUpstream) {
           upstreamPath = resolvePath(needUpstream);
           complete();
+          log.debug('Client changes are newer for ' + upstreamPath);
           return requestSync(upstreamPath);
         }
 
@@ -287,6 +322,7 @@ function createFS(options) {
         // Change the path that needs to be synced
         manager.resetUnsynced(paths, function(err) {
           if(err) {
+            log.error('Error resetting unsynced paths for ' + paths, err);
             return sync.onError(err);
           }
 
@@ -307,12 +343,15 @@ function createFS(options) {
 
       // In a browser, try to clean-up after ourselves when window goes away
       if("onbeforeunload" in global) {
+        log.debug('Adding window.beforeunload handler');
         global.addEventListener('beforeunload', windowCloseHandler);
       }
       if("onunload" in global){
+        log.debug('Adding window.unload handler');
         global.addEventListener('unload', cleanupManager);
       }
 
+      log.info('Connected');
       sync.emit('connected');
 
       // If the downstream was completed and some
@@ -320,6 +359,7 @@ function createFS(options) {
       // newer on the client, upstream them
       if(needUpstream) {
         upstreamPath = resolvePath(needUpstream);
+        log.debug('Client changes are newer for ' + upstreamPath);
         requestSync(upstreamPath);
       } else {
         upstreamPath = null;
@@ -333,16 +373,23 @@ function createFS(options) {
       manager = new SyncManager(sync, _fs);
       manager.init(url, token, options, function(err) {
         if(err) {
+          log.error('Error connecting to ' + url, err);
           sync.onError(err);
           return;
         }
 
+        var startTime;
+
         // Wait on initial downstream sync events to complete
         sync.onSyncing = function() {
           // do nothing, wait for onCompleted()
+          log.info('Starting initial downstream sync');
+          startTime = Date.now();
         };
         sync.onCompleted = function(paths, needUpstream) {
           // Downstream sync is done, finish connect() setup
+          var duration = (Date.now() - startTime) + 'ms';
+          log.info('Completed initial downstream sync in ' + duration);
           downstreamSyncCompleted(paths, needUpstream);
         };
       });
@@ -355,6 +402,7 @@ function createFS(options) {
     // Bail if we're not already connected
     if(sync.state === sync.SYNC_DISCONNECTED ||
        sync.state === sync.ERROR) {
+      log.warn('Tried to disconnect while not connected');
       sync.emit('error', new Error("MakeDrive: Attempted to disconnect, but no server connection exists!"));
       return;
     }
@@ -393,7 +441,3 @@ MakeDrive.fs = function(options) {
   return sharedFS;
 };
 
-// Expose bits of Filer that clients will need on MakeDrive
-MakeDrive.Buffer = Filer.Buffer;
-MakeDrive.Path = Filer.Path;
-MakeDrive.Errors = Filer.Errors;
