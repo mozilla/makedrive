@@ -52,7 +52,7 @@ module.exports = {
     next();
   },
 
-  errorHandler: function( err, req, res, next ) {
+  errorHandler: function(err, req, res, next) {
     if (typeof err === "string") {
       err = new Error(err);
     }
@@ -62,16 +62,15 @@ module.exports = {
       status: err.status ? err.status : 500
     };
 
-    res.status( error.status ).json( error );
+    res.status(error.status).json(error);
   },
 
-  fourOhFourHandler: function( req, res, next ) {
+  fourOhFourHandler: function(req, res, next) {
     var error = {
-      message: "You found a loose thread!",
+      message: "Not Found",
       status: 404
     };
 
-    res.status( error.status ).json( error );
-    next();
+    res.status(error.status).json(error);
   }
 };
