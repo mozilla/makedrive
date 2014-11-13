@@ -78,8 +78,10 @@ module.exports.start = function(callback) {
   server = http.createServer(app);
   server.listen(port, function(err) {
     if(err) {
+      log.error('Error starting web server', err);
       return callback(err);
     }
+    log.info('Started web server on port %s', port);
     callback(null, server);
   });
 };
