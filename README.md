@@ -183,6 +183,25 @@ Method | Purpose
  sync.SYNC_ERROR = "SYNC ERROR"
 ```
 
+### Logging
+
+MakeDrive provides various levels of logging. By default it is disabled, but it can be enabled
+using `MakeDrive.log.level()`:
+
+```js
+// Use debug logging
+MakeDrive.log.level('debug');
+
+// Use info logging
+MakeDrive.log.level('info');
+
+// Disable logging after it was turned on
+MakeDrive.log.level('disabled');
+```
+
+In addition to using level name strings, you can use `MakeDrive.log.INFO`, `MakeDrive.log.DEBUG`,
+`MakeDrive.log.WARN`, `MakeDrive.log.ERROR`, etc.
+
 ## Testing and Contributing
 Any assistance in adding new features or enhancing current ones, as well as resolving issues
 is greatly appreciated. Please refer to our [CONTRIBUTING.md](./CONTRIBUTING.md) document for more information about internal MakeDrive implementations, git conventions and
