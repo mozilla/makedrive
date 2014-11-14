@@ -9,6 +9,7 @@ See [this blog post](http://blog.humphd.org/introducing-makedrive/) which introd
 Any assistance in adding new features or enhancing current ones, as well as resolving issues
 is greatly appreciated. Please refer to our [CONTRIBUTING.md](./CONTRIBUTING.md) document for more information.
 
+If you have questions or want to help, we are available on irc in the [#makedrive](irc://irc.mozilla.org/makedrive) channel on moznet.
 
 ## Compatibility
 
