@@ -3,7 +3,7 @@
   "version": "0.0.69",
   "description": "Webmaker Filesystem",
   "scripts": {
-    "start": "node ./server/index.js | ./node_modules/.bin/bunyan",
+    "start": "node server/index.js",
     "test": "grunt test",
     "postinstall": "bower install"
   },
@@ -86,6 +86,7 @@
   "devDependencies": {
     "async": "^0.9.0",
     "browserify": "^4.1.8",
+    "bunyan-prettystream": "^0.1.3",
     "chai": "^1.9.1",
     "grunt": "~0.4.1",
     "grunt-browserify": "^3.0.1",

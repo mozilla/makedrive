@@ -43,8 +43,14 @@ $ git clone https://github.com/mozilla/makedrive.git
 If you don't already have `grunt-cli` and `bower` installed globally, do so:
 
 ```
-$ sudo npm install bower -g
-$ sudo npm install grunt-cli -g
+$ npm install bower -g
+$ npm install grunt-cli -g
+```
+
+If you're interested in running the tests, also install Mocha globally:
+
+```
+$ npm install mocha -g
 ```
 
 Afterwards, install the npm modules

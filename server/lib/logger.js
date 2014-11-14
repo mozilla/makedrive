@@ -1,8 +1,21 @@
 var env = require('./environment.js');
 var messina = require('messina'); 
+var PrettyStream = require('bunyan-prettystream');
+var NODE_ENV = env.get('NODE_ENV') || 'development';
+
+// In development, we pretty print the JSON logging to stdout.
+var stream;
+if(NODE_ENV === 'development') {
+  stream = new PrettyStream();
+  stream.pipe(process.stdout);
+} else {
+  stream = process.stdout;
+}
 
 var logger = messina({
-  name: 'MakeDrive-' + (env.get('NODE_ENV') || 'development'),
+  name: 'MakeDrive-' + NODE_ENV,
+  stream: stream,
+  level: env.get('LOG_LEVEL') || 'info',
   serializers: {
     // See lib/syncmessage.js
     syncMessage: function syncMessageSerializer(msg) {
@@ -58,10 +71,5 @@ var logger = messina({
     }
   }
 });
-
-// Figure out which log level to use. This can be set
-// via command env variables or in .env. Use 'debug'
-// for useful development logs.
-logger.level(env.get('LOG_LEVEL') || 'info');
 
 module.exports = logger;

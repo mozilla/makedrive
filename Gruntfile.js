@@ -154,7 +154,17 @@ module.exports = function(grunt) {
      */
     exec: {
       run_mocha: {
-        command: '"./node_modules/.bin/mocha" --timeout 70000 --recursive --reporter spec ./tests | ./node_modules/.bin/bunyan -l fatal',
+        command: 'mocha --timeout 70000 --recursive --reporter spec tests',
+        options: {
+          // Bump the max buffer size for logging output when debugging
+          maxBuffer: 512 * 1024,
+          // Use the env from the process, but alter a few things for logging
+          env: (function(env) {
+            env.LOG_LEVEL = 'fatal';
+            env.NODE_ENV = 'development';
+            return env;
+          }(process.env))
+        },
         stdout: true,
         stderr: true
       }
