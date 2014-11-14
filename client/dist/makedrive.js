@@ -127,8 +127,18 @@ var SyncFileSystem = require('./sync-filesystem.js');
 var Filer = require('../../lib/filer.js');
 var EventEmitter = require('events').EventEmitter;
 var resolvePath = require('../../lib/sync-path-resolver.js').resolveFromArray;
+var log = require('./logger.js');
 
 var MakeDrive = {};
+
+// Expose the logging api, so users can set log level
+MakeDrive.log = log;
+
+// Expose bits of Filer that clients will need on MakeDrive
+MakeDrive.Buffer = Filer.Buffer;
+MakeDrive.Path = Filer.Path;
+MakeDrive.Errors = Filer.Errors;
+
 module.exports = MakeDrive;
 
 function createFS(options) {
@@ -138,10 +148,14 @@ function createFS(options) {
 
   // Use a supplied provider, in-memory RAM disk, or Fallback provider (default).
   if(options.memory) {
+    log.debug('Using Filer Memory provider for fs');
     options.provider = new Filer.FileSystem.providers.Memory('makedrive');
   }
   if(!options.provider) {
+    log.debug('Using Fallback provider for fs');
     options.provider = new Filer.FileSystem.providers.Fallback('makedrive');
+  } else {
+    log.debug('Using user-provided provider for fs', options.provider);
   }
 
   // Our fs instance is a modified Filer fs, with extra sync awareness
@@ -150,7 +164,7 @@ function createFS(options) {
   var _fs = new Filer.FileSystem(options, function(err) {
     // FS creation errors will be logged for now for debugging purposes
     if(err) {
-      console.error('MakeDrive Filesystem Initialization Error: ', err);
+      log.error('Filesystem initialization error', err);
     }
   });
   var fs = new SyncFileSystem(_fs);
@@ -196,6 +210,7 @@ function createFS(options) {
     if(!manager) {
       return;
     }
+    log.debug('Closing manager');
     manager.close();
     manager = null;
   }
@@ -204,29 +219,34 @@ function createFS(options) {
     // If we're not connected (or are already syncing), ignore this request
     if(sync.state === sync.SYNC_DISCONNECTED || sync.state === sync.SYNC_ERROR) {
       sync.emit('error', new Error('Invalid state. Expected ' + sync.SYNC_CONNECTED + ', got ' + sync.state));
+      log.warn('Tried to sync in invalid state: ' + sync.state);
       return;
     }
 
     // If there were no changes to the filesystem and
     // no path was passed to sync, ignore this request
     if(!fs.pathToSync && !path) {
+      log.debug('Skipping sync request, no changes to sync');
       return;
     }
 
     // If a path was passed sync using it
     if(path) {
+      log.info('Requesting sync for ' + path);
       return manager.syncPath(path);
     }
 
     // Cache the path that needs to be synced for error recovery
     pathCache = fs.pathToSync;
     fs.pathToSync = null;
+    log.info('Requesting sync for ' + pathCache);
     manager.syncPath(pathCache);
   }
 
   // Turn on auto-syncing if its not already on
   sync.auto = function(interval) {
     var syncInterval = interval|0 > 0 ? interval|0 : 15 * 1000;
+    log.debug('Starting automatic syncing mode every ' + syncInterval + 'ms');
 
     if(autoSync) {
       clearInterval(autoSync);
@@ -237,6 +257,7 @@ function createFS(options) {
 
   // Turn off auto-syncing and turn on manual syncing
   sync.manual = function() {
+    log.debug('Starting manual syncing mode');
     if(autoSync) {
       clearInterval(autoSync);
       autoSync = null;
@@ -248,6 +269,7 @@ function createFS(options) {
     fs.pathToSync = pathCache;
     sync.state = sync.SYNC_CONNECTED;
     sync.emit('error', new Error('Sync interrupted by server.'));
+    log.warn('Sync interrupted by server, caching current path: ' + pathCache);
   };
 
   sync.onError = function(err) {
@@ -256,19 +278,23 @@ function createFS(options) {
     fs.pathToSync = upstreamPath || pathCache;
     sync.state = sync.SYNC_ERROR;
     sync.emit('error', err);
+    log.error('Sync error', err);
   };
 
   sync.onDisconnected = function() {
     // Remove listeners so we don't leak instance variables
     if("onbeforeunload" in global) {
+      log.debug('Removing window.beforeunload handler');
       global.removeEventListener('beforeunload', windowCloseHandler);
     }
     if("onunload" in global){
+      log.debug('Removing window.unload handler');
       global.removeEventListener('unload', cleanupManager);
     }
 
     sync.state = sync.SYNC_DISCONNECTED;
     sync.emit('disconnected');
+    log.info('Disconnected');
   };
 
   // Request that a sync begin.
@@ -286,6 +312,7 @@ function createFS(options) {
     // Bail if we're already connected
     if(sync.state !== sync.SYNC_DISCONNECTED &&
        sync.state !== sync.ERROR) {
+      log.warn('Tried to connect, but already connected');
       sync.emit('error', new Error("MakeDrive: Attempted to connect to \"" + url + "\", but a connection already exists!"));
       return;
     }
@@ -296,14 +323,19 @@ function createFS(options) {
     }
 
     // Upgrade connection state to `connecting`
+    log.info('Connecting to MakeDrive server');
     sync.state = sync.SYNC_CONNECTING;
 
     function downstreamSyncCompleted(paths, needUpstream) {
+      var startTime;
+
       // Re-wire message handler functions for regular syncing
       // now that initial downstream sync is completed.
       sync.onSyncing = function() {
         sync.state = sync.SYNC_SYNCING;
         sync.emit('syncing');
+        log.info('Started syncing');
+        startTime = Date.now();
       };
 
       sync.onCompleted = function(paths, needUpstream) {
@@ -314,6 +346,8 @@ function createFS(options) {
         function complete() {
           sync.state = sync.SYNC_CONNECTED;
           sync.emit('completed');
+          var duration = (Date.now() - startTime) + 'ms';
+          log.info('Completed syncing in ' + duration);
         }
 
         if(!paths && !needUpstream) {
@@ -325,6 +359,7 @@ function createFS(options) {
         if(needUpstream) {
           upstreamPath = resolvePath(needUpstream);
           complete();
+          log.debug('Client changes are newer for ' + upstreamPath);
           return requestSync(upstreamPath);
         }
 
@@ -332,6 +367,7 @@ function createFS(options) {
         // Change the path that needs to be synced
         manager.resetUnsynced(paths, function(err) {
           if(err) {
+            log.error('Error resetting unsynced paths for ' + paths, err);
             return sync.onError(err);
           }
 
@@ -352,12 +388,15 @@ function createFS(options) {
 
       // In a browser, try to clean-up after ourselves when window goes away
       if("onbeforeunload" in global) {
+        log.debug('Adding window.beforeunload handler');
         global.addEventListener('beforeunload', windowCloseHandler);
       }
       if("onunload" in global){
+        log.debug('Adding window.unload handler');
         global.addEventListener('unload', cleanupManager);
       }
 
+      log.info('Connected');
       sync.emit('connected');
 
       // If the downstream was completed and some
@@ -365,6 +404,7 @@ function createFS(options) {
       // newer on the client, upstream them
       if(needUpstream) {
         upstreamPath = resolvePath(needUpstream);
+        log.debug('Client changes are newer for ' + upstreamPath);
         requestSync(upstreamPath);
       } else {
         upstreamPath = null;
@@ -378,16 +418,23 @@ function createFS(options) {
       manager = new SyncManager(sync, _fs);
       manager.init(url, token, options, function(err) {
         if(err) {
+          log.error('Error connecting to ' + url, err);
           sync.onError(err);
           return;
         }
 
+        var startTime;
+
         // Wait on initial downstream sync events to complete
         sync.onSyncing = function() {
           // do nothing, wait for onCompleted()
+          log.info('Starting initial downstream sync');
+          startTime = Date.now();
         };
         sync.onCompleted = function(paths, needUpstream) {
           // Downstream sync is done, finish connect() setup
+          var duration = (Date.now() - startTime) + 'ms';
+          log.info('Completed initial downstream sync in ' + duration);
           downstreamSyncCompleted(paths, needUpstream);
         };
       });
@@ -400,6 +447,7 @@ function createFS(options) {
     // Bail if we're not already connected
     if(sync.state === sync.SYNC_DISCONNECTED ||
        sync.state === sync.ERROR) {
+      log.warn('Tried to disconnect while not connected');
       sync.emit('error', new Error("MakeDrive: Attempted to disconnect, but no server connection exists!"));
       return;
     }
@@ -438,13 +486,114 @@ MakeDrive.fs = function(options) {
   return sharedFS;
 };
 
-// Expose bits of Filer that clients will need on MakeDrive
-MakeDrive.Buffer = Filer.Buffer;
-MakeDrive.Path = Filer.Path;
-MakeDrive.Errors = Filer.Errors;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../../lib/filer.js":14,"../../lib/sync-path-resolver.js":22,"./sync-filesystem.js":5,"./sync-manager.js":6,"events":28}],4:[function(require,module,exports){
+},{"../../lib/filer.js":15,"../../lib/sync-path-resolver.js":23,"./logger.js":4,"./sync-filesystem.js":6,"./sync-manager.js":7,"events":29}],4:[function(require,module,exports){
+/**
+ * Simplified Bunyan-like logger for browser.
+ * https://github.com/trentm/node-bunyan
+ *
+ * Set the level with logger.level(...). By default
+ * no logging is done. Call logger level methods to
+ * potentially log, depending on current log level.
+ */
+
+// Log Levels
+var TRACE = 10;
+var DEBUG = 20;
+var INFO = 30;
+var WARN = 40;
+var ERROR = 50;
+var FATAL = 60;
+var DISABLED = 100;
+
+var levelFromName = {
+  'trace': TRACE,
+  'debug': DEBUG,
+  'info': INFO,
+  'warn': WARN,
+  'error': ERROR,
+  'fatal': FATAL,
+  'disabled': DISABLED
+};
+
+var levelFromNumber = {
+  TRACE: 'trace',
+  DEBUG: 'debug',
+  INFO: 'info',
+  WARN: 'warn',
+  ERROR: 'error',
+  FATAL: 'fatal',
+  DISABLED: 'disabled'
+};
+
+// By default, we won't log anything
+var currentLogLevel = DISABLED;
+
+function log(level, args) {
+  if(currentLogLevel > level) {
+    return;
+  }
+
+  args = Array.prototype.slice.call(args);
+  args.unshift('[MakeDrive]', (levelFromNumber[level] || '').toUpperCase() + ':');
+
+  console[level >= ERROR ? 'error' : 'log'].apply(console, args);
+}
+
+module.exports = {
+  trace: function() {
+    log(TRACE, arguments);
+  },
+
+  debug: function() {
+    log(DEBUG, arguments);
+  },
+
+  info: function() {
+    log(INFO, arguments);
+  },
+
+  warn: function() {
+    log(WARN, arguments);
+  },
+
+  error: function() {
+    log(ERROR, arguments);
+  },
+
+  fatal: function() {
+    log(FATAL, arguments);
+  },
+
+  TRACE: TRACE,
+  DEBUG: DEBUG,
+  INFO: INFO,
+  WARN: WARN,
+  ERROR: ERROR,
+  FATAL: FATAL,
+  DISABLED: DISABLED,
+
+  // Get or Set the current log level. To disable use DISABLED (default).
+  level: function(nameOrNum) {
+    if(nameOrNum === undefined) {
+      return currentLogLevel;
+    }
+
+    if(typeof(nameOrNum) === 'string') {
+      nameOrNum = levelFromName[nameOrNum.toLowerCase()];
+    }
+
+    if(nameOrNum === undefined ||
+       !(TRACE <= nameOrNum && nameOrNum <= DISABLED)) {
+      throw new Error('invalid log level: ' + nameOrNum);
+    }
+
+    currentLogLevel = nameOrNum;
+  }
+};
+
+},{}],5:[function(require,module,exports){
 var SyncMessage = require('../../lib/syncmessage');
 var rsync = require('../../lib/rsync');
 var rsyncUtils = rsync.utils;
@@ -747,7 +896,7 @@ function handleMessage(syncManager, data) {
 
 module.exports = handleMessage;
 
-},{"../../lib/async-lite":9,"../../lib/constants":11,"../../lib/diff":12,"../../lib/filer":14,"../../lib/fs-utils":15,"../../lib/rsync":18,"../../lib/syncmessage":23,"./sync-states":7,"./sync-steps":8}],5:[function(require,module,exports){
+},{"../../lib/async-lite":10,"../../lib/constants":12,"../../lib/diff":13,"../../lib/filer":15,"../../lib/fs-utils":16,"../../lib/rsync":19,"../../lib/syncmessage":24,"./sync-states":8,"./sync-steps":9}],6:[function(require,module,exports){
 /**
  * An extended Filer FileSystem with wrapped methods
  * for writing that manage file metadata (xattribs)
@@ -928,7 +1077,7 @@ function SyncFileSystem(fs) {
 
 module.exports = SyncFileSystem;
 
-},{"../../lib/conflict.js":10,"../../lib/filer-shell.js":13,"../../lib/filer.js":14,"../../lib/fs-utils.js":15,"../../lib/sync-path-resolver.js":22}],6:[function(require,module,exports){
+},{"../../lib/conflict.js":11,"../../lib/filer-shell.js":14,"../../lib/filer.js":15,"../../lib/fs-utils.js":16,"../../lib/sync-path-resolver.js":23}],7:[function(require,module,exports){
 var SyncMessage = require( '../../lib/syncmessage' ),
     messageHandler = require('./message-handler'),
     states = require('./sync-states'),
@@ -1200,14 +1349,14 @@ SyncManager.prototype.send = function(syncMessage) {
 
 module.exports = SyncManager;
 
-},{"../../lib/async-lite.js":9,"../../lib/fs-utils":15,"../../lib/syncmessage":23,"./message-handler":4,"./sync-states":7,"./sync-steps":8,"request":27,"url":1,"ws":2}],7:[function(require,module,exports){
+},{"../../lib/async-lite.js":10,"../../lib/fs-utils":16,"../../lib/syncmessage":24,"./message-handler":5,"./sync-states":8,"./sync-steps":9,"request":28,"url":1,"ws":2}],8:[function(require,module,exports){
 module.exports = {
   SYNCING: "SYNC IN PROGRESS",
   READY: "READY",
   ERROR: "ERROR",
   CLOSED: "CLOSED"
 };
-},{}],8:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 module.exports = {
   INIT: "SYNC INITIALIZED",
   CHKSUM: "CHECKSUM",
@@ -1216,11 +1365,11 @@ module.exports = {
   SYNCED: "SYNCED",
   FAILED: "FAILED"
 };
-},{}],9:[function(require,module,exports){
+},{}],10:[function(require,module,exports){
 // We're sharing Filer's same stripped-down version of async, in order to save space.
 module.exports = require('../node_modules/filer/lib/async.js');
 
-},{"../node_modules/filer/lib/async.js":29}],10:[function(require,module,exports){
+},{"../node_modules/filer/lib/async.js":30}],11:[function(require,module,exports){
 /**
  * Utility functions for working with Conflicted Files.
  */
@@ -1317,7 +1466,7 @@ module.exports = {
   removeFileConflict: removeFileConflict
 };
 
-},{"./constants.js":11,"./filer.js":14,"./fs-utils.js":15}],11:[function(require,module,exports){
+},{"./constants.js":12,"./filer.js":15,"./fs-utils.js":16}],12:[function(require,module,exports){
 module.exports = {
   rsyncDefaults: {
     size: 5,
@@ -1350,7 +1499,7 @@ module.exports = {
   }
 };
 
-},{}],12:[function(require,module,exports){
+},{}],13:[function(require,module,exports){
 /**
  * Functions to process lists of Node Diff objects (i.e.,
  * diffs of files, folders). A Node Diff object takes the
@@ -1416,15 +1565,15 @@ module.exports.deserialize = function(nodeDiffs) {
   return processFn(nodeDiffs, jsonToBuffer);
 };
 
-},{"./filer.js":14}],13:[function(require,module,exports){
+},{"./filer.js":15}],14:[function(require,module,exports){
 // Filer doesn't expose the Shell() ctor directly, so provide a shortcut.
 // See client/src/sync-filesystem.js
 module.exports = require('../node_modules/filer/src/shell/shell.js');
 
-},{"../node_modules/filer/src/shell/shell.js":52}],14:[function(require,module,exports){
+},{"../node_modules/filer/src/shell/shell.js":53}],15:[function(require,module,exports){
 module.exports = require('filer');
 
-},{"filer":42}],15:[function(require,module,exports){
+},{"filer":43}],16:[function(require,module,exports){
 /**
  * Extra common fs operations we do throughout MakeDrive.
  */
@@ -1581,7 +1730,7 @@ module.exports = {
   fgetChecksum: fgetChecksum
 };
 
-},{"./constants.js":11}],16:[function(require,module,exports){
+},{"./constants.js":12}],17:[function(require,module,exports){
 var rsyncUtils = require('./rsync-utils');
 var async = require('../async-lite');
 
@@ -1741,7 +1890,7 @@ module.exports = function checksums(fs, path, srcList, options, callback) {
   });
 };
 
-},{"../async-lite":9,"./rsync-utils":20}],17:[function(require,module,exports){
+},{"../async-lite":10,"./rsync-utils":21}],18:[function(require,module,exports){
 var Errors = require('../filer').Errors;
 var rsyncUtils = require('./rsync-utils');
 var async = require('../async-lite');
@@ -1918,7 +2067,7 @@ module.exports = function diff(fs, path, checksumList, options, callback) {
   });
 };
 
-},{"../async-lite":9,"../filer":14,"./rsync-utils":20}],18:[function(require,module,exports){
+},{"../async-lite":10,"../filer":15,"./rsync-utils":21}],19:[function(require,module,exports){
 /* index.js
  * Implement rsync to sync between two Filer filesystems
  * Portions used from Node.js Anchor module
@@ -1936,7 +2085,7 @@ module.exports = {
   utils: require('./rsync-utils')
 };
 
-},{"./checksums":16,"./diff":17,"./patch":19,"./rsync-utils":20,"./source-list":21}],19:[function(require,module,exports){
+},{"./checksums":17,"./diff":18,"./patch":20,"./rsync-utils":21,"./source-list":22}],20:[function(require,module,exports){
 var fsUtils = require('../fs-utils');
 var Filer = require('../filer');
 var Buffer = Filer.Buffer;
@@ -2342,7 +2491,7 @@ module.exports = function patch(fs, path, diffList, options, callback) {
   });
 };
 
-},{"../async-lite":9,"../conflict":10,"../filer":14,"../fs-utils":15,"./rsync-utils":20}],20:[function(require,module,exports){
+},{"../async-lite":10,"../conflict":11,"../filer":15,"../fs-utils":16,"./rsync-utils":21}],21:[function(require,module,exports){
 /*
  * Rsync utilities that include hashing
  * algorithms necessary for rsync and
@@ -2783,7 +2932,7 @@ module.exports = {
   validateParams: validateParams
 };
 
-},{"../async-lite":9,"../filer":14,"../fs-utils":15,"MD5":24}],21:[function(require,module,exports){
+},{"../async-lite":10,"../filer":15,"../fs-utils":16,"MD5":25}],22:[function(require,module,exports){
 var Path = require('../filer').Path;
 var async = require('../async-lite');
 var conflict = require('../conflict');
@@ -2896,7 +3045,7 @@ module.exports = function sourceList(fs, path, options, callback) {
   getSrcListForPath(path);
 };
 
-},{"../async-lite":9,"../conflict":10,"../filer":14,"./rsync-utils":20}],22:[function(require,module,exports){
+},{"../async-lite":10,"../conflict":11,"../filer":15,"./rsync-utils":21}],23:[function(require,module,exports){
 /**
  * Sync path resolver is a library that provides
  * functionality to determine 'syncable' paths
@@ -2975,7 +3124,7 @@ pathResolver.resolveFromArray = function(paths) {
 
 module.exports = pathResolver;
 
-},{"./filer":14}],23:[function(require,module,exports){
+},{"./filer":15}],24:[function(require,module,exports){
 // Constructor
 function SyncMessage(type, name, content) {
   if(!SyncMessage.isValidType(type)) {
@@ -3200,7 +3349,7 @@ SyncMessage.error = {
 
 module.exports = SyncMessage;
 
-},{}],24:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 (function (Buffer){
 (function(){
   var crypt = require('crypt'),
@@ -3364,7 +3513,7 @@ module.exports = SyncMessage;
 })();
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":55,"charenc":25,"crypt":26}],25:[function(require,module,exports){
+},{"buffer":56,"charenc":26,"crypt":27}],26:[function(require,module,exports){
 var charenc = {
   // UTF-8 encoding
   utf8: {
@@ -3399,7 +3548,7 @@ var charenc = {
 
 module.exports = charenc;
 
-},{}],26:[function(require,module,exports){
+},{}],27:[function(require,module,exports){
 (function() {
   var base64map
       = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/',
@@ -3497,7 +3646,7 @@ module.exports = charenc;
   module.exports = crypt;
 })();
 
-},{}],27:[function(require,module,exports){
+},{}],28:[function(require,module,exports){
 // Browser Request
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -3973,7 +4122,7 @@ function b64_enc (data) {
 }
 module.exports = request;
 
-},{}],28:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -4276,7 +4425,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],29:[function(require,module,exports){
+},{}],30:[function(require,module,exports){
 (function (process){
 /*global setImmediate: false, setTimeout: false, console: false */
 
@@ -4365,7 +4514,7 @@ function isUndefined(arg) {
 }());
 
 }).call(this,require('_process'))
-},{"_process":59}],30:[function(require,module,exports){
+},{"_process":60}],31:[function(require,module,exports){
 // Based on https://github.com/diy/intercom.js/blob/master/lib/events.js
 // Copyright 2012 DIY Co Apache License, Version 2.0
 // http://www.apache.org/licenses/LICENSE-2.0
@@ -4438,7 +4587,7 @@ EventEmitter.prototype.removeAllListeners = pub.removeAllListeners;
 
 module.exports = EventEmitter;
 
-},{}],31:[function(require,module,exports){
+},{}],32:[function(require,module,exports){
 (function (global){
 // Based on https://github.com/diy/intercom.js/blob/master/lib/intercom.js
 // Copyright 2012 DIY Co Apache License, Version 2.0
@@ -4760,7 +4909,7 @@ Intercom.getInstance = (function() {
 module.exports = Intercom;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../src/shared.js":50,"./eventemitter.js":30}],32:[function(require,module,exports){
+},{"../src/shared.js":51,"./eventemitter.js":31}],33:[function(require,module,exports){
 // Cherry-picked bits of underscore.js, lodash.js
 
 /**
@@ -4859,7 +5008,7 @@ function nodash(value) {
 
 module.exports = nodash;
 
-},{}],33:[function(require,module,exports){
+},{}],34:[function(require,module,exports){
 /*
  * base64-arraybuffer
  * https://github.com/niklasvh/base64-arraybuffer
@@ -4920,7 +5069,7 @@ module.exports = nodash;
   };
 })("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/");
 
-},{}],34:[function(require,module,exports){
+},{}],35:[function(require,module,exports){
 (function (Buffer){
 function FilerBuffer (subject, encoding, nonZero) {
 
@@ -4947,7 +5096,7 @@ Object.keys(Buffer).forEach(function (p) {
 module.exports = FilerBuffer;
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":55}],35:[function(require,module,exports){
+},{"buffer":56}],36:[function(require,module,exports){
 var O_READ = 'READ';
 var O_WRITE = 'WRITE';
 var O_CREATE = 'CREATE';
@@ -5029,7 +5178,7 @@ module.exports = {
   }
 };
 
-},{}],36:[function(require,module,exports){
+},{}],37:[function(require,module,exports){
 var MODE_FILE = require('./constants.js').MODE_FILE;
 
 module.exports = function DirectoryEntry(id, type) {
@@ -5037,7 +5186,7 @@ module.exports = function DirectoryEntry(id, type) {
   this.type = type || MODE_FILE;
 };
 
-},{"./constants.js":35}],37:[function(require,module,exports){
+},{"./constants.js":36}],38:[function(require,module,exports){
 (function (Buffer){
 // Adapt encodings to work with Buffer or Uint8Array, they expect the latter
 function decode(buf) {
@@ -5054,7 +5203,7 @@ module.exports = {
 };
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":55}],38:[function(require,module,exports){
+},{"buffer":56}],39:[function(require,module,exports){
 var errors = {};
 [
   /**
@@ -5160,7 +5309,7 @@ var errors = {};
 
 module.exports = errors;
 
-},{}],39:[function(require,module,exports){
+},{}],40:[function(require,module,exports){
 var _ = require('../../lib/nodash.js');
 
 var Path = require('../path.js');
@@ -7233,7 +7382,7 @@ module.exports = {
   ftruncate: ftruncate
 };
 
-},{"../../lib/nodash.js":32,"../buffer.js":34,"../constants.js":35,"../directory-entry.js":36,"../encoding.js":37,"../errors.js":38,"../node.js":43,"../open-file-description.js":44,"../path.js":45,"../stats.js":53,"../super-node.js":54}],40:[function(require,module,exports){
+},{"../../lib/nodash.js":33,"../buffer.js":35,"../constants.js":36,"../directory-entry.js":37,"../encoding.js":38,"../errors.js":39,"../node.js":44,"../open-file-description.js":45,"../path.js":46,"../stats.js":54,"../super-node.js":55}],41:[function(require,module,exports){
 var _ = require('../../lib/nodash.js');
 
 var isNullPath = require('../path.js').isNull;
@@ -7576,7 +7725,7 @@ FileSystem.prototype.Shell = function(options) {
 
 module.exports = FileSystem;
 
-},{"../../lib/intercom.js":31,"../../lib/nodash.js":32,"../constants.js":35,"../errors.js":38,"../fs-watcher.js":41,"../path.js":45,"../providers/index.js":46,"../shared.js":50,"../shell/shell.js":52,"./implementation.js":39}],41:[function(require,module,exports){
+},{"../../lib/intercom.js":32,"../../lib/nodash.js":33,"../constants.js":36,"../errors.js":39,"../fs-watcher.js":42,"../path.js":46,"../providers/index.js":47,"../shared.js":51,"../shell/shell.js":53,"./implementation.js":40}],42:[function(require,module,exports){
 var EventEmitter = require('../lib/eventemitter.js');
 var Path = require('./path.js');
 var Intercom = require('../lib/intercom.js');
@@ -7640,7 +7789,7 @@ FSWatcher.prototype.constructor = FSWatcher;
 
 module.exports = FSWatcher;
 
-},{"../lib/eventemitter.js":30,"../lib/intercom.js":31,"./path.js":45}],42:[function(require,module,exports){
+},{"../lib/eventemitter.js":31,"../lib/intercom.js":32,"./path.js":46}],43:[function(require,module,exports){
 module.exports = {
   FileSystem: require('./filesystem/interface.js'),
   Buffer: require('./buffer.js'),
@@ -7648,7 +7797,7 @@ module.exports = {
   Errors: require('./errors.js')
 };
 
-},{"./buffer.js":34,"./errors.js":38,"./filesystem/interface.js":40,"./path.js":45}],43:[function(require,module,exports){
+},{"./buffer.js":35,"./errors.js":39,"./filesystem/interface.js":41,"./path.js":46}],44:[function(require,module,exports){
 var MODE_FILE = require('./constants.js').MODE_FILE;
 
 function Node(options) {
@@ -7703,7 +7852,7 @@ Node.create = function(options, callback) {
 
 module.exports = Node;
 
-},{"./constants.js":35}],44:[function(require,module,exports){
+},{"./constants.js":36}],45:[function(require,module,exports){
 var Errors = require('./errors.js');
 
 function OpenFileDescription(path, id, flags, position) {
@@ -7736,7 +7885,7 @@ OpenFileDescription.prototype.getNode = function(context, callback) {
 
 module.exports = OpenFileDescription;
 
-},{"./errors.js":38}],45:[function(require,module,exports){
+},{"./errors.js":39}],46:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -7962,7 +8111,7 @@ module.exports = {
   isNull: isNull
 };
 
-},{}],46:[function(require,module,exports){
+},{}],47:[function(require,module,exports){
 var IndexedDB = require('./indexeddb.js');
 var WebSQL = require('./websql.js');
 var Memory = require('./memory.js');
@@ -7999,7 +8148,7 @@ module.exports = {
   }())
 };
 
-},{"./indexeddb.js":47,"./memory.js":48,"./websql.js":49}],47:[function(require,module,exports){
+},{"./indexeddb.js":48,"./memory.js":49,"./websql.js":50}],48:[function(require,module,exports){
 (function (global,Buffer){
 var FILE_SYSTEM_NAME = require('../constants.js').FILE_SYSTEM_NAME;
 var FILE_STORE_NAME = require('../constants.js').FILE_STORE_NAME;
@@ -8151,7 +8300,7 @@ IndexedDB.prototype.getReadWriteContext = function() {
 module.exports = IndexedDB;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer)
-},{"../buffer.js":34,"../constants.js":35,"../errors.js":38,"buffer":55}],48:[function(require,module,exports){
+},{"../buffer.js":35,"../constants.js":36,"../errors.js":39,"buffer":56}],49:[function(require,module,exports){
 var FILE_SYSTEM_NAME = require('../constants.js').FILE_SYSTEM_NAME;
 // NOTE: prefer setImmediate to nextTick for proper recursion yielding.
 // see https://github.com/js-platform/filer/pull/24
@@ -8243,7 +8392,7 @@ Memory.prototype.getReadWriteContext = function() {
 
 module.exports = Memory;
 
-},{"../../lib/async.js":29,"../constants.js":35}],49:[function(require,module,exports){
+},{"../../lib/async.js":30,"../constants.js":36}],50:[function(require,module,exports){
 (function (global){
 var FILE_SYSTEM_NAME = require('../constants.js').FILE_SYSTEM_NAME;
 var FILE_STORE_NAME = require('../constants.js').FILE_STORE_NAME;
@@ -8418,7 +8567,7 @@ WebSQL.prototype.getReadWriteContext = function() {
 module.exports = WebSQL;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../buffer.js":34,"../constants.js":35,"../errors.js":38,"base64-arraybuffer":33}],50:[function(require,module,exports){
+},{"../buffer.js":35,"../constants.js":36,"../errors.js":39,"base64-arraybuffer":34}],51:[function(require,module,exports){
 function guid() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
     var r = Math.random()*16|0, v = c == 'x' ? r : (r&0x3|0x8);
@@ -8446,7 +8595,7 @@ module.exports = {
   nop: nop
 };
 
-},{}],51:[function(require,module,exports){
+},{}],52:[function(require,module,exports){
 var defaults = require('../constants.js').ENVIRONMENT;
 
 module.exports = function Environment(env) {
@@ -8463,7 +8612,7 @@ module.exports = function Environment(env) {
   };
 };
 
-},{"../constants.js":35}],52:[function(require,module,exports){
+},{"../constants.js":36}],53:[function(require,module,exports){
 var Path = require('../path.js');
 var Errors = require('../errors.js');
 var Environment = require('./environment.js');
@@ -8894,7 +9043,7 @@ Shell.prototype.mkdirp = function(path, callback) {
 
 module.exports = Shell;
 
-},{"../../lib/async.js":29,"../encoding.js":37,"../errors.js":38,"../path.js":45,"./environment.js":51}],53:[function(require,module,exports){
+},{"../../lib/async.js":30,"../encoding.js":38,"../errors.js":39,"../path.js":46,"./environment.js":52}],54:[function(require,module,exports){
 var Constants = require('./constants.js');
 
 function Stats(fileNode, devName) {
@@ -8931,7 +9080,7 @@ function() {
 
 module.exports = Stats;
 
-},{"./constants.js":35}],54:[function(require,module,exports){
+},{"./constants.js":36}],55:[function(require,module,exports){
 var Constants = require('./constants.js');
 
 function SuperNode(options) {
@@ -8959,7 +9108,7 @@ SuperNode.create = function(options, callback) {
 
 module.exports = SuperNode;
 
-},{"./constants.js":35}],55:[function(require,module,exports){
+},{"./constants.js":36}],56:[function(require,module,exports){
 /*!
  * The buffer module from node.js, for the browser.
  *
@@ -9799,7 +9948,7 @@ Buffer.prototype.copy = function (target, target_start, start, end) {
 
   var len = end - start
 
-  if (len < 100 || !Buffer.TYPED_ARRAY_SUPPORT) {
+  if (len < 1000 || !Buffer.TYPED_ARRAY_SUPPORT) {
     for (var i = 0; i < len; i++) {
       target[i + target_start] = this[i + start]
     }
@@ -9868,6 +10017,7 @@ var BP = Buffer.prototype
  * Augment a Uint8Array *instance* (not the Uint8Array class!) with Buffer methods
  */
 Buffer._augment = function (arr) {
+  arr.constructor = Buffer
   arr._isBuffer = true
 
   // save reference to original Uint8Array get/set methods before overwriting
@@ -10011,7 +10161,7 @@ function decodeUtf8Char (str) {
   }
 }
 
-},{"base64-js":56,"ieee754":57,"is-array":58}],56:[function(require,module,exports){
+},{"base64-js":57,"ieee754":58,"is-array":59}],57:[function(require,module,exports){
 var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 ;(function (exports) {
@@ -10133,7 +10283,7 @@ var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 	exports.fromByteArray = uint8ToBase64
 }(typeof exports === 'undefined' ? (this.base64js = {}) : exports))
 
-},{}],57:[function(require,module,exports){
+},{}],58:[function(require,module,exports){
 exports.read = function(buffer, offset, isLE, mLen, nBytes) {
   var e, m,
       eLen = nBytes * 8 - mLen - 1,
@@ -10219,7 +10369,7 @@ exports.write = function(buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128;
 };
 
-},{}],58:[function(require,module,exports){
+},{}],59:[function(require,module,exports){
 
 /**
  * isArray
@@ -10254,7 +10404,7 @@ module.exports = isArray || function (val) {
   return !! val && '[object Array]' == str.call(val);
 };
 
-},{}],59:[function(require,module,exports){
+},{}],60:[function(require,module,exports){
 // shim for using process in browser
 
 var process = module.exports = {};
@@ -10262,6 +10412,8 @@ var process = module.exports = {};
 process.nextTick = (function () {
     var canSetImmediate = typeof window !== 'undefined'
     && window.setImmediate;
+    var canMutationObserver = typeof window !== 'undefined'
+    && window.MutationObserver;
     var canPost = typeof window !== 'undefined'
     && window.postMessage && window.addEventListener
     ;
@@ -10270,8 +10422,29 @@ process.nextTick = (function () {
         return function (f) { return window.setImmediate(f) };
     }
 
+    var queue = [];
+
+    if (canMutationObserver) {
+        var hiddenDiv = document.createElement("div");
+        var observer = new MutationObserver(function () {
+            var queueList = queue.slice();
+            queue.length = 0;
+            queueList.forEach(function (fn) {
+                fn();
+            });
+        });
+
+        observer.observe(hiddenDiv, { attributes: true });
+
+        return function nextTick(fn) {
+            if (!queue.length) {
+                hiddenDiv.setAttribute('yes', 'no');
+            }
+            queue.push(fn);
+        };
+    }
+
     if (canPost) {
-        var queue = [];
         window.addEventListener('message', function (ev) {
             var source = ev.source;
             if ((source === window || source === null) && ev.data === 'process-tick') {
@@ -10311,7 +10484,7 @@ process.emit = noop;
 
 process.binding = function (name) {
     throw new Error('process.binding is not supported');
-}
+};
 
 // TODO(shtylman)
 process.cwd = function () { return '/' };
