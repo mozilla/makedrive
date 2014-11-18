@@ -142,6 +142,73 @@ describe('MakeDrive Client - conflicted copy integration', function(){
   });
 
   /**
+   * This test creates 2 simultaneous clients for the same user, and simulates
+   * a situation where a conflicted copy should be made. It then makes sure that
+   * this conflicted copy is created, and that it is not synced back to the server.
+   * Next the client modifies the conflicted copy (not a rename) and makes sure this
+   * also doesn't sync.
+   */
+  it('should not sync conflicted copy when modified (i.e., not rename)', function(done) {
+    client2.sync.once('completed', function() {
+      // Make sure we have a confliced copy now + the new file.
+      client2.fs.readdir('/dir1', function(err, entries) {
+        if(err) throw err;
+        expect(entries.length).to.equal(2);
+        expect(entries).to.include('file1');
+
+        // Make sure this is a real conflicted copy, both in name
+        // and also in terms of attributes on the file.
+        var conflictedCopyFilename = findConflictedFilename(entries);
+        expect(conflict.filenameContainsConflicted(conflictedCopyFilename)).to.be.true;
+        conflict.isConflictedCopy(client2.fs, conflictedCopyFilename, function(err, conflicted) {
+          if(err) throw err;
+          expect(conflicted).to.be.true;
+
+          // Make sure the conflicted copy has the changes we expect
+          client2.fs.readFile(conflictedCopyFilename, 'utf8', function(err, data) {
+            if(err) throw err;
+
+            // Should have client2's modifications
+            expect(data).to.equal('data+2');
+
+            // Modify the conflicted copy without doing a rename
+            client2.fs.appendFile(conflictedCopyFilename, 'more data', function(err) {
+              if(err) throw err;
+
+              // Now change the filesystem, sync back to the server, and make sure the
+              // conflicted copy isn't synced to the server.
+              client2.fs.writeFile('/dir1/file2', 'contents of file2', function(err) {
+                if(err) throw err;
+
+                client2.sync.once('completed', function() {
+                  // Our server's filesystem should now look like this:
+                  var newLayout = {
+                    // NOTE: /dir1/file1 should have client1's changes, not client2's,
+                    // which are in the conflicted copy instead. Also, the conflicted
+                    // copy we have locally with client2 shouldn't be on the server at all.
+                    '/dir1/file1': 'data+1',
+                    '/dir1/file2': 'contents of file2'
+                  };
+
+                  util.ensureRemoteFilesystem(newLayout, client2.jar, function(err) {
+                    expect(err).not.to.exist;
+                    done();
+                  });
+                });
+
+                client2.sync.request();
+              });
+            });
+          });
+        });
+      });
+    });
+
+    // Sync client1's change to server
+    client1.sync.request();
+  });
+
+  /**
    * This test also causes a conflicted copy to be made, renames it, which should
    * clear the conflict, then does a sync back to the server, checking that it synced.
    */
