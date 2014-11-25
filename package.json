@@ -61,7 +61,7 @@
     "filer": "git://github.com/alicoding/filer.git#mozfest",
     "filer-fs": "0.1.2",
     "filer-s3": "0.1.1",
-    "filer-sql": "0.0.2",
+    "filer-sql": "0.0.3",
     "grunt-contrib-less": "^0.11.4",
     "habitat": "1.1.0",
     "helmet": "0.2.0",
