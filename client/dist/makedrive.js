@@ -86,7 +86,8 @@ module.exports = global.WebSocket;
  * - 'error': an error occured while connecting/syncing. The error
  * object is passed as the first arg to the event.
  *
- * - 'connected': a connection was established with the sync server
+ * - 'connected': a connection was established with the sync server. This
+ * does not indicate that a sync has begun (use the 'syncing' event instead).
  *
  * - 'disconnected': the connection to the sync server was lost, either
  * due to the client or server.
@@ -95,7 +96,14 @@ module.exports = global.WebSocket;
  * or 'error' event should follow at some point, indicating whether
  * or not the sync was successful.
  *
- * - 'completed': a sync has completed and was successful.
+ * - 'idle': a sync was requested but no sync was performed. This usually
+ * is triggered when no changes were made to the filesystem and hence, no
+ * changes were needed to be synced to the server.
+ *
+ * - 'completed': a file/directory/symlink has been synced successfully.
+ *
+ * - 'synced': MakeDrive has been synced and all paths are up-to-date with
+ * the server.
  *
  *
  * The `sync` property also exposes a number of methods, including:
@@ -108,8 +116,8 @@ module.exports = global.WebSocket;
  *
  * - disconnect(): disconnect from the sync server.
  *
- * - request(path): request a sync with the server for the specified
- * path. Such requests may or may not be processed right away.
+ * - request(): request a sync with the server.
+ * Such requests may or may not be processed right away.
  *
  *
  * Finally, the `sync` propery also exposes a `state`, which is the
@@ -119,14 +127,12 @@ module.exports = global.WebSocket;
  * sync.SYNC_CONNECTING = "SYNC CONNECTING"
  * sync.SYNC_CONNECTED = "SYNC CONNECTED"
  * sync.SYNC_SYNCING = "SYNC SYNCING"
- * sync.SYNC_ERROR = "SYNC ERROR"
  */
 
 var SyncManager = require('./sync-manager.js');
 var SyncFileSystem = require('./sync-filesystem.js');
 var Filer = require('../../lib/filer.js');
 var EventEmitter = require('events').EventEmitter;
-var resolvePath = require('../../lib/sync-path-resolver.js').resolveFromArray;
 var log = require('./logger.js');
 
 var MakeDrive = {};
@@ -170,22 +176,18 @@ function createFS(options) {
   var fs = new SyncFileSystem(_fs);
   var sync = fs.sync = new EventEmitter();
   var manager;
+  Object.defineProperty(sync, 'downstreamQueue', {
+    get: function() { return manager && manager.downstreams; }
+  });
 
   // Auto-sync handles
   var autoSync;
-  var pathCache;
-
-  // Path that needs to be used for an upstream sync
-  // to sync files that were determined to be more 
-  // up-to-date on the client during a downstream sync
-  var upstreamPath;
 
   // State of the sync connection
   sync.SYNC_DISCONNECTED = "SYNC DISCONNECTED";
   sync.SYNC_CONNECTING = "SYNC CONNECTING";
   sync.SYNC_CONNECTED = "SYNC CONNECTED";
   sync.SYNC_SYNCING = "SYNC SYNCING";
-  sync.SYNC_ERROR = "SYNC ERROR";
 
   // Intitially we are not connected
   sync.state = sync.SYNC_DISCONNECTED;
@@ -215,34 +217,6 @@ function createFS(options) {
     manager = null;
   }
 
-  function requestSync(path) {
-    // If we're not connected (or are already syncing), ignore this request
-    if(sync.state === sync.SYNC_DISCONNECTED || sync.state === sync.SYNC_ERROR) {
-      sync.emit('error', new Error('Invalid state. Expected ' + sync.SYNC_CONNECTED + ', got ' + sync.state));
-      log.warn('Tried to sync in invalid state: ' + sync.state);
-      return;
-    }
-
-    // If there were no changes to the filesystem and
-    // no path was passed to sync, ignore this request
-    if(!fs.pathToSync && !path) {
-      log.debug('Skipping sync request, no changes to sync');
-      return;
-    }
-
-    // If a path was passed sync using it
-    if(path) {
-      log.info('Requesting sync for ' + path);
-      return manager.syncPath(path);
-    }
-
-    // Cache the path that needs to be synced for error recovery
-    pathCache = fs.pathToSync;
-    fs.pathToSync = null;
-    log.info('Requesting sync for ' + pathCache);
-    manager.syncPath(pathCache);
-  }
-
   // Turn on auto-syncing if its not already on
   sync.auto = function(interval) {
     var syncInterval = interval|0 > 0 ? interval|0 : 15 * 1000;
@@ -264,21 +238,20 @@ function createFS(options) {
     }
   };
 
-  // The server stopped our upstream sync mid-way through.
-  sync.onInterrupted = function() {
-    fs.pathToSync = pathCache;
-    sync.state = sync.SYNC_CONNECTED;
-    sync.emit('error', new Error('Sync interrupted by server.'));
-    log.warn('Sync interrupted by server, caching current path: ' + pathCache);
+  // The sync was stopped mid-way through.
+  sync.onInterrupted = function(path) {
+    sync.emit('error', new Error('Sync interrupted for path ' + path));
+    log.warn('Sync interrupted by server for ' + path);
   };
 
   sync.onError = function(err) {
-    // Regress to the path that needed to be synced but failed
-    // (likely because of a sync LOCK)
-    fs.pathToSync = upstreamPath || pathCache;
-    sync.state = sync.SYNC_ERROR;
     sync.emit('error', err);
     log.error('Sync error', err);
+  };
+
+  sync.onIdle = function(reason) {
+    sync.emit('idle', reason);
+    log.info('No sync took place: ' + reason);
   };
 
   sync.onDisconnected = function() {
@@ -294,26 +267,28 @@ function createFS(options) {
 
     sync.state = sync.SYNC_DISCONNECTED;
     sync.emit('disconnected');
-    log.info('Disconnected');
+    log.info('Disconnected from MakeDrive server');
   };
 
   // Request that a sync begin.
+  // sync.request does not take any parameters
+  // as the path to sync is determined internally
   sync.request = function() {
-    // sync.request does not take any parameters
-    // as the path to sync is determined internally
-    // requestSync on the other hand optionally takes
-    // a path to sync which can be specified for
-    // internal use
-    requestSync();
+    if(sync.state === sync.SYNC_CONNECTING || sync.state === sync.SYNC_DISCONNECTED) {
+      sync.emit('error', new Error('MakeDrive error: MakeDrive cannot sync as it is either disconnected or trying to connect'));
+      log.warn('Tried to sync in invalid state: ' + sync.state);
+      return;
+    }
+
+    log.info('Requesting sync');
+    manager.syncUpstream();
   };
 
   // Try to connect to the server.
   sync.connect = function(url, token) {
     // Bail if we're already connected
-    if(sync.state !== sync.SYNC_DISCONNECTED &&
-       sync.state !== sync.ERROR) {
+    if(sync.state !== sync.SYNC_DISCONNECTED) {
       log.warn('Tried to connect, but already connected');
-      sync.emit('error', new Error("MakeDrive: Attempted to connect to \"" + url + "\", but a connection already exists!"));
       return;
     }
 
@@ -326,116 +301,101 @@ function createFS(options) {
     log.info('Connecting to MakeDrive server');
     sync.state = sync.SYNC_CONNECTING;
 
-    function downstreamSyncCompleted(paths, needUpstream) {
-      var startTime;
-
-      // Re-wire message handler functions for regular syncing
-      // now that initial downstream sync is completed.
-      sync.onSyncing = function() {
-        sync.state = sync.SYNC_SYNCING;
-        sync.emit('syncing');
-        log.info('Started syncing');
-        startTime = Date.now();
-      };
-
-      sync.onCompleted = function(paths, needUpstream) {
-        // If changes happened to the files that needed to be synced
-        // during the sync itself, they will be overwritten
-        // https://github.com/mozilla/makedrive/issues/129
-
-        function complete() {
-          sync.state = sync.SYNC_CONNECTED;
-          sync.emit('completed');
-          var duration = (Date.now() - startTime) + 'ms';
-          log.info('Completed syncing in ' + duration);
-        }
-
-        if(!paths && !needUpstream) {
-          return complete();
-        }
-
-        // Changes in the client are newer (determined during
-        // the sync) and need to be upstreamed
-        if(needUpstream) {
-          upstreamPath = resolvePath(needUpstream);
-          complete();
-          log.debug('Client changes are newer for ' + upstreamPath);
-          return requestSync(upstreamPath);
-        }
-
-        // If changes happened during a downstream sync
-        // Change the path that needs to be synced
-        manager.resetUnsynced(paths, function(err) {
-          if(err) {
-            log.error('Error resetting unsynced paths for ' + paths, err);
-            return sync.onError(err);
-          }
-
-          upstreamPath = null;
-          complete();
-        });
-      };
-
-      // Upgrade connection state to 'connected'
-      sync.state = sync.SYNC_CONNECTED;
-
-      // If we're in manual mode, bail before starting auto-sync
-      if(options.manual) {
-        sync.manual();
-      } else {
-        sync.auto(options.interval);
-      }
-
-      // In a browser, try to clean-up after ourselves when window goes away
-      if("onbeforeunload" in global) {
-        log.debug('Adding window.beforeunload handler');
-        global.addEventListener('beforeunload', windowCloseHandler);
-      }
-      if("onunload" in global){
-        log.debug('Adding window.unload handler');
-        global.addEventListener('unload', cleanupManager);
-      }
-
-      log.info('Connected');
-      sync.emit('connected');
-
-      // If the downstream was completed and some
-      // versions of files were not synced as they were
-      // newer on the client, upstream them
-      if(needUpstream) {
-        upstreamPath = resolvePath(needUpstream);
-        log.debug('Client changes are newer for ' + upstreamPath);
-        requestSync(upstreamPath);
-      } else {
-        upstreamPath = null;
-      }
-    }
-
     function connect(token) {
       // Try to connect to provided server URL. Use the raw Filer fs
       // instance for all rsync operations on the filesystem, so that we
       // can untangle changes done by user vs. sync code.
-      manager = new SyncManager(sync, _fs);
+      manager = new SyncManager(sync, fs, _fs);
+
       manager.init(url, token, options, function(err) {
         if(err) {
           log.error('Error connecting to ' + url, err);
           sync.onError(err);
           return;
         }
+        // If we're in manual mode, bail before starting auto-sync
+        if(options.manual) {
+          sync.manual();
+        } else {
+          sync.auto(options.interval);
+        }
 
-        var startTime;
+        // In a browser, try to clean-up after ourselves when window goes away
+        if("onbeforeunload" in global) {
+          global.addEventListener('beforeunload', windowCloseHandler);
+        }
+        if("onunload" in global){
+          global.addEventListener('unload', cleanupManager);
+        }
 
-        // Wait on initial downstream sync events to complete
-        sync.onSyncing = function() {
-          // do nothing, wait for onCompleted()
-          log.info('Starting initial downstream sync');
-          startTime = Date.now();
+        // Deals with race conditions if a sync was
+        // started immediately after connecting before
+        // this callback could be triggered
+        if(sync.state !== sync.SYNC_SYNCING) {
+          sync.state = sync.SYNC_CONNECTED;
+          sync.emit('connected', url);
+          log.info('MakeDrive connected to server at ' + url);
+        }
+
+        sync.onSyncing = function(path) {
+          // A downstream sync might have just started,
+          // update the queue
+          sync.state = sync.SYNC_SYNCING;
+          sync.emit('syncing', 'Sync started for ' + path);
+          log.info('Sync started for ' + path);
         };
-        sync.onCompleted = function(paths, needUpstream) {
-          // Downstream sync is done, finish connect() setup
-          var duration = (Date.now() - startTime) + 'ms';
-          log.info('Completed initial downstream sync in ' + duration);
-          downstreamSyncCompleted(paths, needUpstream);
+
+        // A sync (either upstream or downstream) has completed for a single
+        // file/directory/symlink. The paths left to sync upstream needs to be
+        // updated and an event should be emitted.
+        sync.onCompleted = function(path, needsUpstream) {
+          var downstreamQueue = manager.downstreams;
+          needsUpstream = needsUpstream || [];
+
+          // If during a downstream sync was performed and it was found that
+          // the path is more up-to-date on the client and hence needs to be
+          // upstreamed to the server, add it to the upstream queue.
+          fs.appendPathsToSync(needsUpstream, function(err) {
+            if(err) {
+              sync.emit('error', err);
+              log.error('Error appending paths to upstream after sync completed for ' + path + ' with error', err);
+              return;
+            }
+
+            fs.getPathsToSync(function(err, pathsToSync) {
+              var syncsLeft;
+
+              if(err) {
+                sync.emit('error', err);
+                log.error('Error retrieving paths to sync after sync completed for ' + path + ' with error', err);
+                return;
+              }
+
+              // Determine if there are any more syncs remaining (both upstream and downstream)
+              syncsLeft = pathsToSync ? pathsToSync.concat(downstreamQueue) : downstreamQueue;
+
+              if(path) {
+                sync.emit('completed', path);
+                log.info('Sync completed for ' + path);
+              }
+
+              if(!syncsLeft.length) {
+                sync.allCompleted();
+              }
+            });
+          });
+        };
+
+        // This is called when all nodes have been synced
+        // upstream and all downstream syncs have completed
+        sync.allCompleted = function() {
+          if(sync.state !== sync.SYNC_DISCONNECTED) {
+            // Reset the state
+            sync.state = sync.SYNC_CONNECTED;
+          }
+
+          sync.emit('synced', 'MakeDrive has been synced');
+          log.info('All syncs completed');
         };
       });
     }
@@ -445,10 +405,8 @@ function createFS(options) {
   // Disconnect from the server
   sync.disconnect = function() {
     // Bail if we're not already connected
-    if(sync.state === sync.SYNC_DISCONNECTED ||
-       sync.state === sync.ERROR) {
+    if(sync.state === sync.SYNC_DISCONNECTED) {
       log.warn('Tried to disconnect while not connected');
-      sync.emit('error', new Error("MakeDrive: Attempted to disconnect, but no server connection exists!"));
       return;
     }
 
@@ -456,7 +414,6 @@ function createFS(options) {
     if(autoSync) {
       clearInterval(autoSync);
       autoSync = null;
-      fs.pathToSync = null;
     }
 
     // Do a proper network shutdown
@@ -486,9 +443,8 @@ MakeDrive.fs = function(options) {
   return sharedFS;
 };
 
-
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../../lib/filer.js":15,"../../lib/sync-path-resolver.js":23,"./logger.js":4,"./sync-filesystem.js":6,"./sync-manager.js":7,"events":29}],4:[function(require,module,exports){
+},{"../../lib/filer.js":13,"./logger.js":4,"./sync-filesystem.js":6,"./sync-manager.js":7,"events":27}],4:[function(require,module,exports){
 /**
  * Simplified Bunyan-like logger for browser.
  * https://github.com/trentm/node-bunyan
@@ -598,280 +554,523 @@ var SyncMessage = require('../../lib/syncmessage');
 var rsync = require('../../lib/rsync');
 var rsyncUtils = rsync.utils;
 var rsyncOptions = require('../../lib/constants').rsyncDefaults;
+var syncTypes = require('../../lib/constants').syncTypes;
 var serializeDiff = require('../../lib/diff').serialize;
 var deserializeDiff = require('../../lib/diff').deserialize;
-var states = require('./sync-states');
-var steps = require('./sync-steps');
-var dirname = require('../../lib/filer').Path.dirname;
-var async = require('../../lib/async-lite');
 var fsUtils = require('../../lib/fs-utils');
+var log = require('./logger.js');
+var findPathIndexInArray = require('../../lib/util.js').findPathIndexInArray;
 
 function onError(syncManager, err) {
-  syncManager.session.step = steps.FAILED;
   syncManager.sync.onError(err);
 }
 
-// Checks if path is in masterPath
-function hasCommonPath(masterPath, path) {
-  if(masterPath === path) {
-    return true;
+function sendChecksums(syncManager, path, type, sourceList) {
+  var fs = syncManager.fs;
+  var rawFs = syncManager.rawFs;
+  var sync = syncManager.sync;
+  var message;
+
+  // If the server requests to downstream a path that is not in the
+  // root, ignore the downstream.
+  if(path.indexOf(fs.root) !== 0) {
+    message = SyncMessage.response.root;
+    message.content = {path: path, type: type};
+    log.info('Ignoring ' + type + ' downstream sync for ' + path);
+    return syncManager.send(message.stringify());
   }
 
-  if(path === '/') {
-    return false;
-  }
+  syncManager.downstreams.push(path);
+  sync.onSyncing(path);
 
-  return hasCommonPath(masterPath, dirname(path));
+  rsync.checksums(rawFs, path, sourceList, rsyncOptions, function(err, checksums) {
+    if(err) {
+      log.error('Failed to generate checksums for ' + path + ' during downstream sync', err);
+      message = SyncMessage.request.delay;
+      message.content = {path: path, type: type};
+      syncManager.send(message.stringify());
+      return onError(syncManager, err);
+    }
+
+    fs.trackChanges(path, sourceList);
+    message = SyncMessage.request.diffs;
+    message.content = {path: path, type: type, checksums: checksums};
+    syncManager.send(message.stringify());
+  });
 }
 
 function handleRequest(syncManager, data) {
   var fs = syncManager.fs;
+  var rawFs = syncManager.rawFs;
   var sync = syncManager.sync;
-  var session = syncManager.session;
 
   function handleChecksumRequest() {
-    var srcList = session.srcList = data.content.srcList;
-    session.path = data.content.path;
-    fs.modifiedPath = null;
-    sync.onSyncing();
+    if(data.invalidContent(['type', 'sourceList'])) {
+      log.error('Path, type or source list not sent by server in handleChecksumRequest.', data);
+      return onError(syncManager, new Error('Server sent insufficient content'));
+    }
 
-    rsync.checksums(fs, session.path, srcList, rsyncOptions, function(err, checksums) {
-      if (err) {
-        return onError(syncManager, err);
-      }
-
-      session.step = steps.PATCH;
-
-      var message = SyncMessage.request.diffs;
-      message.content = {checksums: checksums};
-      syncManager.send(message.stringify());
-    });
+    sendChecksums(syncManager, data.content.path, data.content.type, data.content.sourceList);
   }
 
   function handleDiffRequest() {
-    rsync.diff(fs, session.path, data.content.checksums, rsyncOptions, function(err, diffs) {
-      if(err){
-        return onError(syncManager, err);
-      }
-
-      session.step = steps.PATCH;
-
-      var message = SyncMessage.response.diffs;
-      message.content = {diffs: serializeDiff(diffs)};
-      syncManager.send(message.stringify());
-    });
-  }
-
-
-  if(data.is.chksum && session.is.ready &&
-     (session.is.synced || session.is.failed)) {
-    // DOWNSTREAM - CHKSUM
-    handleChecksumRequest();
-  } else if(data.is.diffs && session.is.syncing && session.is.diffs) {
-    // UPSTREAM - DIFFS
-    handleDiffRequest();
-  } else {
-    onError(syncManager, new Error('Failed to sync with the server. Current step is: ' +
-                                    session.step + '. Current state is: ' + session.state));  }
-}
-
-function handleResponse(syncManager, data) {
-  var fs = syncManager.fs;
-  var sync = syncManager.sync;
-  var session = syncManager.session;
-
-  function resendChecksums() {
-    if(!session.srcList) {
-      // Sourcelist was somehow reset, the entire downstream sync
-      // needs to be restarted
-      session.step = steps.FAILED;
-      syncManager.send(SyncMessage.response.reset.stringify());
-      return onError(syncManager, new Error('Fatal Error: Could not sync filesystem from server...trying again!'));
-    }
-
-    rsync.checksums(fs, session.path, session.srcList, rsyncOptions, function(err, checksums) {
-      if(err) {
-        syncManager.send(SyncMessage.response.reset.stringify());
-        return onError(syncManager, err);
-      }
-
-      var message = SyncMessage.request.diffs;
-      message.content = {checksums: checksums};
-      syncManager.send(message.stringify());
-    });
-  }
-
-  function handleSrcListResponse() {
-    session.state = states.SYNCING;
-    session.step = steps.INIT;
-    session.path = data.content.path;
-    sync.onSyncing();
-
-    rsync.sourceList(fs, session.path, rsyncOptions, function(err, srcList) {
-      if(err){
-        syncManager.send(SyncMessage.request.reset.stringify());
-        return onError(syncManager, err);
-      }
-
-      session.step = steps.DIFFS;
-
-      var message = SyncMessage.request.chksum;
-      message.content = {srcList: srcList};
-      syncManager.send(message.stringify());
-    });
-  }
-
-  function handlePatchAckResponse() {
-    var syncedPaths = data.content.syncedPaths;
-    session.state = states.READY;
-    session.step = steps.SYNCED;
-
-    function stampChecksum(path, callback) {
-      fs.lstat(path, function(err, stats) {
+    if(data.invalidContent(['type', 'checksums'])) {
+      log.warn(data, 'Upstream sync message received from the server without sufficient information in handleDiffRequest');
+      fs.delaySync(function(err, path) {
         if(err) {
-          if(err.code !== 'ENOENT') {
-            return callback(err);
-          }
-
-          // Non-existent paths (usually due to renames or
-          // deletes that are included in the syncedPaths)
-          // cannot be stamped with a checksum
-          return callback();
+          log.error(err, 'An error occured while updating paths to sync in handleDiffRequest');
+          return onError(syncManager, err);
         }
 
-        if(!stats.isFile()) {
-          return callback();
-        }
-
-        rsyncUtils.getChecksum(fs, path, function(err, checksum) {
-          if(err) {
-            return callback(err);
-          }
-
-          fsUtils.setChecksum(fs, path, checksum, callback);
-        });
+        log.info('Sync delayed for ' + path + ' in handleDiffRequest');
+        syncManager.currentSync = false;
+        syncManager.syncUpstream();
       });
+      return;
     }
 
-    // As soon as an upstream sync happens, the files synced
-    // become the last synced versions and must be stamped
-    // with their checksums to version them
-    async.eachSeries(syncedPaths, stampChecksum, function(err) {
-      if(err) {
-        return onError(syncManager, err);
-      }
+    var path = data.content.path;
+    var type = data.content.type;
+    var checksums = data.content.checksums;
+    var message;
 
-      sync.onCompleted(data.content.syncedPaths);
+    rsync.diff(rawFs, path, checksums, rsyncOptions, function(err, diffs) {
+      if(err){
+        log.error(err, 'Error generating diffs in handleDiffRequest for ' + path);
+
+        fs.delaySync(function(delayErr, delayedPath) {
+          if(delayErr) {
+            log.error(err, 'Error updating paths to sync in handleDiffRequest after failing to generate diffs for ' + path);
+            return onError(syncManager, delayErr);
+          }
+
+          log.info('Sync delayed for ' + delayedPath + ' in handleDiffRequest');
+          syncManager.currentSync = false;
+          syncManager.syncUpstream();
+        });
+      } else {
+        message = SyncMessage.response.diffs;
+        message.content = {path: path, type: type, diffs: serializeDiff(diffs)};
+        syncManager.send(message.stringify());
+      }
     });
   }
 
-  function handlePatchResponse() {
-    var modifiedPath = fs.modifiedPath;
-    fs.modifiedPath = null;
-
-    // If there was a change to the filesystem that shares a common path with
-    // the path being synced, regenerate the checksums and send them
-    // (even if it is the initial one)
-    if(modifiedPath && hasCommonPath(session.path, modifiedPath)) {
-      return resendChecksums();
+  function handleRenameRequest() {
+    if(data.invalidContent(['type', 'oldPath'])) {
+      log.error('Path, type or old path not sent by server in handleRenameRequest.', data);
+      return onError(syncManager, new Error('Server sent insufficient content'));
     }
 
-    var diffs = data.content.diffs;
-    diffs = deserializeDiff(diffs);
+    var path = data.content.path;
+    var oldPath = data.content.oldPath;
+    var type = data.content.type;
+    var message;
 
-    rsync.patch(fs, session.path, diffs, rsyncOptions, function(err, paths) {
-      if (err) {
-        var message = SyncMessage.response.reset;
+    // If the server requests to downstream a path that is not in the
+    // root, ignore the downstream.
+    if(path.indexOf(fs.root) !== 0) {
+      message = SyncMessage.response.root;
+      message.content = {path: path};
+      log.info('Ignoring downstream sync for ' + path);
+      return syncManager.send(message.stringify());
+    }
+
+    syncManager.downstreams.push(path);
+    sync.onSyncing(oldPath);
+
+    rsyncUtils.rename(rawFs, oldPath, path, function(err) {
+      if(err) {
+        log.error('Failed to rename ' + oldPath + ' to ' + path + ' during downstream sync', err);
+        message = SyncMessage.request.delay;
+        message.content = {path: path, type: type};
         syncManager.send(message.stringify());
         return onError(syncManager, err);
       }
 
-      if(paths.needsUpstream.length) {
-        session.needsUpstream = paths.needsUpstream;
-      }
-
-      rsyncUtils.generateChecksums(fs, paths.synced, true, function(err, checksums) {
+      rsyncUtils.generateChecksums(rawFs, [path], true, function(err, checksum) {
         if(err) {
-          var message = SyncMessage.response.reset;
+          log.error('Failed to generate checksums for ' + path + ' during downstream rename', err);
+          message = SyncMessage.request.delay;
+          message.content = {path: path, type: type};
           syncManager.send(message.stringify());
           return onError(syncManager, err);
         }
 
-        var message = SyncMessage.response.patch;
-        message.content = {checksums: checksums};
+        message = SyncMessage.response.patch;
+        message.content = {path: path, type: type, checksum: checksum};
         syncManager.send(message.stringify());
+      });
+    });
+  }
+
+  function handleDeleteRequest() {
+    if(data.invalidContent(['type'])) {
+      log.error('Path or type not sent by server in handleRenameRequest.', data);
+      return onError(syncManager, new Error('Server sent insufficient content'));
+    }
+
+    var path = data.content.path;
+    var type = data.content.type;
+    var message;
+
+    // If the server requests to downstream a path that is not in the
+    // root, ignore the downstream.
+    if(path.indexOf(fs.root) !== 0) {
+      message = SyncMessage.response.root;
+      message.content = {path: path, type: type};
+      log.info('Ignoring downstream sync for ' + path);
+      return syncManager.send(message.stringify());
+    }
+
+    syncManager.downstreams.push(path);
+    sync.onSyncing(path);
+
+    rsyncUtils.del(rawFs, path, function(err) {
+      if(err) {
+        log.error('Failed to delete ' + path + ' during downstream sync', err);
+        message = SyncMessage.request.delay;
+        message.content = {path: path, type: type};
+        syncManager.send(message.stringify());
+        return onError(syncManager, err);
+      }
+
+      rsyncUtils.generateChecksums(rawFs, [path], false, function(err, checksum) {
+        if(err) {
+          log.error('Failed to generate checksums for ' + path + ' during downstream delete', err);
+          message = SyncMessage.request.delay;
+          message.content = {path: path, type: type};
+          syncManager.send(message.stringify());
+          return onError(syncManager, err);
+        }
+
+        message = SyncMessage.response.patch;
+        message.content = {path: path, type: type, checksum: checksum};
+        syncManager.send(message.stringify());
+      });
+    });
+  }
+
+  if(data.is.checksums) {
+    // DOWNSTREAM - CHKSUM
+    handleChecksumRequest();
+  } else if(data.is.diffs) {
+    // UPSTREAM - DIFFS
+    handleDiffRequest();
+  } else if(data.is.rename) {
+    // DOWNSTREAM - RENAME
+    handleRenameRequest();
+  } else if(data.is.del) {
+    // DOWNSTREAM - DELETE
+    handleDeleteRequest();
+  } else {
+    onError(syncManager, new Error('Failed to sync with the server.'));
+  }
+}
+
+function handleResponse(syncManager, data) {
+  var fs = syncManager.fs;
+  var rawFs = syncManager.rawFs;
+  var sync = syncManager.sync;
+
+  function handleSourceListResponse() {
+    if(data.invalidContent(['type'])) {
+      log.warn(data, 'Upstream sync message received from the server without sufficient information in handleSourceListResponse');
+      return fs.delaySync(function(err, path) {
+        if(err) {
+          log.error(err, 'An error occured while updating paths to sync in handleSourceListResponse');
+          return onError(syncManager, err);
+        }
+
+        log.info('Sync delayed for ' + path + ' in handleSourceListResponse');
+        syncManager.currentSync = false;
+        syncManager.syncUpstream();
+      });
+    }
+
+    var message;
+    var path = data.content.path;
+    var type = data.content.type;
+
+    sync.onSyncing(path);
+
+    if(type === syncTypes.RENAME) {
+      message = SyncMessage.request.rename;
+      message.content = {path: path, oldPath: data.content.oldPath, type: type};
+      return syncManager.send(message.stringify());
+    }
+
+    if(type === syncTypes.DELETE) {
+      message = SyncMessage.request.del;
+      message.content = {path: path, type: type};
+      return syncManager.send(message.stringify());
+    }
+
+    rsync.sourceList(rawFs, path, rsyncOptions, function(err, sourceList) {
+      if(err){
+        log.error(err, 'Error generating source list in handleSourceListResponse for ' + path);
+        return fs.delaySync(function(delayErr, delayedPath) {
+          if(delayErr) {
+            log.error(err, 'Error updating paths to sync in handleSourceListResponse after failing to generate source list for ' + path);
+            return onError(syncManager, delayErr);
+          }
+
+          log.info('Sync delayed for ' + delayedPath + ' in handleSourceListResponse');
+          syncManager.currentSync = false;
+          syncManager.syncUpstream();
+        });
+      }
+
+      message = SyncMessage.request.checksums;
+      message.content = {path: path, type: type, sourceList: sourceList};
+      syncManager.send(message.stringify());
+    });
+  }
+
+  // As soon as an upstream sync happens, the file synced
+  // becomes the last synced version and must be stamped
+  // with its checksum to version it and the unsynced attribute
+  // must be removed
+  function handlePatchAckResponse() {
+    var syncedPath = data.content.path;
+
+    function complete() {
+      fsUtils.removeUnsynced(fs, syncedPath, function(err) {
+        if(err && err.code !== 'ENOENT') {
+          log.error('Failed to remove unsynced attribute for ' + syncedPath + ' in handlePatchAckResponse, complete()');
+        }
+
+        syncManager.syncNext(syncedPath);
+      });
+    }
+
+    fs.lstat(syncedPath, function(err, stats) {
+      if(err) {
+        if(err.code !== 'ENOENT') {
+          log.error('Failed to access ' + syncedPath + ' in handlePatchAckResponse');
+          return fs.delaySync(function(delayErr, delayedPath) {
+            if(delayErr) {
+              log.error('Failed to delay upstream sync for ' + delayedPath + ' in handlePatchAckResponse');
+            }
+            onError(syncManager, err);
+          });
+        }
+
+        // Non-existent paths usually due to renames or
+        // deletes cannot be stamped with a checksum
+        return complete();
+      }
+
+      if(!stats.isFile()) {
+        return complete();
+      }
+
+      rsyncUtils.getChecksum(rawFs, syncedPath, function(err, checksum) {
+        if(err) {
+          log.error('Failed to get the checksum for ' + syncedPath + ' in handlePatchAckResponse');
+          return fs.delaySync(function(delayErr, delayedPath) {
+            if(delayErr) {
+              log.error('Failed to delay upstream sync for ' + delayedPath + ' in handlePatchAckResponse while getting checksum');
+            }
+            onError(syncManager, err);
+          });
+        }
+
+        fsUtils.setChecksum(rawFs, syncedPath, checksum, function(err) {
+          if(err) {
+            log.error('Failed to stamp the checksum for ' + syncedPath + ' in handlePatchAckResponse');
+            return fs.delaySync(function(delayErr, delayedPath) {
+              if(delayErr) {
+                log.error('Failed to delay upstream sync for ' + delayedPath + ' in handlePatchAckResponse while setting checksum');
+              }
+              onError(syncManager, err);
+            });
+          }
+
+          complete();
+        });
+      });
+    });
+  }
+
+  function handleDiffResponse() {
+    var message;
+
+    if(data.invalidContent(['type', 'diffs'])) {
+      log.error('Path, type or diffs not sent by server in handleDiffResponse.', data);
+      return onError(syncManager, new Error('Server sent insufficient content'));
+    }
+
+    var path = data.content.path;
+    var type = data.content.type;
+    var diffs = deserializeDiff(data.content.diffs);
+    var changedDuringDownstream = fs.changesDuringDownstream.indexOf(path);
+    var cachedSourceList = fs.untrackChanges(path);
+
+    if(changedDuringDownstream !== -1) {
+      // Resend the checksums for that path
+      return sendChecksums(syncManager, path, type, cachedSourceList);
+    }
+
+    rsync.patch(rawFs, path, diffs, rsyncOptions, function(err, paths) {
+      if(err) {
+        log.error('Failed to patch ' + path + ' during downstream sync', err);
+        message = SyncMessage.request.delay;
+        message.content = {path: path, type: type};
+        syncManager.send(message.stringify());
+        return onError(syncManager, err);
+      }
+
+      var needsUpstream = paths.needsUpstream;
+      syncManager.needsUpstream = syncManager.needsUpstream || [];
+      syncManager.needsUpstream.forEach(function(upstreamPath) {
+        if(needsUpstream.indexOf(upstreamPath) === -1) {
+          syncManager.needsUpstream.push(upstreamPath);
+        }
+      });
+
+      fsUtils.getPathsToSync(rawFs, fs.root, function(err, pathsToSync) {
+        if(err) {
+          log.error('Failed to update paths to sync during downstream sync', err);
+          message = SyncMessage.request.delay;
+          message.content = {path: path, type: type};
+          syncManager.send(message.stringify());
+          return onError(syncManager, err);
+        }
+
+        var indexInPathsToSync;
+
+        if(pathsToSync && pathsToSync.toSync && needsUpstream.indexOf(path) === -1) {
+          indexInPathsToSync = findPathIndexInArray(pathsToSync.toSync, path);
+          if(indexInPathsToSync !== -1) {
+            pathsToSync.toSync.splice(indexInPathsToSync, 1);
+          }
+        }
+
+        fsUtils.setPathsToSync(rawFs, fs.root, pathsToSync, function(err) {
+          if(err) {
+            log.error('Failed to update paths to sync during downstream sync', err);
+            message = SyncMessage.request.delay;
+            message.content = {path: path, type: type};
+            syncManager.send(message.stringify());
+            return onError(syncManager, err);
+          }
+
+          rsyncUtils.generateChecksums(rawFs, paths.synced, true, function(err, checksum) {
+            if(err) {
+              log.error('Failed to generate checksums for ' + paths.synced + ' during downstream patch', err);
+              message = SyncMessage.request.delay;
+              message.content = {path: path, type: type};
+              syncManager.send(message.stringify());
+              return onError(syncManager, err);
+            }
+
+            message = SyncMessage.response.patch;
+            message.content = {path: path, type: type, checksum: checksum};
+            syncManager.send(message.stringify());
+          });
+        });
       });
     });
   }
 
   function handleVerificationResponse() {
-    session.srcList = null;
-    session.step = steps.SYNCED;
-    var needsUpstream = session.needsUpstream;
-    delete session.needsUpstream;
-    sync.onCompleted(null, needsUpstream);
-  }
-
-  function handleUpstreamResetResponse() {
-    var message = SyncMessage.request.sync;
-    message.content = {path: session.path};
-    syncManager.send(message.stringify());
+    var path = data.content && data.content.path;
+    syncManager.downstreams.splice(syncManager.downstreams.indexOf(path), 1);
+    sync.onCompleted(path, syncManager.needsUpstream);
   }
 
   if(data.is.sync) {
     // UPSTREAM - INIT
-    handleSrcListResponse();
-  } else if(data.is.patch && session.is.syncing && session.is.patch) {
+    handleSourceListResponse();
+  } else if(data.is.patch) {
     // UPSTREAM - PATCH
     handlePatchAckResponse();
-  } else if(data.is.diffs && session.is.ready && session.is.patch) {
+  } else if(data.is.diffs) {
     // DOWNSTREAM - PATCH
-    handlePatchResponse();
-  } else if(data.is.verification && session.is.ready && session.is.patch) {
+    handleDiffResponse();
+  } else if(data.is.verification) {
     // DOWNSTREAM - PATCH VERIFICATION
     handleVerificationResponse();
-  }  else if (data.is.reset && session.is.failed) {
-    handleUpstreamResetResponse();
-  } else {
-    onError(syncManager, new Error('Failed to sync with the server. Current step is: ' +
-                                    session.step + '. Current state is: ' + session.state));  }
+  }  else {
+    onError(syncManager, new Error('Failed to sync with the server.'));
+  }
 }
 
 function handleError(syncManager, data) {
   var sync = syncManager.sync;
-  var session = syncManager.session;
-  var message = SyncMessage.response.reset;
+  var fs = syncManager.fs;
+  var path = data.content && data.content.path;
 
-  // DOWNSTREAM - ERROR
-  if((((data.is.srclist && session.is.synced)) ||
-      (data.is.diffs && session.is.patch) && (session.is.ready || session.is.syncing))) {
-    session.state = states.READY;
-    session.step = steps.SYNCED;
+  function handleForcedDownstream() {
+    fs.dequeueSync(function(err, syncsLeft, removedPath) {
+      if(err) {
+        log.fatal('Fatal error trying to dequeue sync in handleForcedDownstream');
+        return;
+      }
 
-    syncManager.send(message.stringify());
-    onError(syncManager, new Error('Could not sync filesystem from server... trying again'));
-  } else if(data.is.verification && session.is.patch && session.is.ready) {
-    syncManager.send(message.stringify());
-    onError(syncManager, new Error('Could not sync filesystem from server... trying again'));
-  } else if(data.is.locked && session.is.ready && session.is.synced) {
-    // UPSTREAM - LOCK
-    onError(syncManager, new Error('Current sync in progress! Try again later!'));
-  } else if(((data.is.chksum && session.is.diffs) ||
-             (data.is.patch && session.is.patch)) &&
-            session.is.syncing) {
-    // UPSTREAM - ERROR
-    var message = SyncMessage.request.reset;
-    syncManager.send(message.stringify());
-    onError(syncManager, new Error('Could not sync filesystem from server... trying again'));
-  } else if(data.is.maxsizeExceeded) {
-    // We are only emitting the error since this is can be sync again from the client
-    syncManager.sync.emit('error', new Error('Maximum file size exceeded'));
-  } else if(data.is.interrupted && session.is.syncing) {
-    // SERVER INTERRUPTED SYNC (LOCK RELEASED EARLY)
-    sync.onInterrupted();
+      syncManager.currentSync = false;
+      sync.onInterrupted(removedPath);
+    });
+  }
+
+  function handleUpstreamError() {
+    fs.delaySync(function(err, delayedPath) {
+      if(err) {
+        log.fatal('Fatal error trying to delay sync in handleUpstreamError');
+        return;
+      }
+
+      syncManager.currentSync = false;
+      sync.onInterrupted(delayedPath);
+    });
+  }
+
+  function handleDownstreamError() {
+    if(syncManager.downstreams && syncManager.downstreams.length) {
+      syncManager.downstreams.splice(syncManager.downstreams.indexOf(path), 1);
+    }
+
+    fs.untrackChanges(path);
+    sync.onInterrupted(path);
+  }
+
+  if(data.is.content) {
+    log.error('Invalid content was sent to the server');
+  } else if(data.is.needsDownstream) {
+    log.warn('Cancelling upstream for ' + path + ', downstreaming instead');
+    handleForcedDownstream();
+  } else if(data.is.impl) {
+    log.error('Server could not initialize upstream sync for ' + path);
+    handleUpstreamError();
+  } else if(data.is.interrupted) {
+    log.error('Server interrupted upstream sync due to incoming downstream for ' + path);
+    handleUpstreamError();
+  } else if(data.is.locked) {
+    log.error('Server cannot process upstream request due to ' + path + ' being locked');
+    handleUpstreamError();
+  } else if(data.is.fileSizeError) {
+    log.error('Maximum file size for upstream syncs exceeded for ' + path);
+    handleUpstreamError();
+  } else if(data.is.checksums) {
+    log.error('Error generating checksums on the server for ' + path);
+    handleUpstreamError();
+  } else if(data.is.patch) {
+    log.error('Error patching ' + path + ' on the server');
+    handleUpstreamError();
+  } else if(data.is.sourceList) {
+    log.fatal('Fatal error, server could not generate source list');
+  } else if(data.is.diffs) {
+    log.error('Error generating diffs on the server for ' + path);
+    handleDownstreamError();
+  } else if(data.is.downstreamLocked) {
+    log.error('Cannot downstream due to lock on ' + path + ' on the server');
+    handleDownstreamError();
+  } else if(data.is.verification) {
+    log.fatal('Patch could not be verified due to incorrect patching on downstreaming ' + path + '. Possible file corruption.');
+    handleDownstreamError();
   } else {
-    onError(syncManager, new Error('Failed to sync with the server. Current step is: ' +
-                                    session.step + '. Current state is: ' + session.state));
+    log.fatal(data, 'Unknown error sent by the server');
   }
 }
 
@@ -896,7 +1095,7 @@ function handleMessage(syncManager, data) {
 
 module.exports = handleMessage;
 
-},{"../../lib/async-lite":10,"../../lib/constants":12,"../../lib/diff":13,"../../lib/filer":15,"../../lib/fs-utils":16,"../../lib/rsync":19,"../../lib/syncmessage":24,"./sync-states":8,"./sync-steps":9}],6:[function(require,module,exports){
+},{"../../lib/constants":10,"../../lib/diff":11,"../../lib/fs-utils":14,"../../lib/rsync":17,"../../lib/syncmessage":21,"../../lib/util.js":22,"./logger.js":4}],6:[function(require,module,exports){
 /**
  * An extended Filer FileSystem with wrapped methods
  * for writing that manage file metadata (xattribs)
@@ -905,39 +1104,245 @@ module.exports = handleMessage;
 
 var Filer = require('../../lib/filer.js');
 var Shell = require('../../lib/filer-shell.js');
-var Path = Filer.Path;
 var fsUtils = require('../../lib/fs-utils.js');
 var conflict = require('../../lib/conflict.js');
-var resolvePath = require('../../lib/sync-path-resolver.js').resolve;
+var syncTypes = require('../../lib/constants.js').syncTypes;
+var findPathIndexInArray = require('../../lib/util.js').findPathIndexInArray;
+var log = require('./logger.js');
 
 function SyncFileSystem(fs) {
   var self = this;
-  var pathToSync;
-  var modifiedPath;
+  var root = '/';
+  // Record changes during a downstream sync
+  // Is a parallel array with sourceListCache
+  var trackedPaths = [];
+  var sourceListCache = [];
+  var changesDuringDownstream = [];
 
-  // Manage path resolution for sync path
-  Object.defineProperty(self, 'pathToSync', {
-    get: function() { return pathToSync; },
-    set: function(path) {
-      if(path) {
-        pathToSync = resolvePath(pathToSync, path);
-      } else {
-        pathToSync = null;
-      }
+  // Expose the root used to sync for the filesystem
+  // Defaults to '/'
+  Object.defineProperties(self, {
+    'root': {
+      get: function() { return root; }
+    },
+    'changesDuringDownstream': {
+      get: function() { return changesDuringDownstream; }
     }
   });
 
-  // Record modifications to the filesystem during a sync
-  Object.defineProperty(fs, 'modifiedPath', {
-    get: function() { return modifiedPath; },
-    set: function(path) {
-      if(path) {
-        modifiedPath = resolvePath(modifiedPath, path);
-      } else {
-        modifiedPath = null;
-      }
+  // Watch the given path for any changes made to it and cache
+  // the source list for that path
+  self.trackChanges = function(path, sourceList) {
+    trackedPaths.push(path);
+    sourceListCache.push(sourceList);
+  };
+
+  // Stop watching the given paths for changes and return the
+  // cached source list
+  self.untrackChanges = function(path) {
+    var indexInTrackedPaths = trackedPaths.indexOf(path);
+    var indexInChangesDuringDownstream = changesDuringDownstream.indexOf(path);
+
+    if(indexInTrackedPaths === -1) {
+      log.error('Path ' + path + ' not found in tracked paths list');
+      return null;
     }
-  });
+
+    trackedPaths.splice(indexInTrackedPaths, 1);
+
+    if(indexInChangesDuringDownstream !== -1) {
+      changesDuringDownstream.splice(changesDuringDownstream.indexOf(path), 1);
+    }
+
+    return sourceListCache.splice(indexInTrackedPaths, 1)[0];
+  };
+
+  // Get the paths queued up to sync
+  self.getPathsToSync = function(callback) {
+    fsUtils.getPathsToSync(fs, root, function(err, pathsToSync) {
+      if(err) {
+        return callback(err);
+      }
+
+      callback(null, pathsToSync && pathsToSync.toSync);
+    });
+  };
+
+  // Add paths to the sync queue where paths is an array
+  self.appendPathsToSync = function(paths, callback) {
+    if(!paths || !paths.length) {
+      return callback();
+    }
+
+    var syncPaths = [];
+
+    paths.forEach(function(pathObj) {
+      var syncObj = pathObj.path ? pathObj : {path: pathObj, type: syncTypes.CREATE};
+      if(syncObj.path.indexOf(root) === 0) {
+        syncPaths.push(syncObj);
+      }
+    });
+
+    fsUtils.getPathsToSync(fs, root, function(err, pathsToSync) {
+      if(err) {
+        return callback(err);
+      }
+
+      pathsToSync = pathsToSync || {};
+      pathsToSync.toSync = pathsToSync.toSync || [];
+      var toSync = pathsToSync.toSync;
+
+      syncPaths.forEach(function(syncObj) {
+        // Ignore redundancies
+        var exists = !(toSync.every(function(objToSync) {
+          return objToSync.path !== syncObj.path;
+        }));
+
+        if(!exists) {
+          pathsToSync.toSync.push(syncObj);
+        }
+      });
+
+      fsUtils.setPathsToSync(fs, root, pathsToSync, callback);
+    });
+  };
+
+  // Get the path that was modified during a sync
+  self.getModifiedPath = function(callback) {
+    fsUtils.getPathsToSync(fs, root, function(err, pathsToSync) {
+      if(err) {
+        return callback(err);
+      }
+
+      callback(null, pathsToSync && pathsToSync.modified);
+    });
+  };
+
+  // Indicate that the path at the front of the queue has
+  // begun syncing
+  self.setSyncing = function(callback) {
+    fsUtils.getPathsToSync(fs, root, function(err, pathsToSync) {
+      if(err) {
+        return callback(err);
+      }
+
+      if(!pathsToSync || !pathsToSync.toSync || !pathsToSync.toSync[0]) {
+        log.warn('setSyncing() called when no paths to sync present');
+        return callback();
+      }
+
+      pathsToSync.toSync[0].syncing = true;
+
+      callback();
+    });
+  };
+
+  // Delay the sync of the currently syncing path
+  // by moving it to the end of the sync queue
+  self.delaySync = function(callback) {
+    fsUtils.getPathsToSync(fs, root, function(err, pathsToSync) {
+      if(err) {
+        return callback(err);
+      }
+
+      if(!pathsToSync || !pathsToSync.toSync || !pathsToSync.toSync[0]) {
+        log.warn('delaySync() called when no paths to sync present');
+        return callback();
+      }
+
+      var delayedSync = pathsToSync.toSync.shift();
+      pathsToSync.toSync.push(delayedSync);
+      delete pathsToSync.modified;
+
+      fsUtils.setPathsToSync(fs, root, pathsToSync, function(err) {
+        if(err) {
+          return callback(err);
+        }
+
+        callback(null, delayedSync.path);
+      });
+    });
+  };
+
+  // Remove the path that was just synced
+  self.dequeueSync = function(callback) {
+    fsUtils.getPathsToSync(fs, root, function(err, pathsToSync) {
+      if(err) {
+        return callback(err);
+      }
+
+      if(!pathsToSync || !pathsToSync.toSync || !pathsToSync.toSync[0]) {
+        log.warn('dequeueSync() called when no paths to sync present');
+        return callback();
+      }
+
+      var removedSync = pathsToSync.toSync.shift();
+      if(!pathsToSync.toSync.length) {
+        delete pathsToSync.toSync;
+      }
+      delete pathsToSync.modified;
+
+      fsUtils.setPathsToSync(fs, root, pathsToSync, function(err) {
+        if(err) {
+          return callback(err);
+        }
+
+        callback(null, pathsToSync.toSync, removedSync.path);
+      });
+    });
+  };
+
+  // Set the sync root for the filesystem.
+  // The path provided must name an existing directory
+  // or the setter will fail.
+  // Once the new root is set, the paths remaining to
+  // sync and the path that was modified during a sync
+  // are filtered out if they are not under the new root.
+  self.setRoot = function(newRoot, callback) {
+    function containsRoot(pathOrObj) {
+      if(typeof pathOrObj === 'object') {
+        pathOrObj = pathOrObj.path || '';
+      }
+
+      return pathOrObj.indexOf(newRoot) === 0;
+    }
+
+    fs.lstat(newRoot, function(err, stats) {
+      if(err) {
+        return callback(err);
+      }
+
+      if(!stats.isDirectory()) {
+        return callback(new Filer.Errors.ENOTDIR('the given root is not a directory', newRoot));
+      }
+
+      fsUtils.getPathsToSync(fs, root, function(err, pathsToSync) {
+        if(err) {
+          return callback(err);
+        }
+
+        root = newRoot;
+
+        if(!pathsToSync) {
+          return callback();
+        }
+
+        if(pathsToSync.toSync) {
+          pathsToSync.toSync = pathsToSync.toSync.filter(containsRoot);
+
+          if(!pathsToSync.toSync.length) {
+            delete pathsToSync.toSync;
+          }
+        }
+
+        if(pathsToSync.modified && !containsRoot(pathsToSync.modified)) {
+          delete pathsToSync.modified;
+        }
+
+        callback();
+      });
+    });
+  };
 
   // The following non-modifying fs operations can be run as normal,
   // and are simply forwarded to the fs instance. NOTE: we have
@@ -963,7 +1368,7 @@ function SyncFileSystem(fs) {
   // for syncing (i.e., changes we need to sync back to the server), such that we
   // can track things. Different fs methods need to do this in slighly different ways,
   // but the overall logic is the same.  The wrapMethod() fn defines this logic.
-  function wrapMethod(method, pathArgPos, setUnsyncedFn, useParentPath) {
+  function wrapMethod(method, pathArgPos, setUnsyncedFn, type) {
     return function() {
       var args = Array.prototype.slice.call(arguments, 0);
       var lastIdx = args.length - 1;
@@ -974,23 +1379,10 @@ function SyncFileSystem(fs) {
       // second for some.
       var pathOrFD = args[pathArgPos];
 
-      // In most cases we want to use the path itself, but in the case
-      // that a node is being removed, we want the parent dir.
-      pathOrFD = useParentPath ? Path.dirname(pathOrFD) : pathOrFD;
-
-      // Check to see if it is a path or an open file descriptor
-      // TODO: Deal with a case of fs.open for a path with a write flag
-      // https://github.com/mozilla/makedrive/issues/210.
-      if(!fs.openFiles[pathOrFD]) {
-        self.pathToSync = pathOrFD;
-        // Record the path that was modified on the fs
-        fs.modifiedPath = pathOrFD;
-      }
-
-      args[lastIdx] = function wrappedCallback() {
+      function wrappedCallback() {
         var args = Array.prototype.slice.call(arguments, 0);
-        if(args[0]) {
-          return callback(args[0]);
+        if(args[0] || type === syncTypes.DELETE) {
+          return callback.apply(null, args);
         }
 
         setUnsyncedFn(pathOrFD, function(err) {
@@ -999,37 +1391,106 @@ function SyncFileSystem(fs) {
           }
           callback.apply(null, args);
         });
-      };
+      }
 
-      fs[method].apply(fs, args);
+      args[lastIdx] = wrappedCallback;
+
+      if(type === syncTypes.DELETE && pathOrFD === root) {
+        // Deal with deletion of the sync root
+        // https://github.com/mozilla/makedrive/issues/465
+        log.warn('Tried to delete the sync root ' + root);
+      }
+
+      // Don't record extra sync-level details about modifications to an
+      // existing conflicted copy, since we don't sync them.
+      conflict.isConflictedCopy(fs, pathOrFD, function(err, conflicted) {
+        // Deal with errors other than the path not existing (this fs
+        // call might be creating it, in which case it's also not conflicted).
+        if(err && err.code !== 'ENOENT') {
+          return callback.apply(null, [err]);
+        }
+
+        conflicted = !!conflicted;
+
+        // Check to see if it is a path or an open file descriptor
+        // and do not record the path if it is not contained
+        // in the specified syncing root of the filesystem, or if it is conflicted.
+        // TODO: Deal with a case of fs.open for a path with a write flag
+        // https://github.com/mozilla/makedrive/issues/210.
+        if(fs.openFiles[pathOrFD] || pathOrFD.indexOf(root) !== 0 || conflicted) {
+          fs[method].apply(fs, args);
+          return;
+        }
+
+        if(trackedPaths.indexOf(pathOrFD) !== -1 && self.changesDuringDownstream.indexOf(pathOrFD) === -1) {
+          self.changesDuringDownstream.push(pathOrFD);
+        }
+
+        // Queue the path for syncing in the pathsToSync
+        // xattr on the sync root
+        fsUtils.getPathsToSync(fs, root, function(err, pathsToSync) {
+          if(err) {
+            return callback(err);
+          }
+
+          var syncPath = {
+            path: pathOrFD,
+            type: type
+          };
+          if(type === syncTypes.RENAME) {
+            syncPath.oldPath = args[pathArgPos - 1];
+          }
+          var indexInPathsToSync;
+
+
+          pathsToSync = pathsToSync || {};
+          pathsToSync.toSync = pathsToSync.toSync || [];
+          indexInPathsToSync = findPathIndexInArray(pathsToSync.toSync, pathOrFD);
+
+          if(indexInPathsToSync === 0 && pathsToSync.toSync[0].syncing) {
+            // If at the top of pathsToSync, the path is
+            // currently syncing so change the modified path
+            pathsToSync.modified = pathOrFD;
+          } else if(indexInPathsToSync === -1) {
+            pathsToSync.toSync.push(syncPath);
+          }
+
+          fsUtils.setPathsToSync(fs, root, pathsToSync, function(err) {
+            if(err) {
+              return callback(err);
+            }
+
+            fs[method].apply(fs, args);
+          });
+        });
+      });
     };
   }
 
   // Wrapped fs methods that have path at first arg position and use paths
   ['truncate', 'mknod', 'mkdir', 'utimes', 'writeFile',
    'appendFile'].forEach(function(method) {
-     self[method] = wrapMethod(method, 0, setUnsynced);
+     self[method] = wrapMethod(method, 0, setUnsynced, syncTypes.CREATE);
   });
 
   // Wrapped fs methods that have path at second arg position
   ['link', 'symlink'].forEach(function(method) {
-    self[method] = wrapMethod(method, 1, setUnsynced);
+    self[method] = wrapMethod(method, 1, setUnsynced, syncTypes.CREATE);
   });
 
-  // Wrapped fs methods that have path at second arg position, and need to use the parent path.
+  // Wrapped fs methods that have path at second arg position
   ['rename'].forEach(function(method) {
-    self[method] = wrapMethod(method, 1, setUnsynced, true);
+    self[method] = wrapMethod(method, 1, setUnsynced, syncTypes.RENAME);
   });
 
   // Wrapped fs methods that use file descriptors
   ['ftruncate', 'futimes', 'write'].forEach(function(method) {
-    self[method] = wrapMethod(method, 0, fsetUnsynced);
+    self[method] = wrapMethod(method, 0, fsetUnsynced, syncTypes.CREATE);
   });
 
-  // Wrapped fs methods that have path at first arg position and use parent
-  // path for writing unsynced metadata (i.e., removes node)
+  // Wrapped fs methods that have path at first arg position
   ['rmdir', 'unlink'].forEach(function(method) {
-    self[method] = wrapMethod(method, 0, setUnsynced, true);
+    self[method] = wrapMethod(method, 0, setUnsynced, syncTypes.DELETE);
   });
 
   // We also want to do extra work in the case of a rename.
@@ -1047,11 +1508,37 @@ function SyncFileSystem(fs) {
           return callback(err);
         }
 
-        if(conflicted) {
-          conflict.removeFileConflict(fs, newPath, callback);
-        } else {
-          callback();
+        if(!conflicted) {
+          return callback();
         }
+
+        conflict.removeFileConflict(fs, newPath, function(err) {
+          if(err) {
+            return callback(err);
+          }
+
+          fsUtils.getPathsToSync(fs, root, function(err, pathsToSync) {
+            var indexInPathsToSync;
+            var syncInfo;
+
+            if(err) {
+              return callback(err);
+            }
+
+            indexInPathsToSync = findPathIndexInArray(pathsToSync.toSync, newPath);
+
+            if(indexInPathsToSync === -1) {
+              return;
+            }
+
+            syncInfo = pathsToSync.toSync[indexInPathsToSync];
+            syncInfo.type = syncTypes.CREATE;
+            delete syncInfo.oldPath;
+            pathsToSync.toSync[indexInPathsToSync] = syncInfo;
+
+            fsUtils.setPathsToSync(fs, root, pathsToSync, callback);
+          });
+        });
       });
     });
   };
@@ -1062,9 +1549,7 @@ function SyncFileSystem(fs) {
   // ourselves. The other down side of this is that we're now including
   // the Shell code twice (once in filer.js, once here). We need to
   // optimize this when we look at making MakeDrive smaller.
-  self.Shell = function(options) {
-    return new Shell(self, options);
-  };
+  self.Shell = Shell.bind(undefined, self);
 
   // Expose extra operations for checking whether path/fd is unsynced
   self.getUnsynced = function(path, callback) {
@@ -1077,68 +1562,26 @@ function SyncFileSystem(fs) {
 
 module.exports = SyncFileSystem;
 
-},{"../../lib/conflict.js":11,"../../lib/filer-shell.js":14,"../../lib/filer.js":15,"../../lib/fs-utils.js":16,"../../lib/sync-path-resolver.js":23}],7:[function(require,module,exports){
+},{"../../lib/conflict.js":9,"../../lib/constants.js":10,"../../lib/filer-shell.js":12,"../../lib/filer.js":13,"../../lib/fs-utils.js":14,"../../lib/util.js":22,"./logger.js":4}],7:[function(require,module,exports){
 var SyncMessage = require( '../../lib/syncmessage' ),
     messageHandler = require('./message-handler'),
-    states = require('./sync-states'),
-    steps = require('./sync-steps'),
     WS = require('ws'),
-    fsUtils = require('../../lib/fs-utils'),
-    async = require('../../lib/async-lite.js'),
     request = require('request'),
-    url = require('url');
+    url = require('url'),
+    log = require('./logger.js');
 
-function SyncManager(sync, fs) {
+function SyncManager(sync, fs, _fs) {
   var manager = this;
 
   manager.sync = sync;
   manager.fs = fs;
-  manager.session = {
-    state: states.CLOSED,
-    step: steps.SYNCED,
-    path: '/',
-
-    is: Object.create(Object.prototype, {
-      // States
-      syncing: {
-        get: function() { return manager.session.state === states.SYNCING; }
-      },
-      ready: {
-        get: function() { return manager.session.state === states.READY; }
-      },
-      error: {
-        get: function() { return manager.session.state === states.ERROR; }
-      },
-      closed: {
-        get: function() { return manager.session.state === states.CLOSED; }
-      },
-
-      // Steps
-      init: {
-        get: function() { return manager.session.step === steps.INIT; }
-      },
-      chksum: {
-        get: function() { return manager.session.step === steps.CHKSUM; }
-      },
-      diffs: {
-        get: function() { return manager.session.step === steps.DIFFS; }
-      },
-      patch: {
-        get: function() { return manager.session.step === steps.PATCH; }
-      },
-      synced: {
-        get: function() { return manager.session.step === steps.SYNCED; }
-      },
-      failed: {
-        get: function() { return manager.session.step === steps.FAILED; }
-      }
-    })
-  };
+  manager.rawFs = _fs;
+  manager.downstreams = [];
+  manager.needsUpstream = [];
 }
 
 SyncManager.prototype.init = function(wsUrl, token, options, callback) {
   var manager = this;
-  var session = manager.session;
   var sync = manager.sync;
   var reconnectCounter = 0;
   var socket;
@@ -1154,9 +1597,6 @@ SyncManager.prototype.init = function(wsUrl, token, options, callback) {
     }
 
     if(data.is.response && data.is.authz) {
-      session.state = states.READY;
-      session.step = steps.SYNCED;
-
       socket.onmessage = function(event) {
         var data = event.data || event;
         messageHandler(manager, data);
@@ -1275,39 +1715,66 @@ SyncManager.prototype.init = function(wsUrl, token, options, callback) {
   connect();
 };
 
-SyncManager.prototype.syncPath = function(path) {
+SyncManager.prototype.syncUpstream = function() {
   var manager = this;
+  var fs = manager.fs;
+  var sync = manager.sync;
   var syncRequest;
+  var syncInfo;
 
   if(!manager.socket) {
     throw new Error('sync called before init');
   }
 
-  syncRequest = SyncMessage.request.sync;
-  syncRequest.content = {path: path};
-  manager.send(syncRequest.stringify());
-};
-
-// Remove the unsynced attribute for a list of paths
-SyncManager.prototype.resetUnsynced = function(paths, callback) {
-  var fs = this.fs;
-
-  function removeUnsyncedAttr(path, callback) {
-    fsUtils.removeUnsynced(fs, path, function(err) {
-      if(err && err.code !== 'ENOENT') {
-        return callback(err);
-      }
-
-      callback();
-    });
+  if(manager.currentSync) {
+    sync.onError(new Error('Sync currently underway'));
+    return;
   }
 
-  async.eachSeries(paths, removeUnsyncedAttr, function(err) {
+  fs.getPathsToSync(function(err, pathsToSync) {
     if(err) {
-      return callback(err);
+      sync.onError(err);
+      return;
     }
 
-    callback();
+    if(!pathsToSync || !pathsToSync.length) {
+      log.warn('Nothing to sync');
+      sync.onIdle('No changes made to the filesystem');
+      return;
+    }
+
+    syncInfo = pathsToSync[0];
+
+    fs.setSyncing(function(err) {
+      if(err) {
+        sync.onError(err);
+        return;
+      }
+
+      manager.currentSync = syncInfo;
+      syncRequest = SyncMessage.request.sync;
+      syncRequest.content = {path: syncInfo.path, type: syncInfo.type};
+      if(syncInfo.oldPath) {
+        syncRequest.content.oldPath = syncInfo.oldPath;
+      }
+      manager.send(syncRequest.stringify());
+    });
+  });
+};
+
+SyncManager.prototype.syncNext = function(syncedPath) {
+  var manager = this;
+  var fs = manager.fs;
+  var sync = manager.sync;
+
+  fs.dequeueSync(function(err, syncsLeft, dequeuedSync) {
+    if(err) {
+      log.error('Failed to dequeue sync for ' + syncedPath + ' in SyncManager.syncNext()');
+    }
+
+    sync.onCompleted(dequeuedSync || syncedPath);
+    manager.currentSync = false;
+    manager.syncUpstream();
   });
 };
 
@@ -1349,27 +1816,11 @@ SyncManager.prototype.send = function(syncMessage) {
 
 module.exports = SyncManager;
 
-},{"../../lib/async-lite.js":10,"../../lib/fs-utils":16,"../../lib/syncmessage":24,"./message-handler":5,"./sync-states":8,"./sync-steps":9,"request":28,"url":1,"ws":2}],8:[function(require,module,exports){
-module.exports = {
-  SYNCING: "SYNC IN PROGRESS",
-  READY: "READY",
-  ERROR: "ERROR",
-  CLOSED: "CLOSED"
-};
-},{}],9:[function(require,module,exports){
-module.exports = {
-  INIT: "SYNC INITIALIZED",
-  CHKSUM: "CHECKSUM",
-  DIFFS: "DIFFS",
-  PATCH: "PATCH",
-  SYNCED: "SYNCED",
-  FAILED: "FAILED"
-};
-},{}],10:[function(require,module,exports){
+},{"../../lib/syncmessage":21,"./logger.js":4,"./message-handler":5,"request":26,"url":1,"ws":2}],8:[function(require,module,exports){
 // We're sharing Filer's same stripped-down version of async, in order to save space.
 module.exports = require('../node_modules/filer/lib/async.js');
 
-},{"../node_modules/filer/lib/async.js":30}],11:[function(require,module,exports){
+},{"../node_modules/filer/lib/async.js":28}],9:[function(require,module,exports){
 /**
  * Utility functions for working with Conflicted Files.
  */
@@ -1412,8 +1863,22 @@ function filenameContainsConflicted(path) {
   return /\(Conflicted Copy \d{4}-\d{1,2}-\d{1,2} \d{1,2}:\d{1,2}:\d{1,2}\)/.test(path);
 }
 
-function isConflictedCopy(fs, path, callback) {
-  fs.getxattr(path, constants.attributes.conflict, function(err, value) {
+// Is this a file descriptor (number)?
+// Based on https://github.com/jquery/jquery/blob/c869a1ef8a031342e817a2c063179a787ff57239/src/core.js#L214
+function isFD(obj) {
+  return (obj - parseFloat(obj) + 1) >= 0;
+}
+
+function isConflictedCopy(fs, pathOrFD, callback) {
+  // Figure out how to read the xattrib, via fd or path
+  var method;
+  if(isFD(pathOrFD)) {
+    method = 'fgetxattr';
+  } else {
+    method = 'getxattr';
+  }
+
+  fs[method](pathOrFD, constants.attributes.conflict, function(err, value) {
     if(err && err.code !== 'ENOATTR') {
       return callback(err);
     }
@@ -1466,18 +1931,28 @@ module.exports = {
   removeFileConflict: removeFileConflict
 };
 
-},{"./constants.js":12,"./filer.js":15,"./fs-utils.js":16}],12:[function(require,module,exports){
+},{"./constants.js":10,"./filer.js":13,"./fs-utils.js":14}],10:[function(require,module,exports){
 module.exports = {
   rsyncDefaults: {
     size: 5,
     time: true,
-    recursive: true
+    recursive: false,
+    superficial: true
   },
 
   attributes: {
     unsynced: 'makedrive-unsynced',
     conflict: 'makedrive-conflict',
-    checksum: 'makedrive-checksum'
+    checksum: 'makedrive-checksum',
+    partial:  'makedrive-partial',
+    pathsToSync: 'makedrive-pathsToSync'
+  },
+
+  // Sync Type constants
+  syncTypes: {
+    CREATE: 'create',
+    RENAME: 'rename',
+    DELETE: 'delete'
   },
 
   server: {
@@ -1492,6 +1967,7 @@ module.exports = {
       LISTENING: 'LISTENING',
       INIT: 'INIT',
       OUT_OF_DATE: 'OUT_OF_DATE',
+      SYNCING: 'SYNCING',
       CHKSUM: 'CHKSUM',
       PATCH: 'PATCH',
       ERROR: 'ERROR'
@@ -1499,7 +1975,7 @@ module.exports = {
   }
 };
 
-},{}],13:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
 /**
  * Functions to process lists of Node Diff objects (i.e.,
  * diffs of files, folders). A Node Diff object takes the
@@ -1565,19 +2041,72 @@ module.exports.deserialize = function(nodeDiffs) {
   return processFn(nodeDiffs, jsonToBuffer);
 };
 
-},{"./filer.js":15}],14:[function(require,module,exports){
+},{"./filer.js":13}],12:[function(require,module,exports){
 // Filer doesn't expose the Shell() ctor directly, so provide a shortcut.
 // See client/src/sync-filesystem.js
 module.exports = require('../node_modules/filer/src/shell/shell.js');
 
-},{"../node_modules/filer/src/shell/shell.js":53}],15:[function(require,module,exports){
+},{"../node_modules/filer/src/shell/shell.js":54}],13:[function(require,module,exports){
 module.exports = require('filer');
 
-},{"filer":43}],16:[function(require,module,exports){
+},{"filer":44}],14:[function(require,module,exports){
 /**
  * Extra common fs operations we do throughout MakeDrive.
  */
 var constants = require('./constants.js');
+
+// See if a given path a) exists, and whether it is marked with an xattr.
+function hasAttr(fs, path, attr, callback) {
+  fs.getxattr(path, attr, function(err, attrVal) {
+    // File doesn't exist locally at all
+    if(err && err.code === 'ENOENT') {
+      return callback(null, false);
+    }
+
+    // Deal with unexpected error
+    if(err && err.code !== 'ENOATTR') {
+      return callback(err);
+    }
+
+    callback(null, !!attrVal);
+  });
+}
+
+// Remove the metadata from a path or file descriptor
+function removeAttr(fs, pathOrFd, attr, isFd, callback) {
+  var removeFn = 'fremovexattr';
+
+  if(isFd !== true) {
+    callback = isFd;
+    removeFn = 'removexattr';
+  }
+
+  fs[removeFn](pathOrFd, attr, function(err) {
+    if(err && err.code !== 'ENOATTR') {
+      return callback(err);
+    }
+
+    callback();
+  });
+}
+
+// Get the metadata for a path or file descriptor
+function getAttr(fs, pathOrFd, attr, isFd, callback) {
+  var getFn = 'fgetxattr';
+
+  if(isFd !== true) {
+    callback = isFd;
+    getFn = 'getxattr';
+  }
+
+  fs[getFn](pathOrFd, attr, function(err, value) {
+    if(err && err.code !== 'ENOATTR') {
+      return callback(err);
+    }
+
+    callback(null, value);
+  });
+}
 
 // copy oldPath to newPath, deleting newPath if it exists
 function forceCopy(fs, oldPath, newPath, callback) {
@@ -1598,39 +2127,15 @@ function forceCopy(fs, oldPath, newPath, callback) {
 
 // See if a given path a) exists, and whether it is marked unsynced.
 function isPathUnsynced(fs, path, callback) {
-  fs.getxattr(path, constants.attributes.unsynced, function(err, unsynced) {
-    // File doesn't exist locally at all
-    if(err && err.code === 'ENOENT') {
-      return callback(null, false);
-    }
-
-    // Deal with unexpected error
-    if(err && err.code !== 'ENOATTR') {
-      return callback(err);
-    }
-
-    callback(null, !!unsynced);
-  });
+  hasAttr(fs, path, constants.attributes.unsynced, callback);
 }
 
 // Remove the unsynced metadata from a path
 function removeUnsynced(fs, path, callback) {
-  fs.removexattr(path, constants.attributes.unsynced, function(err) {
-    if(err && err.code !== 'ENOATTR') {
-      return callback(err);
-    }
-
-    callback();
-  });
+  removeAttr(fs, path, constants.attributes.unsynced, callback);
 }
 function fremoveUnsynced(fs, fd, callback) {
-  fs.fremovexattr(fd, constants.attributes.unsynced, function(err) {
-    if(err && err.code !== 'ENOATTR') {
-      return callback(err);
-    }
-
-    callback();
-  });
+  removeAttr(fs, fd, constants.attributes.unsynced, true, callback);
 }
 
 // Set the unsynced metadata for a path
@@ -1643,42 +2148,18 @@ function fsetUnsynced(fs, fd, callback) {
 
 // Get the unsynced metadata for a path
 function getUnsynced(fs, path, callback) {
-  fs.getxattr(path, constants.attributes.unsynced, function(err, value) {
-    if(err && err.code !== 'ENOATTR') {
-      return callback(err);
-    }
-
-    callback(null, value);
-  });
+  getAttr(fs, path, constants.attributes.unsynced, callback);
 }
 function fgetUnsynced(fs, fd, callback) {
-  fs.fgetxattr(fd, constants.attributes.unsynced, function(err, value) {
-    if(err && err.code !== 'ENOATTR') {
-      return callback(err);
-    }
-
-    callback(null, value);
-  });
+  getAttr(fs, fd, constants.attributes.unsynced, true, callback);
 }
 
 // Remove the Checksum metadata from a path
 function removeChecksum(fs, path, callback) {
-  fs.removexattr(path, constants.attributes.checksum, function(err) {
-    if(err && err.code !== 'ENOATTR') {
-      return callback(err);
-    }
-
-    callback();
-  });
+  removeAttr(fs, path, constants.attributes.checksum, callback);
 }
 function fremoveChecksum(fs, fd, callback) {
-  fs.fremovexattr(fd, constants.attributes.checksum, function(err) {
-    if(err && err.code !== 'ENOATTR') {
-      return callback(err);
-    }
-
-    callback();
-  });
+  removeAttr(fs, fd, constants.attributes.checksum, true, callback);
 }
 
 // Set the Checksum metadata for a path
@@ -1691,22 +2172,55 @@ function fsetChecksum(fs, fd, checksum, callback) {
 
 // Get the Checksum metadata for a path
 function getChecksum(fs, path, callback) {
-  fs.getxattr(path, constants.attributes.checksum, function(err, value) {
-    if(err && err.code !== 'ENOATTR') {
-      return callback(err);
-    }
-
-    callback(null, value);
-  });
+  getAttr(fs, path, constants.attributes.checksum, callback);
 }
 function fgetChecksum(fs, fd, callback) {
-  fs.fgetxattr(fd, constants.attributes.checksum, function(err, value) {
-    if(err && err.code !== 'ENOATTR') {
-      return callback(err);
-    }
+  getAttr(fs, fd, constants.attributes.checksum, true, callback);
+}
 
-    callback(null, value);
-  });
+// See if a given path a) exists, and whether it is marked partial.
+function isPathPartial(fs, path, callback) {
+  hasAttr(fs, path, constants.attributes.partial, callback);
+}
+
+// Remove the partial metadata from a path
+function removePartial(fs, path, callback) {
+  removeAttr(fs, path, constants.attributes.partial, callback);
+}
+function fremovePartial(fs, fd, callback) {
+  removeAttr(fs, fd, constants.attributes.partial, true, callback);
+}
+
+// Set the partial metadata for a path
+function setPartial(fs, path, nodeCount, callback) {
+  fs.setxattr(path, constants.attributes.partial, nodeCount, callback);
+}
+function fsetPartial(fs, fd, nodeCount, callback) {
+  fs.fsetxattr(fd, constants.attributes.partial, nodeCount, callback);
+}
+
+// Get the partial metadata for a path
+function getPartial(fs, path, callback) {
+  getAttr(fs, path, constants.attributes.partial, callback);
+}
+function fgetPartial(fs, fd, callback) {
+  getAttr(fs, fd, constants.attributes.partial, true, callback);
+}
+
+// Set the pathsToSync metadata for a path
+function setPathsToSync(fs, path, pathsToSync, callback) {
+  fs.setxattr(path, constants.attributes.pathsToSync, pathsToSync, callback);
+}
+function fsetPathsToSync(fs, fd, pathsToSync, callback) {
+  fs.fsetxattr(fd, constants.attributes.pathsToSync, pathsToSync, callback);
+}
+
+// Get the pathsToSync metadata for a path
+function getPathsToSync(fs, path, callback) {
+  getAttr(fs, path, constants.attributes.pathsToSync, callback);
+}
+function fgetPathsToSync(fs, fd, callback) {
+  getAttr(fs, fd, constants.attributes.pathsToSync, true, callback);
 }
 
 module.exports = {
@@ -1727,10 +2241,25 @@ module.exports = {
   setChecksum: setChecksum,
   fsetChecksum: fsetChecksum,
   getChecksum: getChecksum,
-  fgetChecksum: fgetChecksum
+  fgetChecksum: fgetChecksum,
+
+  // Partial attr utils
+  isPathPartial: isPathPartial,
+  removePartial: removePartial,
+  fremovePartial: fremovePartial,
+  setPartial: setPartial,
+  fsetPartial: fsetPartial,
+  getPartial: getPartial,
+  fgetPartial: fgetPartial,
+
+  // Paths to sync utils
+  setPathsToSync: setPathsToSync,
+  fsetPathsToSync: fsetPathsToSync,
+  getPathsToSync: getPathsToSync,
+  fgetPathsToSync: fgetPathsToSync
 };
 
-},{"./constants.js":12}],17:[function(require,module,exports){
+},{"./constants.js":10}],15:[function(require,module,exports){
 var rsyncUtils = require('./rsync-utils');
 var async = require('../async-lite');
 
@@ -1890,7 +2419,7 @@ module.exports = function checksums(fs, path, srcList, options, callback) {
   });
 };
 
-},{"../async-lite":10,"./rsync-utils":21}],18:[function(require,module,exports){
+},{"../async-lite":8,"./rsync-utils":19}],16:[function(require,module,exports){
 var Errors = require('../filer').Errors;
 var rsyncUtils = require('./rsync-utils');
 var async = require('../async-lite');
@@ -1998,7 +2527,6 @@ module.exports = function diff(fs, path, checksumList, options, callback) {
       if(options.versions) {
         return appendChecksum(diffNode, checksumNodePath, callback);
       }
-
       diffList.push(diffNode);
 
       callback(null, diffList);
@@ -2014,9 +2542,25 @@ module.exports = function diff(fs, path, checksumList, options, callback) {
       // Directory
       if(checksumNode.type === 'DIRECTORY') {
         diffNode.diffs = [];
-        diffList.push(diffNode);
 
-        return callback();
+        if(options.recursive) {
+          diffList.push(diffNode);
+          return callback();
+        }
+
+        // If syncing is not done recursively, determine
+        // the number of nodes in the directory to indicate
+        // that that many nodes still need to be synced
+        return fs.readdir(checksumNodePath, function(err, entries) {
+          if(err) {
+            return callback(err);
+          }
+
+          diffNode.nodeList = entries || [];
+          diffList.push(diffNode);
+
+          return callback();
+        });
       }
 
       // Link
@@ -2053,7 +2597,7 @@ module.exports = function diff(fs, path, checksumList, options, callback) {
     }
 
     // If the path was a file, clearly there was only one checksum
-    // entry i.e. the length of checksumList will be 1 which will 
+    // entry i.e. the length of checksumList will be 1 which will
     // be stored in checksumList[0]
     var checksumNode = checksumList[0];
 
@@ -2067,7 +2611,7 @@ module.exports = function diff(fs, path, checksumList, options, callback) {
   });
 };
 
-},{"../async-lite":10,"../filer":15,"./rsync-utils":21}],19:[function(require,module,exports){
+},{"../async-lite":8,"../filer":13,"./rsync-utils":19}],17:[function(require,module,exports){
 /* index.js
  * Implement rsync to sync between two Filer filesystems
  * Portions used from Node.js Anchor module
@@ -2085,7 +2629,7 @@ module.exports = {
   utils: require('./rsync-utils')
 };
 
-},{"./checksums":17,"./diff":18,"./patch":20,"./rsync-utils":21,"./source-list":22}],20:[function(require,module,exports){
+},{"./checksums":15,"./diff":16,"./patch":18,"./rsync-utils":19,"./source-list":20}],18:[function(require,module,exports){
 var fsUtils = require('../fs-utils');
 var Filer = require('../filer');
 var Buffer = Filer.Buffer;
@@ -2111,14 +2655,15 @@ function difference(arr, farr) {
   });
 }
 
-// Path the destination filesystem by applying diffs
+// Patch the destination filesystem by applying diffs
 module.exports = function patch(fs, path, diffList, options, callback) {
   callback = rsyncUtils.findCallback(callback, options);
 
   var paths = {
     synced: [],
     failed: [],
-    needsUpstream: []
+    needsUpstream: [],
+    partial: []
   };
   var pathsToSync = extractPathsFromDiffs(diffList);
 
@@ -2128,8 +2673,6 @@ module.exports = function patch(fs, path, diffList, options, callback) {
   }
 
   options = rsyncUtils.configureOptions(options);
-
-  // Taken from 
 
   function handleError(err, callback) {
     // Determine the node paths for those that were not synced
@@ -2148,7 +2691,7 @@ module.exports = function patch(fs, path, diffList, options, callback) {
   // don't exist upstream yet, since an upstream sync will add them).
   function removeDeletedNodes(path, callback) {
 
-    function maybeUnlink(pathToDelete, callback) {
+    function maybeUnlink(pathToDelete, stats, callback) {
       if(pathsToSync.indexOf(pathToDelete) !== -1) {
         return callback();
       }
@@ -2177,7 +2720,12 @@ module.exports = function patch(fs, path, diffList, options, callback) {
           }
 
           paths.synced.push(pathToDelete);
-          fs.unlink(pathToDelete, callback);
+
+          if(stats.isDirectory()) {
+            fs.rmdir(pathToDelete, callback);
+          } else {
+            fs.unlink(pathToDelete, callback);
+          }
         });
       });
     }
@@ -2191,25 +2739,25 @@ module.exports = function patch(fs, path, diffList, options, callback) {
         }
 
         if(!stats.isDirectory()) {
-          return maybeUnlink(nodePath, callback);
+          return maybeUnlink(nodePath, stats, callback);
         }
 
         removeDeletedNodes(nodePath, callback);
       });
     }
 
-    function removeDeletedNodesInDir(dirContents) {
+    function removeDeletedNodesInDir(dirContents, stats) {
       async.eachSeries(dirContents, processRemoval, function(err) {
         if(err) {
           return handleError(err, callback);
         }
 
-        maybeUnlink(path, function(err) {
+        maybeUnlink(path, stats, function(err) {
           if(err) {
             return handleError(err, callback);
           }
 
-          callback(null, paths); 
+          callback(null, paths);
         });
       });
     }
@@ -2219,7 +2767,7 @@ module.exports = function patch(fs, path, diffList, options, callback) {
         return callback(err);
       }
 
-      // Bail if the path is a file/link or 
+      // Bail if the path is a file/link or
       // the path does not exist, i.e. nothing was patched
       if((err && err.code === 'ENOENT') || !stats.isDirectory()) {
         return callback(null, paths);
@@ -2230,7 +2778,46 @@ module.exports = function patch(fs, path, diffList, options, callback) {
           return handleError(err, callback);
         }
 
-        removeDeletedNodesInDir(dirContents);
+        removeDeletedNodesInDir(dirContents, stats);
+      });
+    });
+  }
+
+  function updatePartialListInParent(nodePath, parent, callback) {
+    // Now that the node has been synced,
+    // update the parent directory's list of nodes
+    // that still need to be synced
+    fsUtils.getPartial(fs, parent, function(err, nodeList) {
+      if(err) {
+        return callback(err);
+      }
+
+      if(!nodeList) {
+        return callback(null, paths);
+      }
+
+      nodeList.splice(nodeList.indexOf(nodePath), 1);
+
+      // No more nodes left to be synced in the parent
+      // remove the partial attribute
+      if(!nodeList.length) {
+        return fsUtils.removePartial(fs, parent, function(err) {
+          if(err) {
+            return callback(err);
+          }
+
+          callback(null, paths);
+        });
+      }
+
+      // Update the parent's partial attribute with the remaining
+      // nodes that need to be synced
+      fsUtils.setPartial(fs, parent, nodeList, function(err) {
+        if(err) {
+          return callback(err);
+        }
+
+        callback(null, paths);
       });
     });
   }
@@ -2300,7 +2887,7 @@ module.exports = function patch(fs, path, diffList, options, callback) {
           // the server
           if(checksum === diffNode.checksum) {
             paths.needsUpstream.push(filePath);
-            return callback(null, paths);
+            return updatePartialListInParent(filePath, Path.dirname(filePath), callback);
           }
 
           applyPatch(getPatchedData(data));
@@ -2315,7 +2902,7 @@ module.exports = function patch(fs, path, diffList, options, callback) {
         }
 
         paths.synced.push(filePath);
-        callback(null, paths);
+        updatePartialListInParent(filePath, Path.dirname(filePath), callback);
       });
     }
 
@@ -2337,7 +2924,7 @@ module.exports = function patch(fs, path, diffList, options, callback) {
           }
 
           paths.synced.push(filePath);
-          callback(null, paths);
+          updatePartialListInParent(filePath, Path.dirname(filePath), callback);
         });
       });
     }
@@ -2415,7 +3002,8 @@ module.exports = function patch(fs, path, diffList, options, callback) {
       }
 
       paths.synced.push(linkPath);
-      callback(null, paths);
+
+      updatePartialListInParent(linkPath, Path.dirname(linkPath), callback);
     });
   }
 
@@ -2423,12 +3011,36 @@ module.exports = function patch(fs, path, diffList, options, callback) {
     var dirPath = diffNode.path;
 
     fs.mkdir(dirPath, function(err) {
-      if(err && err.code !== 'EEXIST') {
-        return handleError(err, callback);
+      if(err) {
+        if(err.code !== 'EEXIST') {
+          return handleError(err, callback);
+        }
+
+        paths.synced.push(dirPath);
+        return callback(null, paths);
       }
 
-      paths.synced.push(dirPath);
-      callback(null, paths);
+      // Syncing is recursive so directory contents will
+      // be subsequently synced and thus the directory is
+      // not partial
+      if(options.recursive) {
+        paths.synced.push(dirPath);
+        return callback(null, paths);
+      }
+
+      // Newly created directory will be marked as
+      // partial to indicate that its contents still
+      // need to be synced
+      fsUtils.setPartial(fs, dirPath, diffNode.nodeList, function(err) {
+        if(err) {
+          return handleError(err, callback);
+        }
+
+        paths.synced.push(dirPath);
+        paths.partial.push(dirPath);
+
+        updatePartialListInParent(dirPath, Path.dirname(dirPath), callback);
+      });
     });
   }
 
@@ -2463,13 +3075,44 @@ module.exports = function patch(fs, path, diffList, options, callback) {
         return handleError(err, callback);
       }
 
-      removeDeletedNodes(path, callback);
+      fsUtils.getPartial(fs, path, function(err, nodeList) {
+        if(err) {
+          return callback(err);
+        }
+
+        if(!nodeList || nodeList.length !== 0) {
+          if(options.superficial) {
+            return callback(null, paths);
+          }
+
+          return removeDeletedNodes(path, callback);
+        }
+
+        // Now that the immediate nodes in the directory
+        // have been created or the directory has no nodes
+        // in it, remove the partial attr if it exists
+        fsUtils.removePartial(fs, path, function(err) {
+          if(err) {
+            return handleError(err, callback);
+          }
+
+          // Remove the directory entry whose contents have just
+          // been synced, from the partial array
+          paths.partial.splice(paths.partial.indexOf(path), 1);
+
+          if(options.superficial) {
+            callback(null, paths);
+          } else {
+            removeDeletedNodes(path, callback);
+          }
+        });
+      });
     });
   }
 
   // Create any parent directories that do not exist
   function createParentDirectories(path, callback) {
-    fs.Shell().mkdirp(Path.dirname(path), function(err) {
+    (new fs.Shell()).mkdirp(Path.dirname(path), function(err) {
       if(err && err.code !== 'EEXIST') {
         return callback(err);
       }
@@ -2491,7 +3134,7 @@ module.exports = function patch(fs, path, diffList, options, callback) {
   });
 };
 
-},{"../async-lite":10,"../conflict":11,"../filer":15,"../fs-utils":16,"./rsync-utils":21}],21:[function(require,module,exports){
+},{"../async-lite":8,"../conflict":9,"../filer":13,"../fs-utils":14,"./rsync-utils":19}],19:[function(require,module,exports){
 /*
  * Rsync utilities that include hashing
  * algorithms necessary for rsync and
@@ -2507,7 +3150,9 @@ module.exports = function patch(fs, path, diffList, options, callback) {
 */
 
 var MD5 = require('MD5');
-var Errors = require('../filer').Errors;
+var Filer = require('filer');
+var Errors = Filer.Errors;
+var Path = Filer.Path;
 var async = require('../async-lite');
 var fsUtils = require('../fs-utils');
 
@@ -2523,6 +3168,8 @@ var fsUtils = require('../fs-utils');
 //                false: sync symbolic links as the files they link to in destination [default]
 // versions   -   true: do not sync a node if the last synced version matches the version it needs to be synced to [default]
 //                false: sync nodes irrespective of the last synced version
+// superficial-   true: if a directory path is provided, only sync the directory and not it's contents
+//                false: if a directory path is provided, sync it's contents [default]
 function configureOptions(options) {
   if(!options || typeof options === 'function') {
     options = {};
@@ -2534,6 +3181,7 @@ function configureOptions(options) {
   options.time = options.time || false;
   options.links = options.links || false;
   options.versions = options.versions !== false;
+  options.superficial = options.superficial || false;
 
   return options;
 }
@@ -2697,7 +3345,7 @@ function roll(data, checksums, blockSize) {
   return results;
 }
 
-// Rsync function to calculate checksums for 
+// Rsync function to calculate checksums for
 // a file by dividing it into blocks of data
 // whose size is passed in and checksuming each
 // block of data
@@ -2862,9 +3510,9 @@ function generateChecksums(fs, paths, stampNode, callback) {
   });
 }
 
-// Compare two file systems. This is done by comparing the 
-// checksums for a collection of paths in one file system 
-// against the checksums for the same those paths in 
+// Compare two file systems. This is done by comparing the
+// checksums for a collection of paths in one file system
+// against the checksums for the same those paths in
 // another file system
 function compareContents(fs, checksumList, callback) {
   var ECHKSUM = "Checksums do not match";
@@ -2921,6 +3569,38 @@ function compareContents(fs, checksumList, callback) {
   });
 }
 
+function del(fs, path, callback) {
+  var paramError = validateParams(fs, path);
+  if(paramError) {
+    return callback(paramError);
+  }
+
+  fs.lstat(path, function(err, stats) {
+    if(err) {
+      return callback(err);
+    }
+
+    if(stats.isDirectory()) {
+      fs.rmdir(path, callback);
+    } else {
+      fs.unlink(path, callback);
+    }
+  });
+}
+
+function rename(fs, oldPath, newPath, callback) {
+  var paramError = validateParams(fs, oldPath) && (newPath ? null : new Errors.EINVAL('New name not specified'));
+  if(paramError) {
+    return callback(paramError);
+  }
+
+  if(Path.dirname(oldPath) !== Path.dirname(newPath)) {
+    return callback(new Errors.EINVAL('New path name does not have the same parent as the old path'));
+  }
+
+  fs.rename(oldPath, newPath, callback);
+}
+
 module.exports = {
   blockChecksums: blockChecksums,
   getChecksum: getChecksum,
@@ -2929,10 +3609,12 @@ module.exports = {
   compareContents: compareContents,
   configureOptions: configureOptions,
   findCallback: findCallback,
-  validateParams: validateParams
+  validateParams: validateParams,
+  del: del,
+  rename: rename
 };
 
-},{"../async-lite":10,"../filer":15,"../fs-utils":16,"MD5":25}],22:[function(require,module,exports){
+},{"../async-lite":8,"../fs-utils":14,"MD5":23,"filer":44}],20:[function(require,module,exports){
 var Path = require('../filer').Path;
 var async = require('../async-lite');
 var conflict = require('../conflict');
@@ -2955,7 +3637,7 @@ module.exports = function sourceList(fs, path, options, callback) {
     this.path = path;
     this.modified = stats.mtime;
     this.size = stats.size;
-    this.type = stats.type; 
+    this.type = stats.type;
   }
 
   // Make sure this isn't a conflicted copy before adding
@@ -2975,6 +3657,11 @@ module.exports = function sourceList(fs, path, options, callback) {
   }
 
   function getSrcListForDir(stats) {
+    if(options.superficial) {
+      sources.push(new SourceNode(path, stats));
+      return callback(null, sources);
+    }
+
     fs.readdir(path, function(err, entries) {
       if(err) {
         return callback(err);
@@ -3002,7 +3689,7 @@ module.exports = function sourceList(fs, path, options, callback) {
             }
 
             sources = sources.concat(items);
-            
+
             callback();
           });
         });
@@ -3045,86 +3732,7 @@ module.exports = function sourceList(fs, path, options, callback) {
   getSrcListForPath(path);
 };
 
-},{"../async-lite":10,"../conflict":11,"../filer":15,"./rsync-utils":21}],23:[function(require,module,exports){
-/**
- * Sync path resolver is a library that provides
- * functionality to determine 'syncable' paths
- * It exposes the following methods:
- *
- * resolve          - This method takes two paths as arguments.
- *                    The goal is to find the most common ancestor
- *                    between them. For e.g. the most common ancestor
- *                    between '/dir' and '/dir/file.txt' is '/dir' while
- *                    between '/dir' and '/file.txt' would be '/'.
- *
- * resolveFromArray - This method works exactly like resolve but works for arrays of paths instead
-*/
-
-var pathResolver = {};
-var dirname = require('./filer').Path.dirname;
-
-function getDepth(path) {
-  if(path === '/') {
-    return 0;
-  }
-
-  return 1 + getDepth(dirname(path));
-}
-
-function commonAncestor(path1, depth1, path2, depth2) {
-  if(path1 === path2) {
-    return path1;
-  }
-
-  // Regress the appropriate path
-  if(depth1 === depth2) {
-    path1 = dirname(path1);
-    depth1--;
-    path2 = dirname(path2);
-    depth2--;
-  } else if(depth1 > depth2) {
-    path1 = dirname(path1);
-    depth1--;
-  } else {
-    path2 = dirname(path2);
-    depth2--;
-  }
-
-  return commonAncestor(path1, depth1, path2, depth2);
-}
-
-pathResolver.resolve = function(path1, path2) {
-  if(!path1 && !path2) {
-    return '/';
-  }
-
-  if(!path1 || !path2) {
-    return path1 || path2;
-  }
-
-  var path1Depth = getDepth(path1);
-  var path2Depth = getDepth(path2);
-
-  return commonAncestor(path1, path1Depth, path2, path2Depth);
-};
-
-pathResolver.resolveFromArray = function(paths) {
-  if(!paths) {
-    return '/';
-  }
-
-  var resolvedPath, i;
-
-  for(i = 1, resolvedPath = paths[0]; i < paths.length; i++) {
-    resolvedPath = pathResolver.resolve(resolvedPath, paths[i]);
-  }
-
-  return resolvedPath;
-};
-
-module.exports = pathResolver;
-
-},{"./filer":15}],24:[function(require,module,exports){
+},{"../async-lite":8,"../conflict":9,"../filer":13,"./rsync-utils":19}],21:[function(require,module,exports){
 // Constructor
 function SyncMessage(type, name, content) {
   if(!SyncMessage.isValidType(type)) {
@@ -3153,14 +3761,14 @@ function SyncMessage(type, name, content) {
     },
 
     // Names
-    get srclist() {
-      return that.name === SyncMessage.SRCLIST;
+    get sourceList() {
+      return that.name === SyncMessage.SOURCELIST;
     },
     get sync() {
       return that.name === SyncMessage.SYNC;
     },
-    get chksum() {
-      return that.name === SyncMessage.CHKSUM;
+    get checksums() {
+      return that.name === SyncMessage.CHECKSUMS;
     },
     get diffs() {
       return that.name === SyncMessage.DIFFS;
@@ -3183,6 +3791,9 @@ function SyncMessage(type, name, content) {
     get impl() {
       return that.name === SyncMessage.IMPL;
     },
+    get content() {
+      return that.name === SyncMessage.INCONT;
+    },
     get serverReset() {
       return that.name === SyncMessage.SERVER_RESET;
     },
@@ -3191,26 +3802,50 @@ function SyncMessage(type, name, content) {
     },
     get fileSizeError() {
       return that.type === SyncMessage.ERROR && that.name === SyncMessage.MAXSIZE;
+    },
+    get root() {
+      return that.name === SyncMessage.ROOT;
+    },
+    get needsDownstream() {
+      return that.type === SyncMessage.ERROR && that.name === SyncMessage.NEEDS_DOWNSTREAM;
+    },
+    get interrupted() {
+      return that.name === SyncMessage.INTERRUPTED;
+    },
+    get delay() {
+      return that.type === SyncMessage.REQUEST && that.name === SyncMessage.DELAY;
+    },
+    get rename() {
+      return that.name === SyncMessage.RENAME;
+    },
+    get del() {
+      return that.name === SyncMessage.DEL;
     }
   };
 }
 
 SyncMessage.isValidName = function(name) {
-  return name === SyncMessage.SRCLIST      ||
-         name === SyncMessage.CHKSUM       ||
-         name === SyncMessage.DIFFS        ||
-         name === SyncMessage.LOCKED       ||
-         name === SyncMessage.PATCH        ||
-         name === SyncMessage.VERIFICATION ||
-         name === SyncMessage.SYNC         ||
-         name === SyncMessage.RESET        ||
-         name === SyncMessage.AUTHZ        ||
-         name === SyncMessage.IMPL         ||
-         name === SyncMessage.INFRMT       ||
-         name === SyncMessage.INCONT       ||
-         name === SyncMessage.SERVER_RESET ||
-         name === SyncMessage.DOWNSTREAM_LOCKED ||
-         name === SyncMessage.MAXSIZE;
+  return name === SyncMessage.SOURCELIST           ||
+         name === SyncMessage.CHECKSUMS            ||
+         name === SyncMessage.DIFFS                ||
+         name === SyncMessage.LOCKED               ||
+         name === SyncMessage.PATCH                ||
+         name === SyncMessage.VERIFICATION         ||
+         name === SyncMessage.SYNC                 ||
+         name === SyncMessage.RESET                ||
+         name === SyncMessage.AUTHZ                ||
+         name === SyncMessage.IMPL                 ||
+         name === SyncMessage.INFRMT               ||
+         name === SyncMessage.INCONT               ||
+         name === SyncMessage.SERVER_RESET         ||
+         name === SyncMessage.DOWNSTREAM_LOCKED    ||
+         name === SyncMessage.MAXSIZE              ||
+         name === SyncMessage.ROOT                 ||
+         name === SyncMessage.NEEDS_DOWNSTREAM     ||
+         name === SyncMessage.INTERRUPTED          ||
+         name === SyncMessage.DELAY                ||
+         name === SyncMessage.RENAME               ||
+         name === SyncMessage.DEL;
 };
 
 SyncMessage.isValidType = function(type) {
@@ -3245,9 +3880,9 @@ SyncMessage.RESPONSE = "RESPONSE";
 SyncMessage.ERROR = "ERROR";
 
 // SyncMessage Name constants
-SyncMessage.SRCLIST = "SRCLIST";
+SyncMessage.SOURCELIST = "SOURCELIST";
 SyncMessage.SYNC = "SYNC";
-SyncMessage.CHKSUM = "CHKSUM";
+SyncMessage.CHECKSUMS = "CHECKSUMS";
 SyncMessage.DIFFS = "DIFFS";
 SyncMessage.PATCH = "PATCH";
 SyncMessage.VERIFICATION = "VERIFICATION";
@@ -3259,6 +3894,11 @@ SyncMessage.SERVER_RESET = "SERVER_RESET";
 SyncMessage.DOWNSTREAM_LOCKED = "DOWNSTREAM_LOCKED";
 SyncMessage.MAXSIZE = "MAXSIZE";
 SyncMessage.INTERRUPTED = "INTERRUPTED";
+SyncMessage.ROOT = "ROOT";
+SyncMessage.NEEDS_DOWNSTREAM = "NEEDS DOWNSTREAM";
+SyncMessage.DELAY = "DELAY DOWNSTREAM";
+SyncMessage.RENAME = "RENAME";
+SyncMessage.DEL = "DELETE";
 
 // SyncMessage Error constants
 SyncMessage.INFRMT = "INVALID FORMAT";
@@ -3269,14 +3909,23 @@ SyncMessage.request = {
   get diffs() {
     return new SyncMessage(SyncMessage.REQUEST, SyncMessage.DIFFS);
   },
-  get chksum() {
-    return new SyncMessage(SyncMessage.REQUEST, SyncMessage.CHKSUM);
+  get checksums() {
+    return new SyncMessage(SyncMessage.REQUEST, SyncMessage.CHECKSUMS);
   },
   get sync() {
     return new SyncMessage(SyncMessage.REQUEST, SyncMessage.SYNC);
   },
   get reset() {
     return new SyncMessage(SyncMessage.REQUEST, SyncMessage.RESET);
+  },
+  get delay() {
+    return new SyncMessage(SyncMessage.REQUEST, SyncMessage.DELAY);
+  },
+  get rename() {
+    return new SyncMessage(SyncMessage.REQUEST, SyncMessage.RENAME);
+  },
+  get del() {
+    return new SyncMessage(SyncMessage.REQUEST, SyncMessage.DEL);
   }
 };
 SyncMessage.response = {
@@ -3297,11 +3946,14 @@ SyncMessage.response = {
   },
   get reset() {
     return new SyncMessage(SyncMessage.RESPONSE, SyncMessage.RESET);
+  },
+  get root() {
+    return new SyncMessage(SyncMessage.RESPONSE, SyncMessage.ROOT);
   }
 };
 SyncMessage.error = {
-  get srclist() {
-    return new SyncMessage(SyncMessage.ERROR, SyncMessage.SRCLIST);
+  get sourceList() {
+    return new SyncMessage(SyncMessage.ERROR, SyncMessage.SOURCELIST);
   },
   get diffs() {
     return new SyncMessage(SyncMessage.ERROR, SyncMessage.DIFFS);
@@ -3309,8 +3961,8 @@ SyncMessage.error = {
   get locked() {
     return new SyncMessage(SyncMessage.ERROR, SyncMessage.LOCKED);
   },
-  get chksum() {
-    return new SyncMessage(SyncMessage.ERROR, SyncMessage.CHKSUM);
+  get checksums() {
+    return new SyncMessage(SyncMessage.ERROR, SyncMessage.CHECKSUMS);
   },
   get patch() {
     return new SyncMessage(SyncMessage.ERROR, SyncMessage.PATCH);
@@ -3344,12 +3996,53 @@ SyncMessage.error = {
   },
   get interrupted() {
     return new SyncMessage(SyncMessage.ERROR, SyncMessage.INTERRUPTED);
+  },
+  get needsDownstream() {
+    return new SyncMessage(SyncMessage.ERROR, SyncMessage.NEEDS_DOWNSTREAM);
+  },
+  get rename() {
+    return new SyncMessage(SyncMessage.ERROR, SyncMessage.RENAME);
+  },
+  get del() {
+    return new SyncMessage(SyncMessage.ERROR, SyncMessage.DEL);
   }
+};
+
+SyncMessage.prototype.invalidContent = function(keys) {
+  var content = this.content;
+  keys = keys || [];
+
+  if(!content || !content.path) {
+    return true;
+  }
+
+  for(var i = 0; i < keys.length; i++) {
+    if(!content[keys[i]]) return true;
+  }
+
+  return false;
 };
 
 module.exports = SyncMessage;
 
-},{}],25:[function(require,module,exports){
+},{}],22:[function(require,module,exports){
+// General utility methods
+
+function findPathIndexInArray(array, path) {
+  for(var i = 0; i < array.length; i++) {
+    if(array[i].path === path) {
+      return i;
+    }
+  }
+
+  return -1;
+}
+
+module.exports = {
+    findPathIndexInArray: findPathIndexInArray
+};
+
+},{}],23:[function(require,module,exports){
 (function (Buffer){
 (function(){
   var crypt = require('crypt'),
@@ -3513,7 +4206,7 @@ module.exports = SyncMessage;
 })();
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":56,"charenc":26,"crypt":27}],26:[function(require,module,exports){
+},{"buffer":57,"charenc":24,"crypt":25}],24:[function(require,module,exports){
 var charenc = {
   // UTF-8 encoding
   utf8: {
@@ -3548,7 +4241,7 @@ var charenc = {
 
 module.exports = charenc;
 
-},{}],27:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 (function() {
   var base64map
       = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/',
@@ -3646,7 +4339,7 @@ module.exports = charenc;
   module.exports = crypt;
 })();
 
-},{}],28:[function(require,module,exports){
+},{}],26:[function(require,module,exports){
 // Browser Request
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -3660,6 +4353,23 @@ module.exports = charenc;
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
+// UMD HEADER START 
+(function (root, factory) {
+    if (typeof define === 'function' && define.amd) {
+        // AMD. Register as an anonymous module.
+        define([], factory);
+    } else if (typeof exports === 'object') {
+        // Node. Does not work with strict CommonJS, but
+        // only CommonJS-like enviroments that support module.exports,
+        // like Node.
+        module.exports = factory();
+    } else {
+        // Browser globals (root is window)
+        root.returnExports = factory();
+  }
+}(this, function () {
+// UMD HEADER END
 
 var XHR = XMLHttpRequest
 if (!XHR) throw new Error('missing XMLHttpRequest')
@@ -4120,9 +4830,12 @@ function b64_enc (data) {
 
     return enc;
 }
-module.exports = request;
+    return request;
+//UMD FOOTER START
+}));
+//UMD FOOTER END
 
-},{}],29:[function(require,module,exports){
+},{}],27:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -4425,7 +5138,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],30:[function(require,module,exports){
+},{}],28:[function(require,module,exports){
 (function (process){
 /*global setImmediate: false, setTimeout: false, console: false */
 
@@ -4514,7 +5227,7 @@ function isUndefined(arg) {
 }());
 
 }).call(this,require('_process'))
-},{"_process":60}],31:[function(require,module,exports){
+},{"_process":62}],29:[function(require,module,exports){
 // Based on https://github.com/diy/intercom.js/blob/master/lib/events.js
 // Copyright 2012 DIY Co Apache License, Version 2.0
 // http://www.apache.org/licenses/LICENSE-2.0
@@ -4587,7 +5300,7 @@ EventEmitter.prototype.removeAllListeners = pub.removeAllListeners;
 
 module.exports = EventEmitter;
 
-},{}],32:[function(require,module,exports){
+},{}],30:[function(require,module,exports){
 (function (global){
 // Based on https://github.com/diy/intercom.js/blob/master/lib/intercom.js
 // Copyright 2012 DIY Co Apache License, Version 2.0
@@ -4909,7 +5622,7 @@ Intercom.getInstance = (function() {
 module.exports = Intercom;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../src/shared.js":51,"./eventemitter.js":31}],33:[function(require,module,exports){
+},{"../src/shared.js":52,"./eventemitter.js":29}],31:[function(require,module,exports){
 // Cherry-picked bits of underscore.js, lodash.js
 
 /**
@@ -5008,7 +5721,7 @@ function nodash(value) {
 
 module.exports = nodash;
 
-},{}],34:[function(require,module,exports){
+},{}],32:[function(require,module,exports){
 /*
  * base64-arraybuffer
  * https://github.com/niklasvh/base64-arraybuffer
@@ -5069,7 +5782,1379 @@ module.exports = nodash;
   };
 })("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/");
 
+},{}],33:[function(require,module,exports){
+(function (process){
+;(function (require, exports, module, platform) {
+
+if (module) module.exports = minimatch
+else exports.minimatch = minimatch
+
+if (!require) {
+  require = function (id) {
+    switch (id) {
+      case "sigmund": return function sigmund (obj) {
+        return JSON.stringify(obj)
+      }
+      case "path": return { basename: function (f) {
+        f = f.split(/[\/\\]/)
+        var e = f.pop()
+        if (!e) e = f.pop()
+        return e
+      }}
+      case "lru-cache": return function LRUCache () {
+        // not quite an LRU, but still space-limited.
+        var cache = {}
+        var cnt = 0
+        this.set = function (k, v) {
+          cnt ++
+          if (cnt >= 100) cache = {}
+          cache[k] = v
+        }
+        this.get = function (k) { return cache[k] }
+      }
+    }
+  }
+}
+
+minimatch.Minimatch = Minimatch
+
+var LRU = require("lru-cache")
+  , cache = minimatch.cache = new LRU({max: 100})
+  , GLOBSTAR = minimatch.GLOBSTAR = Minimatch.GLOBSTAR = {}
+  , sigmund = require("sigmund")
+
+var path = require("path")
+  // any single thing other than /
+  // don't need to escape / when using new RegExp()
+  , qmark = "[^/]"
+
+  // * => any number of characters
+  , star = qmark + "*?"
+
+  // ** when dots are allowed.  Anything goes, except .. and .
+  // not (^ or / followed by one or two dots followed by $ or /),
+  // followed by anything, any number of times.
+  , twoStarDot = "(?:(?!(?:\\\/|^)(?:\\.{1,2})($|\\\/)).)*?"
+
+  // not a ^ or / followed by a dot,
+  // followed by anything, any number of times.
+  , twoStarNoDot = "(?:(?!(?:\\\/|^)\\.).)*?"
+
+  // characters that need to be escaped in RegExp.
+  , reSpecials = charSet("().*{}+?[]^$\\!")
+
+// "abc" -> { a:true, b:true, c:true }
+function charSet (s) {
+  return s.split("").reduce(function (set, c) {
+    set[c] = true
+    return set
+  }, {})
+}
+
+// normalizes slashes.
+var slashSplit = /\/+/
+
+minimatch.filter = filter
+function filter (pattern, options) {
+  options = options || {}
+  return function (p, i, list) {
+    return minimatch(p, pattern, options)
+  }
+}
+
+function ext (a, b) {
+  a = a || {}
+  b = b || {}
+  var t = {}
+  Object.keys(b).forEach(function (k) {
+    t[k] = b[k]
+  })
+  Object.keys(a).forEach(function (k) {
+    t[k] = a[k]
+  })
+  return t
+}
+
+minimatch.defaults = function (def) {
+  if (!def || !Object.keys(def).length) return minimatch
+
+  var orig = minimatch
+
+  var m = function minimatch (p, pattern, options) {
+    return orig.minimatch(p, pattern, ext(def, options))
+  }
+
+  m.Minimatch = function Minimatch (pattern, options) {
+    return new orig.Minimatch(pattern, ext(def, options))
+  }
+
+  return m
+}
+
+Minimatch.defaults = function (def) {
+  if (!def || !Object.keys(def).length) return Minimatch
+  return minimatch.defaults(def).Minimatch
+}
+
+
+function minimatch (p, pattern, options) {
+  if (typeof pattern !== "string") {
+    throw new TypeError("glob pattern string required")
+  }
+
+  if (!options) options = {}
+
+  // shortcut: comments match nothing.
+  if (!options.nocomment && pattern.charAt(0) === "#") {
+    return false
+  }
+
+  // "" only matches ""
+  if (pattern.trim() === "") return p === ""
+
+  return new Minimatch(pattern, options).match(p)
+}
+
+function Minimatch (pattern, options) {
+  if (!(this instanceof Minimatch)) {
+    return new Minimatch(pattern, options, cache)
+  }
+
+  if (typeof pattern !== "string") {
+    throw new TypeError("glob pattern string required")
+  }
+
+  if (!options) options = {}
+  pattern = pattern.trim()
+
+  // windows: need to use /, not \
+  // On other platforms, \ is a valid (albeit bad) filename char.
+  if (platform === "win32") {
+    pattern = pattern.split("\\").join("/")
+  }
+
+  // lru storage.
+  // these things aren't particularly big, but walking down the string
+  // and turning it into a regexp can get pretty costly.
+  var cacheKey = pattern + "\n" + sigmund(options)
+  var cached = minimatch.cache.get(cacheKey)
+  if (cached) return cached
+  minimatch.cache.set(cacheKey, this)
+
+  this.options = options
+  this.set = []
+  this.pattern = pattern
+  this.regexp = null
+  this.negate = false
+  this.comment = false
+  this.empty = false
+
+  // make the set of regexps etc.
+  this.make()
+}
+
+Minimatch.prototype.debug = function() {}
+
+Minimatch.prototype.make = make
+function make () {
+  // don't do it more than once.
+  if (this._made) return
+
+  var pattern = this.pattern
+  var options = this.options
+
+  // empty patterns and comments match nothing.
+  if (!options.nocomment && pattern.charAt(0) === "#") {
+    this.comment = true
+    return
+  }
+  if (!pattern) {
+    this.empty = true
+    return
+  }
+
+  // step 1: figure out negation, etc.
+  this.parseNegate()
+
+  // step 2: expand braces
+  var set = this.globSet = this.braceExpand()
+
+  if (options.debug) this.debug = console.error
+
+  this.debug(this.pattern, set)
+
+  // step 3: now we have a set, so turn each one into a series of path-portion
+  // matching patterns.
+  // These will be regexps, except in the case of "**", which is
+  // set to the GLOBSTAR object for globstar behavior,
+  // and will not contain any / characters
+  set = this.globParts = set.map(function (s) {
+    return s.split(slashSplit)
+  })
+
+  this.debug(this.pattern, set)
+
+  // glob --> regexps
+  set = set.map(function (s, si, set) {
+    return s.map(this.parse, this)
+  }, this)
+
+  this.debug(this.pattern, set)
+
+  // filter out everything that didn't compile properly.
+  set = set.filter(function (s) {
+    return -1 === s.indexOf(false)
+  })
+
+  this.debug(this.pattern, set)
+
+  this.set = set
+}
+
+Minimatch.prototype.parseNegate = parseNegate
+function parseNegate () {
+  var pattern = this.pattern
+    , negate = false
+    , options = this.options
+    , negateOffset = 0
+
+  if (options.nonegate) return
+
+  for ( var i = 0, l = pattern.length
+      ; i < l && pattern.charAt(i) === "!"
+      ; i ++) {
+    negate = !negate
+    negateOffset ++
+  }
+
+  if (negateOffset) this.pattern = pattern.substr(negateOffset)
+  this.negate = negate
+}
+
+// Brace expansion:
+// a{b,c}d -> abd acd
+// a{b,}c -> abc ac
+// a{0..3}d -> a0d a1d a2d a3d
+// a{b,c{d,e}f}g -> abg acdfg acefg
+// a{b,c}d{e,f}g -> abdeg acdeg abdeg abdfg
+//
+// Invalid sets are not expanded.
+// a{2..}b -> a{2..}b
+// a{b}c -> a{b}c
+minimatch.braceExpand = function (pattern, options) {
+  return new Minimatch(pattern, options).braceExpand()
+}
+
+Minimatch.prototype.braceExpand = braceExpand
+
+function pad(n, width, z) {
+  z = z || '0';
+  n = n + '';
+  return n.length >= width ? n : new Array(width - n.length + 1).join(z) + n;
+}
+
+function braceExpand (pattern, options) {
+  options = options || this.options
+  pattern = typeof pattern === "undefined"
+    ? this.pattern : pattern
+
+  if (typeof pattern === "undefined") {
+    throw new Error("undefined pattern")
+  }
+
+  if (options.nobrace ||
+      !pattern.match(/\{.*\}/)) {
+    // shortcut. no need to expand.
+    return [pattern]
+  }
+
+  var escaping = false
+
+  // examples and comments refer to this crazy pattern:
+  // a{b,c{d,e},{f,g}h}x{y,z}
+  // expected:
+  // abxy
+  // abxz
+  // acdxy
+  // acdxz
+  // acexy
+  // acexz
+  // afhxy
+  // afhxz
+  // aghxy
+  // aghxz
+
+  // everything before the first \{ is just a prefix.
+  // So, we pluck that off, and work with the rest,
+  // and then prepend it to everything we find.
+  if (pattern.charAt(0) !== "{") {
+    this.debug(pattern)
+    var prefix = null
+    for (var i = 0, l = pattern.length; i < l; i ++) {
+      var c = pattern.charAt(i)
+      this.debug(i, c)
+      if (c === "\\") {
+        escaping = !escaping
+      } else if (c === "{" && !escaping) {
+        prefix = pattern.substr(0, i)
+        break
+      }
+    }
+
+    // actually no sets, all { were escaped.
+    if (prefix === null) {
+      this.debug("no sets")
+      return [pattern]
+    }
+
+   var tail = braceExpand.call(this, pattern.substr(i), options)
+    return tail.map(function (t) {
+      return prefix + t
+    })
+  }
+
+  // now we have something like:
+  // {b,c{d,e},{f,g}h}x{y,z}
+  // walk through the set, expanding each part, until
+  // the set ends.  then, we'll expand the suffix.
+  // If the set only has a single member, then'll put the {} back
+
+  // first, handle numeric sets, since they're easier
+  var numset = pattern.match(/^\{(-?[0-9]+)\.\.(-?[0-9]+)\}/)
+  if (numset) {
+    this.debug("numset", numset[1], numset[2])
+    var suf = braceExpand.call(this, pattern.substr(numset[0].length), options)
+      , start = +numset[1]
+      , needPadding = numset[1][0] === '0'
+      , startWidth = numset[1].length
+      , padded
+      , end = +numset[2]
+      , inc = start > end ? -1 : 1
+      , set = []
+
+    for (var i = start; i != (end + inc); i += inc) {
+      padded = needPadding ? pad(i, startWidth) : i + ''
+      // append all the suffixes
+      for (var ii = 0, ll = suf.length; ii < ll; ii ++) {
+        set.push(padded + suf[ii])
+      }
+    }
+    return set
+  }
+
+  // ok, walk through the set
+  // We hope, somewhat optimistically, that there
+  // will be a } at the end.
+  // If the closing brace isn't found, then the pattern is
+  // interpreted as braceExpand("\\" + pattern) so that
+  // the leading \{ will be interpreted literally.
+  var i = 1 // skip the \{
+    , depth = 1
+    , set = []
+    , member = ""
+    , sawEnd = false
+    , escaping = false
+
+  function addMember () {
+    set.push(member)
+    member = ""
+  }
+
+  this.debug("Entering for")
+  FOR: for (i = 1, l = pattern.length; i < l; i ++) {
+    var c = pattern.charAt(i)
+    this.debug("", i, c)
+
+    if (escaping) {
+      escaping = false
+      member += "\\" + c
+    } else {
+      switch (c) {
+        case "\\":
+          escaping = true
+          continue
+
+        case "{":
+          depth ++
+          member += "{"
+          continue
+
+        case "}":
+          depth --
+          // if this closes the actual set, then we're done
+          if (depth === 0) {
+            addMember()
+            // pluck off the close-brace
+            i ++
+            break FOR
+          } else {
+            member += c
+            continue
+          }
+
+        case ",":
+          if (depth === 1) {
+            addMember()
+          } else {
+            member += c
+          }
+          continue
+
+        default:
+          member += c
+          continue
+      } // switch
+    } // else
+  } // for
+
+  // now we've either finished the set, and the suffix is
+  // pattern.substr(i), or we have *not* closed the set,
+  // and need to escape the leading brace
+  if (depth !== 0) {
+    this.debug("didn't close", pattern)
+    return braceExpand.call(this, "\\" + pattern, options)
+  }
+
+  // x{y,z} -> ["xy", "xz"]
+  this.debug("set", set)
+  this.debug("suffix", pattern.substr(i))
+  var suf = braceExpand.call(this, pattern.substr(i), options)
+  // ["b", "c{d,e}","{f,g}h"] ->
+  //   [["b"], ["cd", "ce"], ["fh", "gh"]]
+  var addBraces = set.length === 1
+  this.debug("set pre-expanded", set)
+  set = set.map(function (p) {
+    return braceExpand.call(this, p, options)
+  }, this)
+  this.debug("set expanded", set)
+
+
+  // [["b"], ["cd", "ce"], ["fh", "gh"]] ->
+  //   ["b", "cd", "ce", "fh", "gh"]
+  set = set.reduce(function (l, r) {
+    return l.concat(r)
+  })
+
+  if (addBraces) {
+    set = set.map(function (s) {
+      return "{" + s + "}"
+    })
+  }
+
+  // now attach the suffixes.
+  var ret = []
+  for (var i = 0, l = set.length; i < l; i ++) {
+    for (var ii = 0, ll = suf.length; ii < ll; ii ++) {
+      ret.push(set[i] + suf[ii])
+    }
+  }
+  return ret
+}
+
+// parse a component of the expanded set.
+// At this point, no pattern may contain "/" in it
+// so we're going to return a 2d array, where each entry is the full
+// pattern, split on '/', and then turned into a regular expression.
+// A regexp is made at the end which joins each array with an
+// escaped /, and another full one which joins each regexp with |.
+//
+// Following the lead of Bash 4.1, note that "**" only has special meaning
+// when it is the *only* thing in a path portion.  Otherwise, any series
+// of * is equivalent to a single *.  Globstar behavior is enabled by
+// default, and can be disabled by setting options.noglobstar.
+Minimatch.prototype.parse = parse
+var SUBPARSE = {}
+function parse (pattern, isSub) {
+  var options = this.options
+
+  // shortcuts
+  if (!options.noglobstar && pattern === "**") return GLOBSTAR
+  if (pattern === "") return ""
+
+  var re = ""
+    , hasMagic = !!options.nocase
+    , escaping = false
+    // ? => one single character
+    , patternListStack = []
+    , plType
+    , stateChar
+    , inClass = false
+    , reClassStart = -1
+    , classStart = -1
+    // . and .. never match anything that doesn't start with .,
+    // even when options.dot is set.
+    , patternStart = pattern.charAt(0) === "." ? "" // anything
+      // not (start or / followed by . or .. followed by / or end)
+      : options.dot ? "(?!(?:^|\\\/)\\.{1,2}(?:$|\\\/))"
+      : "(?!\\.)"
+    , self = this
+
+  function clearStateChar () {
+    if (stateChar) {
+      // we had some state-tracking character
+      // that wasn't consumed by this pass.
+      switch (stateChar) {
+        case "*":
+          re += star
+          hasMagic = true
+          break
+        case "?":
+          re += qmark
+          hasMagic = true
+          break
+        default:
+          re += "\\"+stateChar
+          break
+      }
+      self.debug('clearStateChar %j %j', stateChar, re)
+      stateChar = false
+    }
+  }
+
+  for ( var i = 0, len = pattern.length, c
+      ; (i < len) && (c = pattern.charAt(i))
+      ; i ++ ) {
+
+    this.debug("%s\t%s %s %j", pattern, i, re, c)
+
+    // skip over any that are escaped.
+    if (escaping && reSpecials[c]) {
+      re += "\\" + c
+      escaping = false
+      continue
+    }
+
+    SWITCH: switch (c) {
+      case "/":
+        // completely not allowed, even escaped.
+        // Should already be path-split by now.
+        return false
+
+      case "\\":
+        clearStateChar()
+        escaping = true
+        continue
+
+      // the various stateChar values
+      // for the "extglob" stuff.
+      case "?":
+      case "*":
+      case "+":
+      case "@":
+      case "!":
+        this.debug("%s\t%s %s %j <-- stateChar", pattern, i, re, c)
+
+        // all of those are literals inside a class, except that
+        // the glob [!a] means [^a] in regexp
+        if (inClass) {
+          this.debug('  in class')
+          if (c === "!" && i === classStart + 1) c = "^"
+          re += c
+          continue
+        }
+
+        // if we already have a stateChar, then it means
+        // that there was something like ** or +? in there.
+        // Handle the stateChar, then proceed with this one.
+        self.debug('call clearStateChar %j', stateChar)
+        clearStateChar()
+        stateChar = c
+        // if extglob is disabled, then +(asdf|foo) isn't a thing.
+        // just clear the statechar *now*, rather than even diving into
+        // the patternList stuff.
+        if (options.noext) clearStateChar()
+        continue
+
+      case "(":
+        if (inClass) {
+          re += "("
+          continue
+        }
+
+        if (!stateChar) {
+          re += "\\("
+          continue
+        }
+
+        plType = stateChar
+        patternListStack.push({ type: plType
+                              , start: i - 1
+                              , reStart: re.length })
+        // negation is (?:(?!js)[^/]*)
+        re += stateChar === "!" ? "(?:(?!" : "(?:"
+        this.debug('plType %j %j', stateChar, re)
+        stateChar = false
+        continue
+
+      case ")":
+        if (inClass || !patternListStack.length) {
+          re += "\\)"
+          continue
+        }
+
+        clearStateChar()
+        hasMagic = true
+        re += ")"
+        plType = patternListStack.pop().type
+        // negation is (?:(?!js)[^/]*)
+        // The others are (?:<pattern>)<type>
+        switch (plType) {
+          case "!":
+            re += "[^/]*?)"
+            break
+          case "?":
+          case "+":
+          case "*": re += plType
+          case "@": break // the default anyway
+        }
+        continue
+
+      case "|":
+        if (inClass || !patternListStack.length || escaping) {
+          re += "\\|"
+          escaping = false
+          continue
+        }
+
+        clearStateChar()
+        re += "|"
+        continue
+
+      // these are mostly the same in regexp and glob
+      case "[":
+        // swallow any state-tracking char before the [
+        clearStateChar()
+
+        if (inClass) {
+          re += "\\" + c
+          continue
+        }
+
+        inClass = true
+        classStart = i
+        reClassStart = re.length
+        re += c
+        continue
+
+      case "]":
+        //  a right bracket shall lose its special
+        //  meaning and represent itself in
+        //  a bracket expression if it occurs
+        //  first in the list.  -- POSIX.2 2.8.3.2
+        if (i === classStart + 1 || !inClass) {
+          re += "\\" + c
+          escaping = false
+          continue
+        }
+
+        // finish up the class.
+        hasMagic = true
+        inClass = false
+        re += c
+        continue
+
+      default:
+        // swallow any state char that wasn't consumed
+        clearStateChar()
+
+        if (escaping) {
+          // no need
+          escaping = false
+        } else if (reSpecials[c]
+                   && !(c === "^" && inClass)) {
+          re += "\\"
+        }
+
+        re += c
+
+    } // switch
+  } // for
+
+
+  // handle the case where we left a class open.
+  // "[abc" is valid, equivalent to "\[abc"
+  if (inClass) {
+    // split where the last [ was, and escape it
+    // this is a huge pita.  We now have to re-walk
+    // the contents of the would-be class to re-translate
+    // any characters that were passed through as-is
+    var cs = pattern.substr(classStart + 1)
+      , sp = this.parse(cs, SUBPARSE)
+    re = re.substr(0, reClassStart) + "\\[" + sp[0]
+    hasMagic = hasMagic || sp[1]
+  }
+
+  // handle the case where we had a +( thing at the *end*
+  // of the pattern.
+  // each pattern list stack adds 3 chars, and we need to go through
+  // and escape any | chars that were passed through as-is for the regexp.
+  // Go through and escape them, taking care not to double-escape any
+  // | chars that were already escaped.
+  var pl
+  while (pl = patternListStack.pop()) {
+    var tail = re.slice(pl.reStart + 3)
+    // maybe some even number of \, then maybe 1 \, followed by a |
+    tail = tail.replace(/((?:\\{2})*)(\\?)\|/g, function (_, $1, $2) {
+      if (!$2) {
+        // the | isn't already escaped, so escape it.
+        $2 = "\\"
+      }
+
+      // need to escape all those slashes *again*, without escaping the
+      // one that we need for escaping the | character.  As it works out,
+      // escaping an even number of slashes can be done by simply repeating
+      // it exactly after itself.  That's why this trick works.
+      //
+      // I am sorry that you have to see this.
+      return $1 + $1 + $2 + "|"
+    })
+
+    this.debug("tail=%j\n   %s", tail, tail)
+    var t = pl.type === "*" ? star
+          : pl.type === "?" ? qmark
+          : "\\" + pl.type
+
+    hasMagic = true
+    re = re.slice(0, pl.reStart)
+       + t + "\\("
+       + tail
+  }
+
+  // handle trailing things that only matter at the very end.
+  clearStateChar()
+  if (escaping) {
+    // trailing \\
+    re += "\\\\"
+  }
+
+  // only need to apply the nodot start if the re starts with
+  // something that could conceivably capture a dot
+  var addPatternStart = false
+  switch (re.charAt(0)) {
+    case ".":
+    case "[":
+    case "(": addPatternStart = true
+  }
+
+  // if the re is not "" at this point, then we need to make sure
+  // it doesn't match against an empty path part.
+  // Otherwise a/* will match a/, which it should not.
+  if (re !== "" && hasMagic) re = "(?=.)" + re
+
+  if (addPatternStart) re = patternStart + re
+
+  // parsing just a piece of a larger pattern.
+  if (isSub === SUBPARSE) {
+    return [ re, hasMagic ]
+  }
+
+  // skip the regexp for non-magical patterns
+  // unescape anything in it, though, so that it'll be
+  // an exact match against a file etc.
+  if (!hasMagic) {
+    return globUnescape(pattern)
+  }
+
+  var flags = options.nocase ? "i" : ""
+    , regExp = new RegExp("^" + re + "$", flags)
+
+  regExp._glob = pattern
+  regExp._src = re
+
+  return regExp
+}
+
+minimatch.makeRe = function (pattern, options) {
+  return new Minimatch(pattern, options || {}).makeRe()
+}
+
+Minimatch.prototype.makeRe = makeRe
+function makeRe () {
+  if (this.regexp || this.regexp === false) return this.regexp
+
+  // at this point, this.set is a 2d array of partial
+  // pattern strings, or "**".
+  //
+  // It's better to use .match().  This function shouldn't
+  // be used, really, but it's pretty convenient sometimes,
+  // when you just want to work with a regex.
+  var set = this.set
+
+  if (!set.length) return this.regexp = false
+  var options = this.options
+
+  var twoStar = options.noglobstar ? star
+      : options.dot ? twoStarDot
+      : twoStarNoDot
+    , flags = options.nocase ? "i" : ""
+
+  var re = set.map(function (pattern) {
+    return pattern.map(function (p) {
+      return (p === GLOBSTAR) ? twoStar
+           : (typeof p === "string") ? regExpEscape(p)
+           : p._src
+    }).join("\\\/")
+  }).join("|")
+
+  // must match entire pattern
+  // ending in a * or ** will make it less strict.
+  re = "^(?:" + re + ")$"
+
+  // can match anything, as long as it's not this.
+  if (this.negate) re = "^(?!" + re + ").*$"
+
+  try {
+    return this.regexp = new RegExp(re, flags)
+  } catch (ex) {
+    return this.regexp = false
+  }
+}
+
+minimatch.match = function (list, pattern, options) {
+  options = options || {}
+  var mm = new Minimatch(pattern, options)
+  list = list.filter(function (f) {
+    return mm.match(f)
+  })
+  if (mm.options.nonull && !list.length) {
+    list.push(pattern)
+  }
+  return list
+}
+
+Minimatch.prototype.match = match
+function match (f, partial) {
+  this.debug("match", f, this.pattern)
+  // short-circuit in the case of busted things.
+  // comments, etc.
+  if (this.comment) return false
+  if (this.empty) return f === ""
+
+  if (f === "/" && partial) return true
+
+  var options = this.options
+
+  // windows: need to use /, not \
+  // On other platforms, \ is a valid (albeit bad) filename char.
+  if (platform === "win32") {
+    f = f.split("\\").join("/")
+  }
+
+  // treat the test path as a set of pathparts.
+  f = f.split(slashSplit)
+  this.debug(this.pattern, "split", f)
+
+  // just ONE of the pattern sets in this.set needs to match
+  // in order for it to be valid.  If negating, then just one
+  // match means that we have failed.
+  // Either way, return on the first hit.
+
+  var set = this.set
+  this.debug(this.pattern, "set", set)
+
+  // Find the basename of the path by looking for the last non-empty segment
+  var filename;
+  for (var i = f.length - 1; i >= 0; i--) {
+    filename = f[i]
+    if (filename) break
+  }
+
+  for (var i = 0, l = set.length; i < l; i ++) {
+    var pattern = set[i], file = f
+    if (options.matchBase && pattern.length === 1) {
+      file = [filename]
+    }
+    var hit = this.matchOne(file, pattern, partial)
+    if (hit) {
+      if (options.flipNegate) return true
+      return !this.negate
+    }
+  }
+
+  // didn't get any hits.  this is success if it's a negative
+  // pattern, failure otherwise.
+  if (options.flipNegate) return false
+  return this.negate
+}
+
+// set partial to true to test if, for example,
+// "/a/b" matches the start of "/*/b/*/d"
+// Partial means, if you run out of file before you run
+// out of pattern, then that's fine, as long as all
+// the parts match.
+Minimatch.prototype.matchOne = function (file, pattern, partial) {
+  var options = this.options
+
+  this.debug("matchOne",
+              { "this": this
+              , file: file
+              , pattern: pattern })
+
+  this.debug("matchOne", file.length, pattern.length)
+
+  for ( var fi = 0
+          , pi = 0
+          , fl = file.length
+          , pl = pattern.length
+      ; (fi < fl) && (pi < pl)
+      ; fi ++, pi ++ ) {
+
+    this.debug("matchOne loop")
+    var p = pattern[pi]
+      , f = file[fi]
+
+    this.debug(pattern, p, f)
+
+    // should be impossible.
+    // some invalid regexp stuff in the set.
+    if (p === false) return false
+
+    if (p === GLOBSTAR) {
+      this.debug('GLOBSTAR', [pattern, p, f])
+
+      // "**"
+      // a/**/b/**/c would match the following:
+      // a/b/x/y/z/c
+      // a/x/y/z/b/c
+      // a/b/x/b/x/c
+      // a/b/c
+      // To do this, take the rest of the pattern after
+      // the **, and see if it would match the file remainder.
+      // If so, return success.
+      // If not, the ** "swallows" a segment, and try again.
+      // This is recursively awful.
+      //
+      // a/**/b/**/c matching a/b/x/y/z/c
+      // - a matches a
+      // - doublestar
+      //   - matchOne(b/x/y/z/c, b/**/c)
+      //     - b matches b
+      //     - doublestar
+      //       - matchOne(x/y/z/c, c) -> no
+      //       - matchOne(y/z/c, c) -> no
+      //       - matchOne(z/c, c) -> no
+      //       - matchOne(c, c) yes, hit
+      var fr = fi
+        , pr = pi + 1
+      if (pr === pl) {
+        this.debug('** at the end')
+        // a ** at the end will just swallow the rest.
+        // We have found a match.
+        // however, it will not swallow /.x, unless
+        // options.dot is set.
+        // . and .. are *never* matched by **, for explosively
+        // exponential reasons.
+        for ( ; fi < fl; fi ++) {
+          if (file[fi] === "." || file[fi] === ".." ||
+              (!options.dot && file[fi].charAt(0) === ".")) return false
+        }
+        return true
+      }
+
+      // ok, let's see if we can swallow whatever we can.
+      WHILE: while (fr < fl) {
+        var swallowee = file[fr]
+
+        this.debug('\nglobstar while',
+                    file, fr, pattern, pr, swallowee)
+
+        // XXX remove this slice.  Just pass the start index.
+        if (this.matchOne(file.slice(fr), pattern.slice(pr), partial)) {
+          this.debug('globstar found match!', fr, fl, swallowee)
+          // found a match.
+          return true
+        } else {
+          // can't swallow "." or ".." ever.
+          // can only swallow ".foo" when explicitly asked.
+          if (swallowee === "." || swallowee === ".." ||
+              (!options.dot && swallowee.charAt(0) === ".")) {
+            this.debug("dot detected!", file, fr, pattern, pr)
+            break WHILE
+          }
+
+          // ** swallows a segment, and continue.
+          this.debug('globstar swallow a segment, and continue')
+          fr ++
+        }
+      }
+      // no match was found.
+      // However, in partial mode, we can't say this is necessarily over.
+      // If there's more *pattern* left, then
+      if (partial) {
+        // ran out of file
+        this.debug("\n>>> no match, partial?", file, fr, pattern, pr)
+        if (fr === fl) return true
+      }
+      return false
+    }
+
+    // something other than **
+    // non-magic patterns just have to match exactly
+    // patterns with magic have been turned into regexps.
+    var hit
+    if (typeof p === "string") {
+      if (options.nocase) {
+        hit = f.toLowerCase() === p.toLowerCase()
+      } else {
+        hit = f === p
+      }
+      this.debug("string match", p, f, hit)
+    } else {
+      hit = f.match(p)
+      this.debug("pattern match", p, f, hit)
+    }
+
+    if (!hit) return false
+  }
+
+  // Note: ending in / means that we'll get a final ""
+  // at the end of the pattern.  This can only match a
+  // corresponding "" at the end of the file.
+  // If the file ends in /, then it can only match a
+  // a pattern that ends in /, unless the pattern just
+  // doesn't have any more for it. But, a/b/ should *not*
+  // match "a/b/*", even though "" matches against the
+  // [^/]*? pattern, except in partial mode, where it might
+  // simply not be reached yet.
+  // However, a/b/ should still satisfy a/*
+
+  // now either we fell off the end of the pattern, or we're done.
+  if (fi === fl && pi === pl) {
+    // ran out of pattern and filename at the same time.
+    // an exact hit!
+    return true
+  } else if (fi === fl) {
+    // ran out of file, but still had pattern left.
+    // this is ok if we're doing the match as part of
+    // a glob fs traversal.
+    return partial
+  } else if (pi === pl) {
+    // ran out of pattern, still have file left.
+    // this is only acceptable if we're on the very last
+    // empty segment of a file with a trailing slash.
+    // a/* should match a/b/
+    var emptyFileEnd = (fi === fl - 1) && (file[fi] === "")
+    return emptyFileEnd
+  }
+
+  // should be unreachable.
+  throw new Error("wtf?")
+}
+
+
+// replace stuff like \* with *
+function globUnescape (s) {
+  return s.replace(/\\(.)/g, "$1")
+}
+
+
+function regExpEscape (s) {
+  return s.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&")
+}
+
+})( typeof require === "function" ? require : null,
+    this,
+    typeof module === "object" ? module : null,
+    typeof process === "object" ? process.platform : "win32"
+  )
+
+}).call(this,require('_process'))
+},{"_process":62,"lru-cache":34,"path":61,"sigmund":35}],34:[function(require,module,exports){
+;(function () { // closure for web browsers
+
+if (typeof module === 'object' && module.exports) {
+  module.exports = LRUCache
+} else {
+  // just set the global for non-node platforms.
+  this.LRUCache = LRUCache
+}
+
+function hOP (obj, key) {
+  return Object.prototype.hasOwnProperty.call(obj, key)
+}
+
+function naiveLength () { return 1 }
+
+function LRUCache (options) {
+  if (!(this instanceof LRUCache))
+    return new LRUCache(options)
+
+  if (typeof options === 'number')
+    options = { max: options }
+
+  if (!options)
+    options = {}
+
+  this._max = options.max
+  // Kind of weird to have a default max of Infinity, but oh well.
+  if (!this._max || !(typeof this._max === "number") || this._max <= 0 )
+    this._max = Infinity
+
+  this._lengthCalculator = options.length || naiveLength
+  if (typeof this._lengthCalculator !== "function")
+    this._lengthCalculator = naiveLength
+
+  this._allowStale = options.stale || false
+  this._maxAge = options.maxAge || null
+  this._dispose = options.dispose
+  this.reset()
+}
+
+// resize the cache when the max changes.
+Object.defineProperty(LRUCache.prototype, "max",
+  { set : function (mL) {
+      if (!mL || !(typeof mL === "number") || mL <= 0 ) mL = Infinity
+      this._max = mL
+      if (this._length > this._max) trim(this)
+    }
+  , get : function () { return this._max }
+  , enumerable : true
+  })
+
+// resize the cache when the lengthCalculator changes.
+Object.defineProperty(LRUCache.prototype, "lengthCalculator",
+  { set : function (lC) {
+      if (typeof lC !== "function") {
+        this._lengthCalculator = naiveLength
+        this._length = this._itemCount
+        for (var key in this._cache) {
+          this._cache[key].length = 1
+        }
+      } else {
+        this._lengthCalculator = lC
+        this._length = 0
+        for (var key in this._cache) {
+          this._cache[key].length = this._lengthCalculator(this._cache[key].value)
+          this._length += this._cache[key].length
+        }
+      }
+
+      if (this._length > this._max) trim(this)
+    }
+  , get : function () { return this._lengthCalculator }
+  , enumerable : true
+  })
+
+Object.defineProperty(LRUCache.prototype, "length",
+  { get : function () { return this._length }
+  , enumerable : true
+  })
+
+
+Object.defineProperty(LRUCache.prototype, "itemCount",
+  { get : function () { return this._itemCount }
+  , enumerable : true
+  })
+
+LRUCache.prototype.forEach = function (fn, thisp) {
+  thisp = thisp || this
+  var i = 0;
+  for (var k = this._mru - 1; k >= 0 && i < this._itemCount; k--) if (this._lruList[k]) {
+    i++
+    var hit = this._lruList[k]
+    if (this._maxAge && (Date.now() - hit.now > this._maxAge)) {
+      del(this, hit)
+      if (!this._allowStale) hit = undefined
+    }
+    if (hit) {
+      fn.call(thisp, hit.value, hit.key, this)
+    }
+  }
+}
+
+LRUCache.prototype.keys = function () {
+  var keys = new Array(this._itemCount)
+  var i = 0
+  for (var k = this._mru - 1; k >= 0 && i < this._itemCount; k--) if (this._lruList[k]) {
+    var hit = this._lruList[k]
+    keys[i++] = hit.key
+  }
+  return keys
+}
+
+LRUCache.prototype.values = function () {
+  var values = new Array(this._itemCount)
+  var i = 0
+  for (var k = this._mru - 1; k >= 0 && i < this._itemCount; k--) if (this._lruList[k]) {
+    var hit = this._lruList[k]
+    values[i++] = hit.value
+  }
+  return values
+}
+
+LRUCache.prototype.reset = function () {
+  if (this._dispose && this._cache) {
+    for (var k in this._cache) {
+      this._dispose(k, this._cache[k].value)
+    }
+  }
+
+  this._cache = Object.create(null) // hash of items by key
+  this._lruList = Object.create(null) // list of items in order of use recency
+  this._mru = 0 // most recently used
+  this._lru = 0 // least recently used
+  this._length = 0 // number of items in the list
+  this._itemCount = 0
+}
+
+// Provided for debugging/dev purposes only. No promises whatsoever that
+// this API stays stable.
+LRUCache.prototype.dump = function () {
+  return this._cache
+}
+
+LRUCache.prototype.dumpLru = function () {
+  return this._lruList
+}
+
+LRUCache.prototype.set = function (key, value) {
+  if (hOP(this._cache, key)) {
+    // dispose of the old one before overwriting
+    if (this._dispose) this._dispose(key, this._cache[key].value)
+    if (this._maxAge) this._cache[key].now = Date.now()
+    this._cache[key].value = value
+    this.get(key)
+    return true
+  }
+
+  var len = this._lengthCalculator(value)
+  var age = this._maxAge ? Date.now() : 0
+  var hit = new Entry(key, value, this._mru++, len, age)
+
+  // oversized objects fall out of cache automatically.
+  if (hit.length > this._max) {
+    if (this._dispose) this._dispose(key, value)
+    return false
+  }
+
+  this._length += hit.length
+  this._lruList[hit.lu] = this._cache[key] = hit
+  this._itemCount ++
+
+  if (this._length > this._max) trim(this)
+  return true
+}
+
+LRUCache.prototype.has = function (key) {
+  if (!hOP(this._cache, key)) return false
+  var hit = this._cache[key]
+  if (this._maxAge && (Date.now() - hit.now > this._maxAge)) {
+    return false
+  }
+  return true
+}
+
+LRUCache.prototype.get = function (key) {
+  return get(this, key, true)
+}
+
+LRUCache.prototype.peek = function (key) {
+  return get(this, key, false)
+}
+
+LRUCache.prototype.pop = function () {
+  var hit = this._lruList[this._lru]
+  del(this, hit)
+  return hit || null
+}
+
+LRUCache.prototype.del = function (key) {
+  del(this, this._cache[key])
+}
+
+function get (self, key, doUse) {
+  var hit = self._cache[key]
+  if (hit) {
+    if (self._maxAge && (Date.now() - hit.now > self._maxAge)) {
+      del(self, hit)
+      if (!self._allowStale) hit = undefined
+    } else {
+      if (doUse) use(self, hit)
+    }
+    if (hit) hit = hit.value
+  }
+  return hit
+}
+
+function use (self, hit) {
+  shiftLU(self, hit)
+  hit.lu = self._mru ++
+  self._lruList[hit.lu] = hit
+}
+
+function trim (self) {
+  while (self._lru < self._mru && self._length > self._max)
+    del(self, self._lruList[self._lru])
+}
+
+function shiftLU (self, hit) {
+  delete self._lruList[ hit.lu ]
+  while (self._lru < self._mru && !self._lruList[self._lru]) self._lru ++
+}
+
+function del (self, hit) {
+  if (hit) {
+    if (self._dispose) self._dispose(hit.key, hit.value)
+    self._length -= hit.length
+    self._itemCount --
+    delete self._cache[ hit.key ]
+    shiftLU(self, hit)
+  }
+}
+
+// classy, since V8 prefers predictable objects.
+function Entry (key, value, lu, length, now) {
+  this.key = key
+  this.value = value
+  this.lu = lu
+  this.length = length
+  this.now = now
+}
+
+})()
+
 },{}],35:[function(require,module,exports){
+module.exports = sigmund
+function sigmund (subject, maxSessions) {
+    maxSessions = maxSessions || 10;
+    var notes = [];
+    var analysis = '';
+    var RE = RegExp;
+
+    function psychoAnalyze (subject, session) {
+        if (session > maxSessions) return;
+
+        if (typeof subject === 'function' ||
+            typeof subject === 'undefined') {
+            return;
+        }
+
+        if (typeof subject !== 'object' || !subject ||
+            (subject instanceof RE)) {
+            analysis += subject;
+            return;
+        }
+
+        if (notes.indexOf(subject) !== -1 || session === maxSessions) return;
+
+        notes.push(subject);
+        analysis += '{';
+        Object.keys(subject).forEach(function (issue, _, __) {
+            // pseudo-private values.  skip those.
+            if (issue.charAt(0) === '_') return;
+            var to = typeof subject[issue];
+            if (to === 'function' || to === 'undefined') return;
+            analysis += issue;
+            psychoAnalyze(subject[issue], session + 1);
+        });
+    }
+    psychoAnalyze(subject, 0);
+    return analysis;
+}
+
+// vim: set softtabstop=4 shiftwidth=4:
+
+},{}],36:[function(require,module,exports){
 (function (Buffer){
 function FilerBuffer (subject, encoding, nonZero) {
 
@@ -5096,7 +7181,7 @@ Object.keys(Buffer).forEach(function (p) {
 module.exports = FilerBuffer;
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":56}],36:[function(require,module,exports){
+},{"buffer":57}],37:[function(require,module,exports){
 var O_READ = 'READ';
 var O_WRITE = 'WRITE';
 var O_CREATE = 'CREATE';
@@ -5178,7 +7263,7 @@ module.exports = {
   }
 };
 
-},{}],37:[function(require,module,exports){
+},{}],38:[function(require,module,exports){
 var MODE_FILE = require('./constants.js').MODE_FILE;
 
 module.exports = function DirectoryEntry(id, type) {
@@ -5186,7 +7271,7 @@ module.exports = function DirectoryEntry(id, type) {
   this.type = type || MODE_FILE;
 };
 
-},{"./constants.js":36}],38:[function(require,module,exports){
+},{"./constants.js":37}],39:[function(require,module,exports){
 (function (Buffer){
 // Adapt encodings to work with Buffer or Uint8Array, they expect the latter
 function decode(buf) {
@@ -5203,7 +7288,7 @@ module.exports = {
 };
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":56}],39:[function(require,module,exports){
+},{"buffer":57}],40:[function(require,module,exports){
 var errors = {};
 [
   /**
@@ -5309,7 +7394,7 @@ var errors = {};
 
 module.exports = errors;
 
-},{}],40:[function(require,module,exports){
+},{}],41:[function(require,module,exports){
 var _ = require('../../lib/nodash.js');
 
 var Path = require('../path.js');
@@ -6125,6 +8210,8 @@ function read_data(context, ofd, buffer, offset, length, position, callback) {
   function read_file_data(error, result) {
     if(error) {
       callback(error);
+    } else if(result.mode === 'DIRECTORY') {
+      callback(new Errors.EISDIR('the named file is a directory', ofd.path));
     } else {
       fileNode = result;
       context.getBuffer(fileNode.data, handle_file_data);
@@ -6333,7 +8420,7 @@ function unlink_node(context, path, callback) {
       if(!_(directoryData).has(name)) {
         callback(new Errors.ENOENT('a component of the path does not name an existing file', name));
       } else {
-        context.getObject(directoryData[name].id, update_file_node);
+        context.getObject(directoryData[name].id, check_if_node_is_directory);
       }
     }
   }
@@ -7284,7 +9371,88 @@ function rename(fs, context, oldpath, newpath, callback) {
   if(!pathCheck(oldpath, callback)) return;
   if(!pathCheck(newpath, callback)) return;
 
-  function unlink_old_node(error) {
+  var oldParentPath = Path.dirname(oldpath);
+  var newParentPath = Path.dirname(oldpath);
+  var oldName = Path.basename(oldpath);
+  var newName = Path.basename(newpath);
+  var oldParentDirectory, oldParentData;
+  var newParentDirectory, newParentData;
+
+  function update_times(error, newNode) {
+    if(error) {
+      callback(error);
+    } else {
+      update_node_times(context, newpath,  newNode, { ctime: Date.now() }, callback);
+    }
+  }
+
+  function read_new_directory(error) {
+    if(error) {
+      callback(error);
+    } else {
+      context.getObject(newParentData[newName].id, update_times);
+    }
+  }
+
+  function update_old_parent_directory_data(error) {
+    if(error) {
+      callback(error);
+    } else {
+      delete oldParentData[oldName];
+      context.putObject(oldParentDirectory.data, oldParentData, read_new_directory);
+    }
+  }
+
+  function update_new_parent_directory_data(error) {
+    if(error) {
+      callback(error);
+    } else {
+      newParentData[newName] = oldParentData[oldName];
+      context.putObject(newParentDirectory.data, newParentData, update_old_parent_directory_data);
+    }
+  }
+
+  function check_if_new_directory_exists(error, result) {
+    if(error) {
+      callback(error);
+    } else {
+      newParentData = result;
+      if(_(newParentData).has(newName)) {
+        remove_directory(context, newpath, update_new_parent_directory_data);
+      } else {
+        update_new_parent_directory_data();
+      }
+    }
+  }
+
+  function read_new_parent_directory_data(error, result) {
+    if(error) {
+      callback(error);
+    } else {
+      newParentDirectory = result;
+      context.getObject(newParentDirectory.data, check_if_new_directory_exists);
+    }
+  }
+
+  function get_new_parent_directory(error, result) {
+    if(error) {
+      callback(error);
+    } else {
+      oldParentData = result;
+      find_node(context, newParentPath, read_new_parent_directory_data);
+    }
+  }
+
+  function read_parent_directory_data(error, result) {
+    if(error) {
+      callback(error);
+    } else {
+      oldParentDirectory = result;
+      context.getObject(result.data, get_new_parent_directory);
+    }
+  }
+
+  function unlink_old_file(error) {
     if(error) {
       callback(error);
     } else {
@@ -7292,7 +9460,17 @@ function rename(fs, context, oldpath, newpath, callback) {
     }
   }
 
-  link_node(context, oldpath, newpath, unlink_old_node);
+  function check_node_type(error, node) {
+    if(error) {
+      callback(error);
+    } else if(node.mode === 'DIRECTORY') {
+      find_node(context, oldParentPath, read_parent_directory_data);
+    } else {
+      link_node(context, oldpath, newpath, unlink_old_file);
+    }
+  }
+
+  find_node(context, oldpath, check_node_type);
 }
 
 function symlink(fs, context, srcpath, dstpath, type, callback) {
@@ -7382,7 +9560,7 @@ module.exports = {
   ftruncate: ftruncate
 };
 
-},{"../../lib/nodash.js":33,"../buffer.js":35,"../constants.js":36,"../directory-entry.js":37,"../encoding.js":38,"../errors.js":39,"../node.js":44,"../open-file-description.js":45,"../path.js":46,"../stats.js":54,"../super-node.js":55}],41:[function(require,module,exports){
+},{"../../lib/nodash.js":31,"../buffer.js":36,"../constants.js":37,"../directory-entry.js":38,"../encoding.js":39,"../errors.js":40,"../node.js":45,"../open-file-description.js":46,"../path.js":47,"../stats.js":55,"../super-node.js":56}],42:[function(require,module,exports){
 var _ = require('../../lib/nodash.js');
 
 var isNullPath = require('../path.js').isNull;
@@ -7424,6 +9602,13 @@ function maybeCallback(callback) {
   };
 }
 
+// Default callback that logs an error if passed in
+function defaultCallback(err) {
+  if(err) {
+    console.error('Filer error: ', err);
+  }
+}
+
 /**
  * FileSystem
  *
@@ -7454,7 +9639,7 @@ function maybeCallback(callback) {
  */
 function FileSystem(options, callback) {
   options = options || {};
-  callback = callback || nop;
+  callback = callback || defaultCallback;
 
   var flags = options.flags;
   var guid = options.guid ? options.guid : defaultGuidFn;
@@ -7471,6 +9656,9 @@ function FileSystem(options, callback) {
   fs.stdin = STDIN;
   fs.stdout = STDOUT;
   fs.stderr = STDERR;
+
+  // Expose Shell constructor
+  this.Shell = Shell.bind(undefined, this);
 
   // Safely expose the list of open files and file
   // descriptor management functions
@@ -7719,13 +9907,9 @@ FileSystem.providers = providers;
   };
 });
 
-FileSystem.prototype.Shell = function(options) {
-  return new Shell(this, options);
-};
-
 module.exports = FileSystem;
 
-},{"../../lib/intercom.js":32,"../../lib/nodash.js":33,"../constants.js":36,"../errors.js":39,"../fs-watcher.js":42,"../path.js":46,"../providers/index.js":47,"../shared.js":51,"../shell/shell.js":53,"./implementation.js":40}],42:[function(require,module,exports){
+},{"../../lib/intercom.js":30,"../../lib/nodash.js":31,"../constants.js":37,"../errors.js":40,"../fs-watcher.js":43,"../path.js":47,"../providers/index.js":48,"../shared.js":52,"../shell/shell.js":54,"./implementation.js":41}],43:[function(require,module,exports){
 var EventEmitter = require('../lib/eventemitter.js');
 var Path = require('./path.js');
 var Intercom = require('../lib/intercom.js');
@@ -7789,15 +9973,16 @@ FSWatcher.prototype.constructor = FSWatcher;
 
 module.exports = FSWatcher;
 
-},{"../lib/eventemitter.js":31,"../lib/intercom.js":32,"./path.js":46}],43:[function(require,module,exports){
+},{"../lib/eventemitter.js":29,"../lib/intercom.js":30,"./path.js":47}],44:[function(require,module,exports){
 module.exports = {
   FileSystem: require('./filesystem/interface.js'),
   Buffer: require('./buffer.js'),
   Path: require('./path.js'),
-  Errors: require('./errors.js')
+  Errors: require('./errors.js'),
+  Shell: require('./shell/shell.js')
 };
 
-},{"./buffer.js":35,"./errors.js":39,"./filesystem/interface.js":41,"./path.js":46}],44:[function(require,module,exports){
+},{"./buffer.js":36,"./errors.js":40,"./filesystem/interface.js":42,"./path.js":47,"./shell/shell.js":54}],45:[function(require,module,exports){
 var MODE_FILE = require('./constants.js').MODE_FILE;
 
 function Node(options) {
@@ -7852,7 +10037,7 @@ Node.create = function(options, callback) {
 
 module.exports = Node;
 
-},{"./constants.js":36}],45:[function(require,module,exports){
+},{"./constants.js":37}],46:[function(require,module,exports){
 var Errors = require('./errors.js');
 
 function OpenFileDescription(path, id, flags, position) {
@@ -7885,7 +10070,7 @@ OpenFileDescription.prototype.getNode = function(context, callback) {
 
 module.exports = OpenFileDescription;
 
-},{"./errors.js":39}],46:[function(require,module,exports){
+},{"./errors.js":40}],47:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -7954,7 +10139,7 @@ function resolve() {
       resolvedAbsolute = false;
 
   for (var i = arguments.length - 1; i >= -1 && !resolvedAbsolute; i--) {
-    // XXXidbfs: we don't have process.cwd() so we use '/' as a fallback
+    // XXXfiler: we don't have process.cwd() so we use '/' as a fallback
     var path = (i >= 0) ? arguments[i] : '/';
 
     // Skip empty and invalid entries
@@ -8072,7 +10257,7 @@ function basename(path, ext) {
   if (ext && f.substr(-1 * ext.length) === ext) {
     f = f.substr(0, f.length - ext.length);
   }
-  // XXXidbfs: node.js just does `return f`
+  // XXXfiler: node.js just does `return f`
   return f === "" ? "/" : f;
 }
 
@@ -8094,7 +10279,19 @@ function isNull(path) {
   return false;
 }
 
-// XXXidbfs: we don't support path.exists() or path.existsSync(), which
+// Make sure we don't double-add a trailing slash (e.g., '/' -> '//')
+function addTrailing(path) {
+  return path.replace(/\/*$/, '/');
+}
+
+// Deal with multiple slashes at the end, one, or none
+// and make sure we don't return the empty string.
+function removeTrailing(path) {
+  path = path.replace(/\/*$/, '');
+  return path === '' ? '/' : path;
+}
+
+// XXXfiler: we don't support path.exists() or path.existsSync(), which
 // are deprecated, and need a FileSystem instance to work. Use fs.stat().
 
 module.exports = {
@@ -8108,10 +10305,13 @@ module.exports = {
   basename: basename,
   extname: extname,
   isAbsolute: isAbsolute,
-  isNull: isNull
+  isNull: isNull,
+  // Non-node but useful...
+  addTrailing: addTrailing,
+  removeTrailing: removeTrailing
 };
 
-},{}],47:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 var IndexedDB = require('./indexeddb.js');
 var WebSQL = require('./websql.js');
 var Memory = require('./memory.js');
@@ -8148,7 +10348,7 @@ module.exports = {
   }())
 };
 
-},{"./indexeddb.js":48,"./memory.js":49,"./websql.js":50}],48:[function(require,module,exports){
+},{"./indexeddb.js":49,"./memory.js":50,"./websql.js":51}],49:[function(require,module,exports){
 (function (global,Buffer){
 var FILE_SYSTEM_NAME = require('../constants.js').FILE_SYSTEM_NAME;
 var FILE_STORE_NAME = require('../constants.js').FILE_STORE_NAME;
@@ -8300,7 +10500,7 @@ IndexedDB.prototype.getReadWriteContext = function() {
 module.exports = IndexedDB;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer)
-},{"../buffer.js":35,"../constants.js":36,"../errors.js":39,"buffer":56}],49:[function(require,module,exports){
+},{"../buffer.js":36,"../constants.js":37,"../errors.js":40,"buffer":57}],50:[function(require,module,exports){
 var FILE_SYSTEM_NAME = require('../constants.js').FILE_SYSTEM_NAME;
 // NOTE: prefer setImmediate to nextTick for proper recursion yielding.
 // see https://github.com/js-platform/filer/pull/24
@@ -8392,7 +10592,7 @@ Memory.prototype.getReadWriteContext = function() {
 
 module.exports = Memory;
 
-},{"../../lib/async.js":30,"../constants.js":36}],50:[function(require,module,exports){
+},{"../../lib/async.js":28,"../constants.js":37}],51:[function(require,module,exports){
 (function (global){
 var FILE_SYSTEM_NAME = require('../constants.js').FILE_SYSTEM_NAME;
 var FILE_STORE_NAME = require('../constants.js').FILE_STORE_NAME;
@@ -8567,7 +10767,7 @@ WebSQL.prototype.getReadWriteContext = function() {
 module.exports = WebSQL;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../buffer.js":35,"../constants.js":36,"../errors.js":39,"base64-arraybuffer":34}],51:[function(require,module,exports){
+},{"../buffer.js":36,"../constants.js":37,"../errors.js":40,"base64-arraybuffer":32}],52:[function(require,module,exports){
 function guid() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
     var r = Math.random()*16|0, v = c == 'x' ? r : (r&0x3|0x8);
@@ -8595,7 +10795,7 @@ module.exports = {
   nop: nop
 };
 
-},{}],52:[function(require,module,exports){
+},{}],53:[function(require,module,exports){
 var defaults = require('../constants.js').ENVIRONMENT;
 
 module.exports = function Environment(env) {
@@ -8612,12 +10812,13 @@ module.exports = function Environment(env) {
   };
 };
 
-},{"../constants.js":36}],53:[function(require,module,exports){
+},{"../constants.js":37}],54:[function(require,module,exports){
 var Path = require('../path.js');
 var Errors = require('../errors.js');
 var Environment = require('./environment.js');
 var async = require('../../lib/async.js');
 var Encoding = require('../encoding.js');
+var minimatch = require('minimatch');
 
 function Shell(fs, options) {
   options = options || {};
@@ -9041,9 +11242,125 @@ Shell.prototype.mkdirp = function(path, callback) {
   _mkdirp(path, callback);
 };
 
+/**
+ * Recursively walk a directory tree, reporting back all paths
+ * that were found along the way. The `path` must be a dir.
+ * Valid options include a `regex` for pattern matching paths
+ * and an `exec` function of the form `function(path, next)` where
+ * `path` is the current path that was found (dir paths have an '/'
+ * appended) and `next` is a callback to call when done processing
+ * the current path, passing any error object back as the first argument.
+ * `find` returns a flat array of absolute paths for all matching/found
+ * paths as the final argument to the callback.
+ */
+ Shell.prototype.find = function(path, options, callback) {
+  var sh = this;
+  var fs = sh.fs;
+  if(typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  options = options || {};
+  callback = callback || function(){};
+
+  var exec = options.exec || function(path, next) { next(); };
+  var found = [];
+
+  if(!path) {
+    callback(new Errors.EINVAL('Missing path argument'));
+    return;
+  }
+
+  function processPath(path, callback) {
+    exec(path, function(err) {
+      if(err) {
+        callback(err);
+        return;
+      }
+
+      found.push(path);
+      callback();
+    });
+  }
+
+  function maybeProcessPath(path, callback) {
+    // Test the path against the user's regex, name, path primaries (if any)
+    // and remove any trailing slashes added previously.
+    var rawPath = Path.removeTrailing(path);
+
+    // Check entire path against provided regex, if any
+    if(options.regex && !options.regex.test(rawPath)) {
+      callback();
+      return;
+    }
+
+    // Check basename for matches against name primary, if any
+    if(options.name && !minimatch(Path.basename(rawPath), options.name)) {
+      callback();
+      return;
+    }
+
+    // Check dirname for matches against path primary, if any
+    if(options.path && !minimatch(Path.dirname(rawPath), options.path)) {
+      callback();
+      return;
+    }
+
+    processPath(path, callback);
+  }
+
+  function walk(path, callback) {
+    path = Path.resolve(sh.pwd(), path);
+
+    // The path is either a file or dir, and instead of doing
+    // a stat() to determine it first, we just try to readdir()
+    // and it will either work or not, and we handle the non-dir error.
+    fs.readdir(path, function(err, entries) {
+      if(err) {
+        if(err.code === 'ENOTDIR' /* file case, ignore error */) {
+          maybeProcessPath(path, callback);
+        } else {
+          callback(err);
+        }
+        return;
+      }
+
+      // Path is really a dir, add a trailing / and report it found
+      maybeProcessPath(Path.addTrailing(path), function(err) {
+        if(err) {
+          callback(err);
+          return;
+        }
+
+        entries = entries.map(function(entry) {
+          return Path.join(path, entry);
+        });
+
+        async.eachSeries(entries, walk, function(err) {
+          callback(err, found);
+        });
+      });
+    });
+  }
+
+  // Make sure we are starting with a dir path
+  fs.stat(path, function(err, stats) {
+    if(err) {
+      callback(err);
+      return;
+    }
+    if(!stats.isDirectory()) {
+      callback(new Errors.ENOTDIR(null, path));
+      return;
+    }
+
+    walk(path, callback);
+  });
+};
+
 module.exports = Shell;
 
-},{"../../lib/async.js":30,"../encoding.js":38,"../errors.js":39,"../path.js":46,"./environment.js":52}],54:[function(require,module,exports){
+},{"../../lib/async.js":28,"../encoding.js":39,"../errors.js":40,"../path.js":47,"./environment.js":53,"minimatch":33}],55:[function(require,module,exports){
 var Constants = require('./constants.js');
 
 function Stats(fileNode, devName) {
@@ -9080,7 +11397,7 @@ function() {
 
 module.exports = Stats;
 
-},{"./constants.js":36}],55:[function(require,module,exports){
+},{"./constants.js":37}],56:[function(require,module,exports){
 var Constants = require('./constants.js');
 
 function SuperNode(options) {
@@ -9108,7 +11425,7 @@ SuperNode.create = function(options, callback) {
 
 module.exports = SuperNode;
 
-},{"./constants.js":36}],56:[function(require,module,exports){
+},{"./constants.js":37}],57:[function(require,module,exports){
 /*!
  * The buffer module from node.js, for the browser.
  *
@@ -9121,11 +11438,12 @@ var ieee754 = require('ieee754')
 var isArray = require('is-array')
 
 exports.Buffer = Buffer
-exports.SlowBuffer = Buffer
+exports.SlowBuffer = SlowBuffer
 exports.INSPECT_MAX_BYTES = 50
 Buffer.poolSize = 8192 // not used by this implementation
 
 var kMaxLength = 0x3fffffff
+var rootParent = {}
 
 /**
  * If `Buffer.TYPED_ARRAY_SUPPORT`:
@@ -9185,8 +11503,6 @@ function Buffer (subject, encoding, noZero) {
   if (type === 'number')
     length = subject > 0 ? subject >>> 0 : 0
   else if (type === 'string') {
-    if (encoding === 'base64')
-      subject = base64clean(subject)
     length = Buffer.byteLength(subject, encoding)
   } else if (type === 'object' && subject !== null) { // assume object is array-like
     if (subject.type === 'Buffer' && isArray(subject.data))
@@ -9195,7 +11511,7 @@ function Buffer (subject, encoding, noZero) {
   } else
     throw new TypeError('must start with number, buffer, array or string')
 
-  if (this.length > kMaxLength)
+  if (length > kMaxLength)
     throw new RangeError('Attempt to allocate Buffer larger than maximum ' +
       'size: 0x' + kMaxLength.toString(16) + ' bytes')
 
@@ -9231,6 +11547,18 @@ function Buffer (subject, encoding, noZero) {
     }
   }
 
+  if (length > 0 && length <= Buffer.poolSize)
+    buf.parent = rootParent
+
+  return buf
+}
+
+function SlowBuffer(subject, encoding, noZero) {
+  if (!(this instanceof SlowBuffer))
+    return new SlowBuffer(subject, encoding, noZero)
+
+  var buf = new Buffer(subject, encoding, noZero)
+  delete buf.parent
   return buf
 }
 
@@ -9381,7 +11709,7 @@ Buffer.prototype.toString = function (encoding, start, end) {
 }
 
 Buffer.prototype.equals = function (b) {
-  if(!Buffer.isBuffer(b)) throw new TypeError('Argument must be a Buffer')
+  if (!Buffer.isBuffer(b)) throw new TypeError('Argument must be a Buffer')
   return Buffer.compare(this, b) === 0
 }
 
@@ -9441,7 +11769,7 @@ function hexWrite (buf, string, offset, length) {
 }
 
 function utf8Write (buf, string, offset, length) {
-  var charsWritten = blitBuffer(utf8ToBytes(string), buf, offset, length)
+  var charsWritten = blitBuffer(utf8ToBytes(string, buf.length - offset), buf, offset, length)
   return charsWritten
 }
 
@@ -9460,7 +11788,7 @@ function base64Write (buf, string, offset, length) {
 }
 
 function utf16leWrite (buf, string, offset, length) {
-  var charsWritten = blitBuffer(utf16leToBytes(string), buf, offset, length)
+  var charsWritten = blitBuffer(utf16leToBytes(string, buf.length - offset), buf, offset, length, 2)
   return charsWritten
 }
 
@@ -9480,6 +11808,10 @@ Buffer.prototype.write = function (string, offset, length, encoding) {
   }
 
   offset = Number(offset) || 0
+
+  if (length < 0 || offset < 0 || offset > this.length)
+    throw new RangeError('attempt to write outside buffer bounds');
+
   var remaining = this.length - offset
   if (!length) {
     length = remaining
@@ -9558,13 +11890,19 @@ function asciiSlice (buf, start, end) {
   end = Math.min(buf.length, end)
 
   for (var i = start; i < end; i++) {
-    ret += String.fromCharCode(buf[i])
+    ret += String.fromCharCode(buf[i] & 0x7F)
   }
   return ret
 }
 
 function binarySlice (buf, start, end) {
-  return asciiSlice(buf, start, end)
+  var ret = ''
+  end = Math.min(buf.length, end)
+
+  for (var i = start; i < end; i++) {
+    ret += String.fromCharCode(buf[i])
+  }
+  return ret
 }
 
 function hexSlice (buf, start, end) {
@@ -9613,16 +11951,21 @@ Buffer.prototype.slice = function (start, end) {
   if (end < start)
     end = start
 
+  var newBuf
   if (Buffer.TYPED_ARRAY_SUPPORT) {
-    return Buffer._augment(this.subarray(start, end))
+    newBuf = Buffer._augment(this.subarray(start, end))
   } else {
     var sliceLen = end - start
-    var newBuf = new Buffer(sliceLen, undefined, true)
+    newBuf = new Buffer(sliceLen, undefined, true)
     for (var i = 0; i < sliceLen; i++) {
       newBuf[i] = this[i + start]
     }
-    return newBuf
   }
+
+  if (newBuf.length)
+    newBuf.parent = this.parent || this
+
+  return newBuf
 }
 
 /*
@@ -9633,6 +11976,35 @@ function checkOffset (offset, ext, length) {
     throw new RangeError('offset is not uint')
   if (offset + ext > length)
     throw new RangeError('Trying to access beyond buffer length')
+}
+
+Buffer.prototype.readUIntLE = function (offset, byteLength, noAssert) {
+  offset = offset >>> 0
+  byteLength = byteLength >>> 0
+  if (!noAssert)
+    checkOffset(offset, byteLength, this.length)
+
+  var val = this[offset]
+  var mul = 1
+  var i = 0
+  while (++i < byteLength && (mul *= 0x100))
+    val += this[offset + i] * mul
+
+  return val
+}
+
+Buffer.prototype.readUIntBE = function (offset, byteLength, noAssert) {
+  offset = offset >>> 0
+  byteLength = byteLength >>> 0
+  if (!noAssert)
+    checkOffset(offset, byteLength, this.length)
+
+  var val = this[offset + --byteLength]
+  var mul = 1
+  while (byteLength > 0 && (mul *= 0x100))
+    val += this[offset + --byteLength] * mul;
+
+  return val
 }
 
 Buffer.prototype.readUInt8 = function (offset, noAssert) {
@@ -9671,6 +12043,44 @@ Buffer.prototype.readUInt32BE = function (offset, noAssert) {
       ((this[offset + 1] << 16) |
       (this[offset + 2] << 8) |
       this[offset + 3])
+}
+
+Buffer.prototype.readIntLE = function (offset, byteLength, noAssert) {
+  offset = offset >>> 0
+  byteLength = byteLength >>> 0
+  if (!noAssert)
+    checkOffset(offset, byteLength, this.length)
+
+  var val = this[offset]
+  var mul = 1
+  var i = 0
+  while (++i < byteLength && (mul *= 0x100))
+    val += this[offset + i] * mul
+  mul *= 0x80
+
+  if (val >= mul)
+    val -= Math.pow(2, 8 * byteLength)
+
+  return val
+}
+
+Buffer.prototype.readIntBE = function (offset, byteLength, noAssert) {
+  offset = offset >>> 0
+  byteLength = byteLength >>> 0
+  if (!noAssert)
+    checkOffset(offset, byteLength, this.length)
+
+  var i = byteLength
+  var mul = 1
+  var val = this[offset + --i]
+  while (i > 0 && (mul *= 0x100))
+    val += this[offset + --i] * mul
+  mul *= 0x80
+
+  if (val >= mul)
+    val -= Math.pow(2, 8 * byteLength)
+
+  return val
 }
 
 Buffer.prototype.readInt8 = function (offset, noAssert) {
@@ -9741,8 +12151,40 @@ Buffer.prototype.readDoubleBE = function (offset, noAssert) {
 
 function checkInt (buf, value, offset, ext, max, min) {
   if (!Buffer.isBuffer(buf)) throw new TypeError('buffer must be a Buffer instance')
-  if (value > max || value < min) throw new TypeError('value is out of bounds')
-  if (offset + ext > buf.length) throw new TypeError('index out of range')
+  if (value > max || value < min) throw new RangeError('value is out of bounds')
+  if (offset + ext > buf.length) throw new RangeError('index out of range')
+}
+
+Buffer.prototype.writeUIntLE = function (value, offset, byteLength, noAssert) {
+  value = +value
+  offset = offset >>> 0
+  byteLength = byteLength >>> 0
+  if (!noAssert)
+    checkInt(this, value, offset, byteLength, Math.pow(2, 8 * byteLength), 0)
+
+  var mul = 1
+  var i = 0
+  this[offset] = value & 0xFF
+  while (++i < byteLength && (mul *= 0x100))
+    this[offset + i] = (value / mul) >>> 0 & 0xFF
+
+  return offset + byteLength
+}
+
+Buffer.prototype.writeUIntBE = function (value, offset, byteLength, noAssert) {
+  value = +value
+  offset = offset >>> 0
+  byteLength = byteLength >>> 0
+  if (!noAssert)
+    checkInt(this, value, offset, byteLength, Math.pow(2, 8 * byteLength), 0)
+
+  var i = byteLength - 1
+  var mul = 1
+  this[offset + i] = value & 0xFF
+  while (--i >= 0 && (mul *= 0x100))
+    this[offset + i] = (value / mul) >>> 0 & 0xFF
+
+  return offset + byteLength
 }
 
 Buffer.prototype.writeUInt8 = function (value, offset, noAssert) {
@@ -9822,6 +12264,50 @@ Buffer.prototype.writeUInt32BE = function (value, offset, noAssert) {
   return offset + 4
 }
 
+Buffer.prototype.writeIntLE = function (value, offset, byteLength, noAssert) {
+  value = +value
+  offset = offset >>> 0
+  if (!noAssert) {
+    checkInt(this,
+             value,
+             offset,
+             byteLength,
+             Math.pow(2, 8 * byteLength - 1) - 1,
+             -Math.pow(2, 8 * byteLength - 1))
+  }
+
+  var i = 0
+  var mul = 1
+  var sub = value < 0 ? 1 : 0
+  this[offset] = value & 0xFF
+  while (++i < byteLength && (mul *= 0x100))
+    this[offset + i] = ((value / mul) >> 0) - sub & 0xFF
+
+  return offset + byteLength
+}
+
+Buffer.prototype.writeIntBE = function (value, offset, byteLength, noAssert) {
+  value = +value
+  offset = offset >>> 0
+  if (!noAssert) {
+    checkInt(this,
+             value,
+             offset,
+             byteLength,
+             Math.pow(2, 8 * byteLength - 1) - 1,
+             -Math.pow(2, 8 * byteLength - 1))
+  }
+
+  var i = byteLength - 1
+  var mul = 1
+  var sub = value < 0 ? 1 : 0
+  this[offset + i] = value & 0xFF
+  while (--i >= 0 && (mul *= 0x100))
+    this[offset + i] = ((value / mul) >> 0) - sub & 0xFF
+
+  return offset + byteLength
+}
+
 Buffer.prototype.writeInt8 = function (value, offset, noAssert) {
   value = +value
   offset = offset >>> 0
@@ -9887,8 +12373,9 @@ Buffer.prototype.writeInt32BE = function (value, offset, noAssert) {
 }
 
 function checkIEEE754 (buf, value, offset, ext, max, min) {
-  if (value > max || value < min) throw new TypeError('value is out of bounds')
-  if (offset + ext > buf.length) throw new TypeError('index out of range')
+  if (value > max || value < min) throw new RangeError('value is out of bounds')
+  if (offset + ext > buf.length) throw new RangeError('index out of range')
+  if (offset < 0) throw new RangeError('index out of range')
 }
 
 function writeFloat (buf, value, offset, littleEndian, noAssert) {
@@ -9927,18 +12414,19 @@ Buffer.prototype.copy = function (target, target_start, start, end) {
 
   if (!start) start = 0
   if (!end && end !== 0) end = this.length
+  if (target_start >= target.length) target_start = target.length
   if (!target_start) target_start = 0
+  if (end > 0 && end < start) end = start
 
   // Copy 0 bytes; we're done
-  if (end === start) return
-  if (target.length === 0 || source.length === 0) return
+  if (end === start) return 0
+  if (target.length === 0 || source.length === 0) return 0
 
   // Fatal error conditions
-  if (end < start) throw new TypeError('sourceEnd < sourceStart')
-  if (target_start < 0 || target_start >= target.length)
-    throw new TypeError('targetStart out of bounds')
-  if (start < 0 || start >= source.length) throw new TypeError('sourceStart out of bounds')
-  if (end < 0 || end > source.length) throw new TypeError('sourceEnd out of bounds')
+  if (target_start < 0)
+    throw new RangeError('targetStart out of bounds')
+  if (start < 0 || start >= source.length) throw new RangeError('sourceStart out of bounds')
+  if (end < 0) throw new RangeError('sourceEnd out of bounds')
 
   // Are we oob?
   if (end > this.length)
@@ -9955,6 +12443,8 @@ Buffer.prototype.copy = function (target, target_start, start, end) {
   } else {
     target._set(this.subarray(start, start + len), target_start)
   }
+
+  return len
 }
 
 // fill(value, start=0, end=buffer.length)
@@ -9963,14 +12453,14 @@ Buffer.prototype.fill = function (value, start, end) {
   if (!start) start = 0
   if (!end) end = this.length
 
-  if (end < start) throw new TypeError('end < start')
+  if (end < start) throw new RangeError('end < start')
 
   // Fill 0 bytes; we're done
   if (end === start) return
   if (this.length === 0) return
 
-  if (start < 0 || start >= this.length) throw new TypeError('start out of bounds')
-  if (end < 0 || end > this.length) throw new TypeError('end out of bounds')
+  if (start < 0 || start >= this.length) throw new RangeError('start out of bounds')
+  if (end < 0 || end > this.length) throw new RangeError('end out of bounds')
 
   var i
   if (typeof value === 'number') {
@@ -10036,11 +12526,15 @@ Buffer._augment = function (arr) {
   arr.compare = BP.compare
   arr.copy = BP.copy
   arr.slice = BP.slice
+  arr.readUIntLE = BP.readUIntLE
+  arr.readUIntBE = BP.readUIntBE
   arr.readUInt8 = BP.readUInt8
   arr.readUInt16LE = BP.readUInt16LE
   arr.readUInt16BE = BP.readUInt16BE
   arr.readUInt32LE = BP.readUInt32LE
   arr.readUInt32BE = BP.readUInt32BE
+  arr.readIntLE = BP.readIntLE
+  arr.readIntBE = BP.readIntBE
   arr.readInt8 = BP.readInt8
   arr.readInt16LE = BP.readInt16LE
   arr.readInt16BE = BP.readInt16BE
@@ -10051,10 +12545,14 @@ Buffer._augment = function (arr) {
   arr.readDoubleLE = BP.readDoubleLE
   arr.readDoubleBE = BP.readDoubleBE
   arr.writeUInt8 = BP.writeUInt8
+  arr.writeUIntLE = BP.writeUIntLE
+  arr.writeUIntBE = BP.writeUIntBE
   arr.writeUInt16LE = BP.writeUInt16LE
   arr.writeUInt16BE = BP.writeUInt16BE
   arr.writeUInt32LE = BP.writeUInt32LE
   arr.writeUInt32BE = BP.writeUInt32BE
+  arr.writeIntLE = BP.writeIntLE
+  arr.writeIntBE = BP.writeIntBE
   arr.writeInt8 = BP.writeInt8
   arr.writeInt16LE = BP.writeInt16LE
   arr.writeInt16BE = BP.writeInt16BE
@@ -10071,11 +12569,13 @@ Buffer._augment = function (arr) {
   return arr
 }
 
-var INVALID_BASE64_RE = /[^+\/0-9A-z]/g
+var INVALID_BASE64_RE = /[^+\/0-9A-z\-]/g
 
 function base64clean (str) {
   // Node strips out invalid characters like \n and \t from the string, base64-js does not
   str = stringtrim(str).replace(INVALID_BASE64_RE, '')
+  // Node converts strings with length < 2 to ''
+  if (str.length < 2) return ''
   // Node allows for non-padded base64 strings (missing trailing ===), base64-js does not
   while (str.length % 4 !== 0) {
     str = str + '='
@@ -10099,22 +12599,100 @@ function toHex (n) {
   return n.toString(16)
 }
 
-function utf8ToBytes (str) {
-  var byteArray = []
-  for (var i = 0; i < str.length; i++) {
-    var b = str.charCodeAt(i)
-    if (b <= 0x7F) {
-      byteArray.push(b)
-    } else {
-      var start = i
-      if (b >= 0xD800 && b <= 0xDFFF) i++
-      var h = encodeURIComponent(str.slice(start, i+1)).substr(1).split('%')
-      for (var j = 0; j < h.length; j++) {
-        byteArray.push(parseInt(h[j], 16))
+function utf8ToBytes(string, units) {
+  var codePoint, length = string.length
+  var leadSurrogate = null
+  units = units || Infinity
+  var bytes = []
+  var i = 0
+
+  for (; i<length; i++) {
+    codePoint = string.charCodeAt(i)
+
+    // is surrogate component
+    if (codePoint > 0xD7FF && codePoint < 0xE000) {
+
+      // last char was a lead
+      if (leadSurrogate) {
+
+        // 2 leads in a row
+        if (codePoint < 0xDC00) {
+          if ((units -= 3) > -1) bytes.push(0xEF, 0xBF, 0xBD)
+          leadSurrogate = codePoint
+          continue
+        }
+
+        // valid surrogate pair
+        else {
+          codePoint = leadSurrogate - 0xD800 << 10 | codePoint - 0xDC00 | 0x10000
+          leadSurrogate = null
+        }
+      }
+
+      // no lead yet
+      else {
+
+        // unexpected trail
+        if (codePoint > 0xDBFF) {
+          if ((units -= 3) > -1) bytes.push(0xEF, 0xBF, 0xBD)
+          continue
+        }
+
+        // unpaired lead
+        else if (i + 1 === length) {
+          if ((units -= 3) > -1) bytes.push(0xEF, 0xBF, 0xBD)
+          continue
+        }
+
+        // valid lead
+        else {
+          leadSurrogate = codePoint
+          continue
+        }
       }
     }
+
+    // valid bmp char, but last char was a lead
+    else if (leadSurrogate) {
+      if ((units -= 3) > -1) bytes.push(0xEF, 0xBF, 0xBD)
+      leadSurrogate = null
+    }
+
+    // encode utf8
+    if (codePoint < 0x80) {
+      if ((units -= 1) < 0) break
+      bytes.push(codePoint)
+    }
+    else if (codePoint < 0x800) {
+      if ((units -= 2) < 0) break
+      bytes.push(
+        codePoint >> 0x6 | 0xC0,
+        codePoint & 0x3F | 0x80
+      );
+    }
+    else if (codePoint < 0x10000) {
+      if ((units -= 3) < 0) break
+      bytes.push(
+        codePoint >> 0xC | 0xE0,
+        codePoint >> 0x6 & 0x3F | 0x80,
+        codePoint & 0x3F | 0x80
+      );
+    }
+    else if (codePoint < 0x200000) {
+      if ((units -= 4) < 0) break
+      bytes.push(
+        codePoint >> 0x12 | 0xF0,
+        codePoint >> 0xC & 0x3F | 0x80,
+        codePoint >> 0x6 & 0x3F | 0x80,
+        codePoint & 0x3F | 0x80
+      );
+    }
+    else {
+      throw new Error('Invalid code point')
+    }
   }
-  return byteArray
+
+  return bytes
 }
 
 function asciiToBytes (str) {
@@ -10126,10 +12704,13 @@ function asciiToBytes (str) {
   return byteArray
 }
 
-function utf16leToBytes (str) {
+function utf16leToBytes (str, units) {
   var c, hi, lo
   var byteArray = []
   for (var i = 0; i < str.length; i++) {
+
+    if ((units -= 2) < 0) break
+
     c = str.charCodeAt(i)
     hi = c >> 8
     lo = c % 256
@@ -10141,10 +12722,11 @@ function utf16leToBytes (str) {
 }
 
 function base64ToBytes (str) {
-  return base64.toByteArray(str)
+  return base64.toByteArray(base64clean(str))
 }
 
-function blitBuffer (src, dst, offset, length) {
+function blitBuffer (src, dst, offset, length, unitSize) {
+  if (unitSize) length -= length % unitSize;
   for (var i = 0; i < length; i++) {
     if ((i + offset >= dst.length) || (i >= src.length))
       break
@@ -10161,7 +12743,7 @@ function decodeUtf8Char (str) {
   }
 }
 
-},{"base64-js":57,"ieee754":58,"is-array":59}],57:[function(require,module,exports){
+},{"base64-js":58,"ieee754":59,"is-array":60}],58:[function(require,module,exports){
 var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 ;(function (exports) {
@@ -10176,12 +12758,16 @@ var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 	var NUMBER = '0'.charCodeAt(0)
 	var LOWER  = 'a'.charCodeAt(0)
 	var UPPER  = 'A'.charCodeAt(0)
+	var PLUS_URL_SAFE = '-'.charCodeAt(0)
+	var SLASH_URL_SAFE = '_'.charCodeAt(0)
 
 	function decode (elt) {
 		var code = elt.charCodeAt(0)
-		if (code === PLUS)
+		if (code === PLUS ||
+		    code === PLUS_URL_SAFE)
 			return 62 // '+'
-		if (code === SLASH)
+		if (code === SLASH ||
+		    code === SLASH_URL_SAFE)
 			return 63 // '/'
 		if (code < NUMBER)
 			return -1 //no match
@@ -10283,7 +12869,7 @@ var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 	exports.fromByteArray = uint8ToBase64
 }(typeof exports === 'undefined' ? (this.base64js = {}) : exports))
 
-},{}],58:[function(require,module,exports){
+},{}],59:[function(require,module,exports){
 exports.read = function(buffer, offset, isLE, mLen, nBytes) {
   var e, m,
       eLen = nBytes * 8 - mLen - 1,
@@ -10369,7 +12955,7 @@ exports.write = function(buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128;
 };
 
-},{}],59:[function(require,module,exports){
+},{}],60:[function(require,module,exports){
 
 /**
  * isArray
@@ -10404,73 +12990,271 @@ module.exports = isArray || function (val) {
   return !! val && '[object Array]' == str.call(val);
 };
 
-},{}],60:[function(require,module,exports){
+},{}],61:[function(require,module,exports){
+(function (process){
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+// resolves . and .. elements in a path array with directory names there
+// must be no slashes, empty elements, or device names (c:\) in the array
+// (so also no leading and trailing slashes - it does not distinguish
+// relative and absolute paths)
+function normalizeArray(parts, allowAboveRoot) {
+  // if the path tries to go above the root, `up` ends up > 0
+  var up = 0;
+  for (var i = parts.length - 1; i >= 0; i--) {
+    var last = parts[i];
+    if (last === '.') {
+      parts.splice(i, 1);
+    } else if (last === '..') {
+      parts.splice(i, 1);
+      up++;
+    } else if (up) {
+      parts.splice(i, 1);
+      up--;
+    }
+  }
+
+  // if the path is allowed to go above the root, restore leading ..s
+  if (allowAboveRoot) {
+    for (; up--; up) {
+      parts.unshift('..');
+    }
+  }
+
+  return parts;
+}
+
+// Split a filename into [root, dir, basename, ext], unix version
+// 'root' is just a slash, or nothing.
+var splitPathRe =
+    /^(\/?|)([\s\S]*?)((?:\.{1,2}|[^\/]+?|)(\.[^.\/]*|))(?:[\/]*)$/;
+var splitPath = function(filename) {
+  return splitPathRe.exec(filename).slice(1);
+};
+
+// path.resolve([from ...], to)
+// posix version
+exports.resolve = function() {
+  var resolvedPath = '',
+      resolvedAbsolute = false;
+
+  for (var i = arguments.length - 1; i >= -1 && !resolvedAbsolute; i--) {
+    var path = (i >= 0) ? arguments[i] : process.cwd();
+
+    // Skip empty and invalid entries
+    if (typeof path !== 'string') {
+      throw new TypeError('Arguments to path.resolve must be strings');
+    } else if (!path) {
+      continue;
+    }
+
+    resolvedPath = path + '/' + resolvedPath;
+    resolvedAbsolute = path.charAt(0) === '/';
+  }
+
+  // At this point the path should be resolved to a full absolute path, but
+  // handle relative paths to be safe (might happen when process.cwd() fails)
+
+  // Normalize the path
+  resolvedPath = normalizeArray(filter(resolvedPath.split('/'), function(p) {
+    return !!p;
+  }), !resolvedAbsolute).join('/');
+
+  return ((resolvedAbsolute ? '/' : '') + resolvedPath) || '.';
+};
+
+// path.normalize(path)
+// posix version
+exports.normalize = function(path) {
+  var isAbsolute = exports.isAbsolute(path),
+      trailingSlash = substr(path, -1) === '/';
+
+  // Normalize the path
+  path = normalizeArray(filter(path.split('/'), function(p) {
+    return !!p;
+  }), !isAbsolute).join('/');
+
+  if (!path && !isAbsolute) {
+    path = '.';
+  }
+  if (path && trailingSlash) {
+    path += '/';
+  }
+
+  return (isAbsolute ? '/' : '') + path;
+};
+
+// posix version
+exports.isAbsolute = function(path) {
+  return path.charAt(0) === '/';
+};
+
+// posix version
+exports.join = function() {
+  var paths = Array.prototype.slice.call(arguments, 0);
+  return exports.normalize(filter(paths, function(p, index) {
+    if (typeof p !== 'string') {
+      throw new TypeError('Arguments to path.join must be strings');
+    }
+    return p;
+  }).join('/'));
+};
+
+
+// path.relative(from, to)
+// posix version
+exports.relative = function(from, to) {
+  from = exports.resolve(from).substr(1);
+  to = exports.resolve(to).substr(1);
+
+  function trim(arr) {
+    var start = 0;
+    for (; start < arr.length; start++) {
+      if (arr[start] !== '') break;
+    }
+
+    var end = arr.length - 1;
+    for (; end >= 0; end--) {
+      if (arr[end] !== '') break;
+    }
+
+    if (start > end) return [];
+    return arr.slice(start, end - start + 1);
+  }
+
+  var fromParts = trim(from.split('/'));
+  var toParts = trim(to.split('/'));
+
+  var length = Math.min(fromParts.length, toParts.length);
+  var samePartsLength = length;
+  for (var i = 0; i < length; i++) {
+    if (fromParts[i] !== toParts[i]) {
+      samePartsLength = i;
+      break;
+    }
+  }
+
+  var outputParts = [];
+  for (var i = samePartsLength; i < fromParts.length; i++) {
+    outputParts.push('..');
+  }
+
+  outputParts = outputParts.concat(toParts.slice(samePartsLength));
+
+  return outputParts.join('/');
+};
+
+exports.sep = '/';
+exports.delimiter = ':';
+
+exports.dirname = function(path) {
+  var result = splitPath(path),
+      root = result[0],
+      dir = result[1];
+
+  if (!root && !dir) {
+    // No dirname whatsoever
+    return '.';
+  }
+
+  if (dir) {
+    // It has a dirname, strip trailing slash
+    dir = dir.substr(0, dir.length - 1);
+  }
+
+  return root + dir;
+};
+
+
+exports.basename = function(path, ext) {
+  var f = splitPath(path)[2];
+  // TODO: make this comparison case-insensitive on windows?
+  if (ext && f.substr(-1 * ext.length) === ext) {
+    f = f.substr(0, f.length - ext.length);
+  }
+  return f;
+};
+
+
+exports.extname = function(path) {
+  return splitPath(path)[3];
+};
+
+function filter (xs, f) {
+    if (xs.filter) return xs.filter(f);
+    var res = [];
+    for (var i = 0; i < xs.length; i++) {
+        if (f(xs[i], i, xs)) res.push(xs[i]);
+    }
+    return res;
+}
+
+// String.prototype.substr - negative index don't work in IE8
+var substr = 'ab'.substr(-1) === 'b'
+    ? function (str, start, len) { return str.substr(start, len) }
+    : function (str, start, len) {
+        if (start < 0) start = str.length + start;
+        return str.substr(start, len);
+    }
+;
+
+}).call(this,require('_process'))
+},{"_process":62}],62:[function(require,module,exports){
 // shim for using process in browser
 
 var process = module.exports = {};
+var queue = [];
+var draining = false;
 
-process.nextTick = (function () {
-    var canSetImmediate = typeof window !== 'undefined'
-    && window.setImmediate;
-    var canMutationObserver = typeof window !== 'undefined'
-    && window.MutationObserver;
-    var canPost = typeof window !== 'undefined'
-    && window.postMessage && window.addEventListener
-    ;
-
-    if (canSetImmediate) {
-        return function (f) { return window.setImmediate(f) };
+function drainQueue() {
+    if (draining) {
+        return;
     }
-
-    var queue = [];
-
-    if (canMutationObserver) {
-        var hiddenDiv = document.createElement("div");
-        var observer = new MutationObserver(function () {
-            var queueList = queue.slice();
-            queue.length = 0;
-            queueList.forEach(function (fn) {
-                fn();
-            });
-        });
-
-        observer.observe(hiddenDiv, { attributes: true });
-
-        return function nextTick(fn) {
-            if (!queue.length) {
-                hiddenDiv.setAttribute('yes', 'no');
-            }
-            queue.push(fn);
-        };
+    draining = true;
+    var currentQueue;
+    var len = queue.length;
+    while(len) {
+        currentQueue = queue;
+        queue = [];
+        var i = -1;
+        while (++i < len) {
+            currentQueue[i]();
+        }
+        len = queue.length;
     }
-
-    if (canPost) {
-        window.addEventListener('message', function (ev) {
-            var source = ev.source;
-            if ((source === window || source === null) && ev.data === 'process-tick') {
-                ev.stopPropagation();
-                if (queue.length > 0) {
-                    var fn = queue.shift();
-                    fn();
-                }
-            }
-        }, true);
-
-        return function nextTick(fn) {
-            queue.push(fn);
-            window.postMessage('process-tick', '*');
-        };
+    draining = false;
+}
+process.nextTick = function (fun) {
+    queue.push(fun);
+    if (!draining) {
+        setTimeout(drainQueue, 0);
     }
-
-    return function nextTick(fn) {
-        setTimeout(fn, 0);
-    };
-})();
+};
 
 process.title = 'browser';
 process.browser = true;
 process.env = {};
 process.argv = [];
+process.version = ''; // empty string to avoid regexp issues
 
 function noop() {}
 
@@ -10491,6 +13275,7 @@ process.cwd = function () { return '/' };
 process.chdir = function (dir) {
     throw new Error('process.chdir is not supported');
 };
+process.umask = function() { return 0; };
 
 },{}]},{},[3])(3)
 });
