@@ -1,3 +1,8 @@
+# [DEPRECATION NOTICE]
+This project is no longer under active development or maintenance by Mozilla.
+
+---
+
 MakeDrive
 =========
 
